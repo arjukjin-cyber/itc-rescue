@@ -6,13 +6,8 @@ import { Upload, Play, Loader2, Lock } from "lucide-react";
 import * as XLSX from "xlsx";
 import { CategoryBadge } from "@/components/Badge";
 import { StatCard } from "@/components/StatCard";
-import {
-  canRunRecon,
-  getResults,
-  getSummary,
-  isPaywalled,
-  saveRecon,
-} from "@/lib/storage";
+import { isPaywalled } from "@/lib/storage";
+import { fetchReconState, persistRecon } from "@/lib/api-data";
 import { parseInvoiceFile, fetchSampleAsFile } from "@/lib/parseFile";
 import { formatINR, formatINRPrecise, reconcile } from "@/lib/reconcile";
 import type { MatchCategory, MatchResult, ReconSummary } from "@/lib/types";
@@ -37,17 +32,24 @@ export default function ReconcilePage() {
   const [trialUsed, setTrialUsed] = useState(false);
 
   useEffect(() => {
-    const r = getResults();
-    const s = getSummary();
-    if (r.length) {
-      setResults(r);
-      setSummary(s);
-    }
-    setTrialUsed(isPaywalled());
-    if (isPaywalled()) {
-      const gate = canRunRecon();
-      if (!gate.ok) setPaywall(gate.reason || "Upgrade required");
-    }
+    let cancelled = false;
+    (async () => {
+      const state = await fetchReconState();
+      if (cancelled) return;
+      if (state.results.length) {
+        setResults(state.results);
+        setSummary(state.summary);
+      }
+      if (!state.canRun) {
+        setTrialUsed(true);
+        setPaywall(state.reason || "Upgrade required");
+      } else {
+        setTrialUsed(isPaywalled() && state.persistence === "demo");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -59,9 +61,9 @@ export default function ReconcilePage() {
     setError("");
     setPaywall(null);
 
-    const gate = canRunRecon();
-    if (!gate.ok) {
-      setPaywall(gate.reason || "Upgrade required");
+    const state = await fetchReconState();
+    if (!state.canRun) {
+      setPaywall(state.reason || "Upgrade required");
       return;
     }
 
@@ -77,7 +79,12 @@ export default function ReconcilePage() {
       }
 
       const { results: matched, summary: sum } = reconcile(booksInv, gstrInv);
-      saveRecon(matched, sum);
+      const saved = await persistRecon(matched, sum);
+      if (!saved.ok) {
+        setPaywall(saved.error || "Upgrade required");
+        setTrialUsed(true);
+        return;
+      }
       setResults(matched);
       setSummary(sum);
       setFilter("itc_at_risk");
@@ -100,9 +107,9 @@ export default function ReconcilePage() {
   async function loadSamples() {
     setError("");
     setPaywall(null);
-    const gate = canRunRecon();
-    if (!gate.ok) {
-      setPaywall(gate.reason || "Upgrade required");
+    const state = await fetchReconState();
+    if (!state.canRun) {
+      setPaywall(state.reason || "Upgrade required");
       return;
     }
     setLoading(true);
@@ -118,7 +125,12 @@ export default function ReconcilePage() {
       const booksInv = await parseInvoiceFile(books, "books");
       const gstrInv = await parseInvoiceFile(gstr, "gstr2b");
       const { results: matched, summary: sum } = reconcile(booksInv, gstrInv);
-      saveRecon(matched, sum);
+      const saved = await persistRecon(matched, sum);
+      if (!saved.ok) {
+        setPaywall(saved.error || "Upgrade required");
+        setTrialUsed(true);
+        return;
+      }
       setResults(matched);
       setSummary(sum);
       setFilter("itc_at_risk");
