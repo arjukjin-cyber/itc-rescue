@@ -261,6 +261,25 @@ export default function ReconcilePage() {
             <StatCard label="Unclaimed" value={summary.unclaimed} tone="info" />
           </div>
 
+          {summary.itcAtRiskAmount > 0 && (
+            <div
+              className="px-4 py-3 text-sm font-medium sm:px-5"
+              style={{
+                borderRadius: "var(--radius-md)",
+                border: "1px solid color-mix(in srgb, var(--color-status-risk-fg) 28%, transparent)",
+                backgroundColor: "var(--color-status-risk-bg)",
+                color: "var(--color-status-risk-fg)",
+              }}
+            >
+              <strong className="font-bold tabular-nums">
+                {formatINR(summary.itcAtRiskAmount)} ITC at risk
+              </strong>
+              {" — "}
+              {summary.itcAtRisk} invoice{summary.itcAtRisk === 1 ? "" : "s"} missing from
+              GSTR-2B. Chase vendors before filing GSTR-3B.
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2">
             {FILTERS.map((f) => (
               <button

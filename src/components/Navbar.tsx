@@ -1,12 +1,52 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
 import { Menu, X } from "lucide-react";
 
+const SECTIONS = [
+  { id: "problem", label: "Problem" },
+  { id: "how", label: "How it works" },
+  { id: "pricing", label: "Pricing" },
+] as const;
+
 export function Navbar() {
   const [open, setOpen] = useState(false);
+  const [active, setActive] = useState<string>("");
+
+  useEffect(() => {
+    const els = SECTIONS.map((s) => document.getElementById(s.id)).filter(
+      (el): el is HTMLElement => !!el
+    );
+    if (!els.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+        if (visible[0]?.target?.id) setActive(visible[0].target.id);
+      },
+      { rootMargin: "-20% 0px -55% 0px", threshold: [0, 0.25, 0.5, 1] }
+    );
+    els.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
+
+  const linkClass = (id: string) =>
+    `rounded-full px-3 py-1.5 transition ${
+      active === id ? "font-semibold" : "font-medium hover:bg-[var(--color-bg-subtle)]"
+    }`;
+
+  const linkStyle = (id: string) =>
+    active === id
+      ? {
+          backgroundColor: "var(--color-accent-soft)",
+          color: "var(--color-accent)",
+        }
+      : { color: "var(--color-text-secondary)" };
+
   return (
     <header
       className="sticky top-0 z-50 backdrop-blur-md"
@@ -17,19 +57,17 @@ export function Navbar() {
     >
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:h-16 sm:px-6">
         <Logo />
-        <nav
-          className="hidden items-center gap-8 text-sm font-medium md:flex"
-          style={{ color: "var(--color-text-secondary)" }}
-        >
-          <a href="#problem" className="hover:text-[var(--color-accent)]">
-            Problem
-          </a>
-          <a href="#how" className="hover:text-[var(--color-accent)]">
-            How it works
-          </a>
-          <a href="#pricing" className="hover:text-[var(--color-accent)]">
-            Pricing
-          </a>
+        <nav className="hidden items-center gap-1 text-sm md:flex">
+          {SECTIONS.map((s) => (
+            <a
+              key={s.id}
+              href={`#${s.id}`}
+              className={linkClass(s.id)}
+              style={linkStyle(s.id)}
+            >
+              {s.label}
+            </a>
+          ))}
         </nav>
         <div className="hidden items-center gap-3 md:flex">
           <Link
@@ -64,34 +102,24 @@ export function Navbar() {
             backgroundColor: "var(--color-bg)",
           }}
         >
-          <div
-            className="flex flex-col gap-1 text-sm font-medium"
-            style={{ color: "var(--color-text)" }}
-          >
-            <a
-              href="#problem"
-              onClick={() => setOpen(false)}
-              className="rounded-[var(--radius-md)] px-3 py-2.5 hover:bg-[var(--color-bg-subtle)]"
-            >
-              Problem
-            </a>
-            <a
-              href="#how"
-              onClick={() => setOpen(false)}
-              className="rounded-[var(--radius-md)] px-3 py-2.5 hover:bg-[var(--color-bg-subtle)]"
-            >
-              How it works
-            </a>
-            <a
-              href="#pricing"
-              onClick={() => setOpen(false)}
-              className="rounded-[var(--radius-md)] px-3 py-2.5 hover:bg-[var(--color-bg-subtle)]"
-            >
-              Pricing
-            </a>
+          <div className="flex flex-col gap-1 text-sm">
+            {SECTIONS.map((s) => (
+              <a
+                key={s.id}
+                href={`#${s.id}`}
+                onClick={() => setOpen(false)}
+                className={`rounded-full px-3 py-2.5 ${
+                  active === s.id ? "font-semibold" : "font-medium"
+                }`}
+                style={linkStyle(s.id)}
+              >
+                {s.label}
+              </a>
+            ))}
             <Link
               href="/login"
-              className="rounded-[var(--radius-md)] px-3 py-2.5 hover:bg-[var(--color-bg-subtle)]"
+              className="rounded-full px-3 py-2.5 font-medium hover:bg-[var(--color-bg-subtle)]"
+              style={{ color: "var(--color-text)" }}
               onClick={() => setOpen(false)}
             >
               Log in
