@@ -78,7 +78,7 @@ export default function LandingPage() {
               <span style={{ color: "var(--color-accent)" }}>didn&apos;t file GSTR-1</span>
             </h1>
             <p
-              className="mt-5 text-lg leading-relaxed sm:text-xl sm:leading-relaxed"
+              className="hero-subcopy mt-5 text-lg leading-relaxed sm:text-xl sm:leading-relaxed"
               style={{ color: "var(--color-text-secondary)" }}
             >
               Upload your purchase register and GSTR-2B. ITC Rescue finds every mismatch,

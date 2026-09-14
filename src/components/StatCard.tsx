@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 
+/** Option B: status meaning via border + value fg only — no status bg fills. */
 const TONE_STYLE: Record<
   "default" | "danger" | "success" | "warn" | "info",
   CSSProperties
@@ -9,25 +10,29 @@ const TONE_STYLE: Record<
     borderColor: "var(--color-border)",
   },
   success: {
-    backgroundColor: "var(--color-status-ok-bg)",
-    borderColor: "color-mix(in srgb, var(--color-status-ok-fg) 28%, transparent)",
-    color: "var(--color-status-ok-fg)",
+    backgroundColor: "var(--color-bg)",
+    borderColor: "color-mix(in srgb, var(--color-status-ok-fg) 40%, var(--color-border))",
   },
   danger: {
-    backgroundColor: "var(--color-status-risk-bg)",
-    borderColor: "color-mix(in srgb, var(--color-status-risk-fg) 28%, transparent)",
-    color: "var(--color-status-risk-fg)",
+    backgroundColor: "var(--color-bg)",
+    borderColor: "color-mix(in srgb, var(--color-status-risk-fg) 40%, var(--color-border))",
   },
   warn: {
-    backgroundColor: "var(--color-status-warn-bg)",
-    borderColor: "color-mix(in srgb, var(--color-status-warn-fg) 28%, transparent)",
-    color: "var(--color-status-warn-fg)",
+    backgroundColor: "var(--color-bg)",
+    borderColor: "color-mix(in srgb, var(--color-status-warn-fg) 40%, var(--color-border))",
   },
   info: {
-    backgroundColor: "var(--color-status-info-bg)",
-    borderColor: "color-mix(in srgb, var(--color-status-info-fg) 28%, transparent)",
-    color: "var(--color-status-info-fg)",
+    backgroundColor: "var(--color-bg)",
+    borderColor: "color-mix(in srgb, var(--color-status-info-fg) 40%, var(--color-border))",
   },
+};
+
+const VALUE_FG: Record<"default" | "danger" | "success" | "warn" | "info", string> = {
+  default: "var(--color-text)",
+  success: "var(--color-status-ok-fg)",
+  danger: "var(--color-status-risk-fg)",
+  warn: "var(--color-status-warn-fg)",
+  info: "var(--color-status-info-fg)",
 };
 
 export function StatCard({
@@ -55,7 +60,7 @@ export function StatCard({
       </div>
       <div
         className="mt-1.5 text-2xl font-bold tabular-nums"
-        style={{ color: tone === "default" ? "var(--color-text)" : "inherit" }}
+        style={{ color: VALUE_FG[tone] }}
       >
         {value}
       </div>

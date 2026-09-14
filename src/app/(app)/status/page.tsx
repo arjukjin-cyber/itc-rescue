@@ -52,13 +52,15 @@ export default function StatusPage() {
 
   if (!items.length) {
     return (
-      <EmptyState
-        icon={Kanban}
-        title="Status board is empty"
-        description="After a reconciliation, at-risk invoices show up here so you can track vendor fixes."
-        actionLabel="Go to Reconcile"
-        actionHref="/reconcile"
-      />
+      <div className="flex min-h-[min(28rem,70vh)] items-center justify-center px-2">
+        <EmptyState
+          icon={Kanban}
+          title="Status board is empty"
+          description="After a reconciliation, at-risk invoices show up here so you can track vendor fixes."
+          actionLabel="Go to Reconcile"
+          actionHref="/reconcile"
+        />
+      </div>
     );
   }
 
