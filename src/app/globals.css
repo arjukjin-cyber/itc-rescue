@@ -1,39 +1,59 @@
 @import "tailwindcss";
 
+/* Design tokens v0.1 — authoritative; do not invent hex outside this map */
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --brand: #0f766e;
-  --brand-dark: #0d9488;
-  --accent: #f59e0b;
-  --danger: #dc2626;
-  --success: #059669;
+  --color-bg: #ffffff;
+  --color-bg-muted: #f8fafc;
+  --color-bg-subtle: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+  --color-text: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+  --color-accent: #0f766e;
+  --color-accent-hover: #0d9488;
+  --color-accent-soft: #f0fdfa;
+  --color-accent-ring: #99f6e4;
+  --color-status-ok-bg: #ecfdf5;
+  --color-status-ok-fg: #007956;
+  --color-status-risk-bg: #fef2f2;
+  --color-status-risk-fg: #9f0712;
+  --color-status-warn-bg: #fffbeb;
+  --color-status-warn-fg: #b75000;
+  --color-status-info-bg: #f0f9ff;
+  --color-status-info-fg: #0369a1;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
 
   /* Type scale (MSME-simple): page H1 → section H2 → body → meta */
-  --text-page: 1.5rem; /* ~text-2xl; sm bump in components */
-  --text-section: 1.875rem; /* ~text-3xl */
-  --text-body: 0.875rem; /* text-sm */
-  --text-meta: 0.8125rem; /* ~13px — readable muted labels */
+  --text-page: 1.5rem;
+  --text-section: 1.875rem;
+  --text-body: 0.875rem;
+  --text-meta: 0.8125rem;
   --leading-body: 1.625;
-  --space-section-y: 4rem; /* py-16 rhythm */
-  --space-section-y-lg: 5rem; /* py-20 */
+  --space-section-y: 4rem;
+  --space-section-y-lg: 5rem;
+
+  /* Compat aliases (pre-token code) */
+  --background: var(--color-bg-muted);
+  --foreground: var(--color-text);
+  --brand: var(--color-accent);
+  --brand-dark: var(--color-accent-hover);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-brand: var(--brand);
-  --color-brand-dark: var(--brand-dark);
-  --color-accent: var(--accent);
-  --color-danger: var(--danger);
-  --color-success: var(--success);
+  --color-background: var(--color-bg-muted);
+  --color-foreground: var(--color-text);
+  --color-brand: var(--color-accent);
+  --color-brand-dark: var(--color-accent-hover);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--color-bg-muted);
+  color: var(--color-text);
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
 }
 
@@ -50,7 +70,17 @@ html {
 .text-meta {
   font-size: var(--text-meta);
   line-height: 1.4;
-  color: #475569; /* slate-600 */
+  color: var(--color-text-secondary);
+}
+
+/* Primary filled CTA — accent only */
+.btn-accent {
+  background-color: var(--color-accent);
+  color: #ffffff;
+  border-radius: var(--radius-md);
+}
+.btn-accent:hover {
+  background-color: var(--color-accent-hover);
 }
 
 @keyframes fade-up {
@@ -71,6 +101,6 @@ html {
   height: 6px;
 }
 .table-scroll::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--color-border-strong);
   border-radius: 3px;
 }

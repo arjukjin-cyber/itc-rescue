@@ -22,19 +22,40 @@ export function EmptyState({
 }) {
   return (
     <div
-      className={`mx-auto max-w-3xl rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center sm:px-10 ${className}`}
+      className={`mx-auto w-full max-w-md px-6 py-10 text-center sm:px-8 sm:py-12 ${className}`}
+      style={{
+        backgroundColor: "var(--color-bg)",
+        border: "1px dashed var(--color-border-strong)",
+        borderRadius: "var(--radius-lg)",
+        boxShadow: "0 1px 2px #0000000d, 0 8px 24px #0f172a08",
+      }}
     >
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
-        <Icon size={28} strokeWidth={1.75} aria-hidden />
+      <div
+        className="mx-auto flex h-11 w-11 items-center justify-center"
+        style={{
+          backgroundColor: "var(--color-accent-soft)",
+          color: "var(--color-accent)",
+          borderRadius: "var(--radius-md)",
+        }}
+      >
+        <Icon size={22} strokeWidth={1.75} aria-hidden />
       </div>
-      <h2 className="mt-4 text-lg font-semibold text-slate-900 sm:text-xl">{title}</h2>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-600">
+      <h2
+        className="mt-4 text-lg font-semibold sm:text-xl"
+        style={{ color: "var(--color-text)" }}
+      >
+        {title}
+      </h2>
+      <p
+        className="mx-auto mt-2 max-w-sm text-sm leading-relaxed"
+        style={{ color: "var(--color-text-secondary)" }}
+      >
         {description}
       </p>
       {actionLabel && actionHref && (
         <Link
           href={actionHref}
-          className="mt-5 inline-flex items-center justify-center rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800"
+          className="btn-accent mt-6 inline-flex items-center justify-center px-5 py-2.5 text-sm font-semibold"
         >
           {actionLabel}
         </Link>

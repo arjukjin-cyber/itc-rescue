@@ -54,12 +54,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.push("/");
   }
 
+  const navLinkClass = (active: boolean) =>
+    `flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-2.5 text-sm font-medium transition ${
+      active ? "" : "hover:bg-[var(--color-bg-subtle)]"
+    }`;
+
+  const navLinkStyle = (active: boolean) =>
+    active
+      ? {
+          backgroundColor: "var(--color-accent-soft)",
+          color: "var(--color-accent)",
+        }
+      : { color: "var(--color-text-secondary)" };
+
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen" style={{ backgroundColor: "var(--color-bg-muted)" }}>
       <div className="flex min-h-screen">
         {/* Sidebar desktop */}
-        <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white lg:flex lg:flex-col">
-          <div className="flex h-16 items-center border-b border-slate-100 px-5">
+        <aside
+          className="hidden w-64 shrink-0 lg:flex lg:flex-col"
+          style={{
+            backgroundColor: "var(--color-bg)",
+            borderRight: "1px solid var(--color-border)",
+          }}
+        >
+          <div
+            className="flex h-14 items-center px-5"
+            style={{ borderBottom: "1px solid var(--color-border)" }}
+          >
             <Logo />
           </div>
           <nav className="flex-1 space-y-0.5 p-3">
@@ -70,11 +92,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
-                    active
-                      ? "bg-teal-50 text-teal-800"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                  }`}
+                  className={navLinkClass(active)}
+                  style={navLinkStyle(active)}
                 >
                   <Icon size={18} />
                   {item.label}
@@ -82,14 +101,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               );
             })}
           </nav>
-          <div className="border-t border-slate-100 p-4">
+          <div className="p-4" style={{ borderTop: "1px solid var(--color-border)" }}>
             {plan === "trial" && (
-              <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-meta text-amber-900">
+              <div
+                className="mb-3 p-3 text-meta"
+                style={{
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid color-mix(in srgb, var(--color-status-warn-fg) 28%, transparent)",
+                  backgroundColor: "var(--color-status-warn-bg)",
+                  color: "var(--color-status-warn-fg)",
+                }}
+              >
                 <div className="mb-1 flex items-center gap-1 font-semibold">
                   <ShieldAlert size={14} /> Trial
                 </div>
                 {trialHint || "1 free recon · 50 invoices"}
-                <Link href="/settings" className="mt-2 block font-semibold text-teal-700 underline">
+                <Link
+                  href="/settings"
+                  className="mt-2 block font-semibold underline"
+                  style={{ color: "var(--color-accent)" }}
+                >
                   Upgrade plan →
                 </Link>
               </div>
@@ -97,7 +128,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="truncate text-meta">{email}</div>
             <button
               onClick={logout}
-              className="mt-2 flex items-center gap-2 text-sm text-slate-600 hover:text-red-600"
+              className="mt-2 flex items-center gap-2 text-sm hover:opacity-80"
+              style={{ color: "var(--color-text-secondary)" }}
             >
               <LogOut size={16} /> Log out
             </button>
@@ -106,11 +138,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Main */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 lg:hidden">
+          <header
+            className="flex h-14 items-center justify-between px-4 lg:hidden"
+            style={{
+              backgroundColor: "var(--color-bg)",
+              borderBottom: "1px solid var(--color-border)",
+            }}
+          >
             <Logo />
             <button
               onClick={() => setOpen(!open)}
-              className="rounded-lg p-2 text-slate-700"
+              className="rounded-[var(--radius-md)] p-2"
+              style={{ color: "var(--color-text)" }}
               aria-label="Menu"
               aria-expanded={open}
             >
@@ -118,7 +157,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           </header>
           {open && (
-            <nav className="space-y-0.5 border-b border-slate-200 bg-white p-3 lg:hidden">
+            <nav
+              className="space-y-0.5 p-3 lg:hidden"
+              style={{
+                backgroundColor: "var(--color-bg)",
+                borderBottom: "1px solid var(--color-border)",
+              }}
+            >
               {NAV.map((item) => {
                 const active = pathname === item.href;
                 const Icon = item.icon;
@@ -127,11 +172,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     key={item.href}
                     href={item.href}
                     onClick={() => setOpen(false)}
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium ${
-                      active
-                        ? "bg-teal-50 text-teal-800"
-                        : "text-slate-700 hover:bg-slate-50"
-                    }`}
+                    className={navLinkClass(active)}
+                    style={navLinkStyle(active)}
                   >
                     <Icon size={18} />
                     {item.label}
@@ -140,7 +182,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               })}
               <button
                 onClick={logout}
-                className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50"
+                className="mt-1 flex w-full items-center gap-3 rounded-[var(--radius-md)] px-3 py-2.5 text-sm font-medium"
+                style={{
+                  color: "var(--color-status-risk-fg)",
+                  backgroundColor: "transparent",
+                }}
               >
                 <LogOut size={18} /> Log out
               </button>
