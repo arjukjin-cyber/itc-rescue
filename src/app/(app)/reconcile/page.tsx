@@ -133,7 +133,7 @@ export default function ReconcilePage() {
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Reconcile</h1>
+        <h1 className="page-title">Reconcile</h1>
         <p className="mt-1 text-sm text-slate-600">
           Match purchase register vs GSTR-2B · GSTIN + invoice# + date (±1 day)
         </p>

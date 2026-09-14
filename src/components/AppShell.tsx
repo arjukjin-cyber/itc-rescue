@@ -141,16 +141,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Main */}
         <div className="flex min-w-0 flex-1 flex-col">
           <header
-            className="flex h-14 items-center justify-between px-4 lg:hidden"
+            className="flex h-14 items-center justify-between gap-3 px-4 lg:hidden"
             style={{
               backgroundColor: "var(--color-bg)",
               borderBottom: "1px solid var(--color-border)",
             }}
           >
-            <Logo />
+            <div className="min-w-0 flex-1 truncate">
+              <Logo className="min-w-0" />
+            </div>
             <button
               onClick={() => setOpen(!open)}
-              className="rounded-[var(--radius-md)] p-2"
+              className="shrink-0 rounded-[var(--radius-md)] p-2"
               style={{ color: "var(--color-text)" }}
               aria-label="Menu"
               aria-expanded={open}
@@ -194,7 +196,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             </nav>
           )}
-          <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
+          <main className="min-w-0 flex-1 px-4 pb-6 pt-5 sm:p-6 lg:p-8">{children}</main>
         </div>
       </div>
     </div>

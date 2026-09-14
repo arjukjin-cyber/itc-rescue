@@ -71,8 +71,8 @@ export default function ChasePage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Vendor chase list</h1>
+        <div className="min-w-0">
+          <h1 className="page-title">Vendor chase list</h1>
           <p className="mt-1 text-sm text-slate-600">
             {items.length} invoice{items.length === 1 ? "" : "s"} need vendor action · Copy WhatsApp or open chat
           </p>

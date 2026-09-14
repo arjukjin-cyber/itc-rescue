@@ -31,14 +31,25 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
-          Namaste, {name} 👋
-        </h1>
-        <p className="mt-1.5 text-sm leading-relaxed text-slate-600 sm:text-base">
-          {company ? `${company} · ` : ""}
-          Unblock ITC before your next GSTR-3B filing.
-        </p>
+      <div className="welcome-strip">
+        <div className="min-w-0 flex-1">
+          <h1 className="page-title">
+            Namaste, {name} 👋
+          </h1>
+          <p
+            className="mt-1.5 text-sm leading-relaxed sm:text-base"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            {company ? `${company} · ` : ""}
+            Unblock ITC before your next GSTR-3B filing.
+          </p>
+        </div>
+        <Link
+          href={summary ? "/chase" : "/reconcile"}
+          className="btn-accent inline-flex shrink-0 items-center justify-center px-4 py-2.5 text-sm font-semibold"
+        >
+          {summary ? "Chase vendors →" : "Start reconciling →"}
+        </Link>
       </div>
 
       {summary ? (
