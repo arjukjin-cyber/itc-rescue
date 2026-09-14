@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Inbox, Kanban } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
-import { getChaseItems, updateChaseStatus } from "@/lib/storage";
+import { fetchChaseItems, persistChaseStatus } from "@/lib/api-data";
 import { formatINRPrecise } from "@/lib/reconcile";
 import type { ChaseItem, ChaseStatus } from "@/lib/types";
 
@@ -31,13 +31,19 @@ const COLUMNS: { key: ChaseStatus; label: string; tone: string; emptyHint: strin
 export default function StatusPage() {
   const [items, setItems] = useState<ChaseItem[]>([]);
 
+  async function reload() {
+    const { items: next } = await fetchChaseItems();
+    setItems(next);
+  }
+
   useEffect(() => {
-    const reload = () => setItems(getChaseItems());
     reload();
-    const onFocus = () => reload();
+    const onFocus = () => {
+      void reload();
+    };
     window.addEventListener("focus", onFocus);
     const onVis = () => {
-      if (document.visibilityState === "visible") reload();
+      if (document.visibilityState === "visible") void reload();
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {
@@ -46,8 +52,9 @@ export default function StatusPage() {
     };
   }, []);
 
-  function move(id: string, status: ChaseStatus) {
-    setItems(updateChaseStatus(id, status));
+  async function move(id: string, status: ChaseStatus) {
+    const next = await persistChaseStatus(id, status);
+    setItems(next);
   }
 
   if (!items.length) {
