@@ -126,6 +126,45 @@ html {
 .delay-200 { animation-delay: 0.2s; }
 .delay-300 { animation-delay: 0.3s; }
 
+/* Auth / form errors — risk-token text (not browser default red) */
+.form-error {
+  font-size: var(--text-body);
+  line-height: 1.4;
+  font-weight: 550;
+  color: var(--color-status-risk-fg);
+}
+
+/* Dashboard welcome strip — muted band + room for next CTA */
+.welcome-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-subtle);
+}
+@media (min-width: 640px) {
+  .welcome-strip {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 1.5rem;
+  }
+}
+
+/* App page titles — truncate so mobile shell never crushes them */
+.page-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-page);
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--color-text);
+}
+
 /* Custom scrollbar for tables */
 .table-scroll::-webkit-scrollbar {
   height: 6px;

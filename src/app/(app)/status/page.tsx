@@ -67,7 +67,7 @@ export default function StatusPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">Status board</h1>
+        <h1 className="page-title">Status board</h1>
         <p className="mt-1.5 text-sm text-slate-600">
           Tap to move invoices across Pending / Fixed / Still blocked
         </p>

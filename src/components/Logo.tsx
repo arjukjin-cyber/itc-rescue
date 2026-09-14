@@ -4,7 +4,7 @@ export function Logo({ className = "" }: { className?: string }) {
   return (
     <Link
       href="/"
-      className={`flex items-center gap-2 font-bold ${className}`}
+      className={`flex min-w-0 items-center gap-2 font-bold ${className}`}
       style={{ color: "var(--color-text)" }}
     >
       <span
@@ -16,7 +16,7 @@ export function Logo({ className = "" }: { className?: string }) {
       >
         IR
       </span>
-      <span>
+      <span className="truncate">
         ITC <span style={{ color: "var(--color-accent)" }}>Rescue</span>
       </span>
     </Link>
