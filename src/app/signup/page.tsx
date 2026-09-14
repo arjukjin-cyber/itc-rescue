@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { Logo } from "@/components/Logo";
-import { setLocalUser, saveSettings } from "@/lib/storage";
+import { setLocalUser, saveSettings, resetTrialUsage, clearReconData } from "@/lib/storage";
 import type { UserSession } from "@/lib/types";
 
 type FormState = {
@@ -48,6 +48,8 @@ export default function SignupPage() {
       }
       const user = data.user as UserSession;
       setLocalUser(user);
+      resetTrialUsage();
+      clearReconData();
       saveSettings({
         companyName: form.companyName || user.name,
         gstin: form.gstin,

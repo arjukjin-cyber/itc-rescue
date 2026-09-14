@@ -32,7 +32,18 @@ export default function StatusPage() {
   const [items, setItems] = useState<ChaseItem[]>([]);
 
   useEffect(() => {
-    setItems(getChaseItems());
+    const reload = () => setItems(getChaseItems());
+    reload();
+    const onFocus = () => reload();
+    window.addEventListener("focus", onFocus);
+    const onVis = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   function move(id: string, status: ChaseStatus) {
