@@ -28,23 +28,33 @@ export function Navbar() {
           </Link>
         </div>
         <button
-          className="md:hidden rounded-lg p-2 text-slate-700"
+          className="rounded-lg p-2 text-slate-700 md:hidden"
           onClick={() => setOpen(!open)}
           aria-label="Menu"
+          aria-expanded={open}
         >
           {open ? <X size={22} /> : <Menu size={22} />}
         </button>
       </div>
       {open && (
         <div className="border-t border-slate-100 bg-white px-4 py-4 md:hidden">
-          <div className="flex flex-col gap-3 text-sm font-medium">
-            <a href="#problem" onClick={() => setOpen(false)}>Problem</a>
-            <a href="#how" onClick={() => setOpen(false)}>How it works</a>
-            <a href="#pricing" onClick={() => setOpen(false)}>Pricing</a>
-            <Link href="/login" className="pt-2">Log in</Link>
+          <div className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+            <a href="#problem" onClick={() => setOpen(false)} className="rounded-lg px-3 py-2.5 hover:bg-slate-50">
+              Problem
+            </a>
+            <a href="#how" onClick={() => setOpen(false)} className="rounded-lg px-3 py-2.5 hover:bg-slate-50">
+              How it works
+            </a>
+            <a href="#pricing" onClick={() => setOpen(false)} className="rounded-lg px-3 py-2.5 hover:bg-slate-50">
+              Pricing
+            </a>
+            <Link href="/login" className="rounded-lg px-3 py-2.5 hover:bg-slate-50" onClick={() => setOpen(false)}>
+              Log in
+            </Link>
             <Link
               href="/signup"
-              className="rounded-lg bg-teal-700 px-4 py-2 text-center font-semibold text-white"
+              className="mt-1 rounded-lg bg-teal-700 px-4 py-2.5 text-center font-semibold text-white"
+              onClick={() => setOpen(false)}
             >
               Start free trial
             </Link>

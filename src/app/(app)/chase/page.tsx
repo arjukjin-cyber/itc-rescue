@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Copy, Check, MessageCircle } from "lucide-react";
 import { CategoryBadge } from "@/components/Badge";
+import { EmptyState } from "@/components/EmptyState";
 import { getChaseItems, getResults, getSettings } from "@/lib/storage";
 import { formatINRPrecise } from "@/lib/reconcile";
 import { whatsappEnglish, whatsappHindi, emailSubject, emailBody } from "@/lib/templates";
@@ -36,19 +37,13 @@ export default function ChasePage() {
 
   if (!items.length) {
     return (
-      <div className="mx-auto max-w-3xl rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
-        <MessageCircle className="mx-auto text-teal-700" size={36} />
-        <h1 className="mt-3 text-xl font-bold text-slate-900">No vendors to chase</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Run a reconciliation first. ITC-at-risk and value-mismatch rows appear here.
-        </p>
-        <Link
-          href="/reconcile"
-          className="mt-5 inline-block rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800"
-        >
-          Go to Reconcile
-        </Link>
-      </div>
+      <EmptyState
+        icon={MessageCircle}
+        title="No vendors to chase"
+        description="Run a reconciliation first. ITC-at-risk and value-mismatch rows appear here."
+        actionLabel="Go to Reconcile"
+        actionHref="/reconcile"
+      />
     );
   }
 

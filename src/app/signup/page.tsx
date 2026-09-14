@@ -80,7 +80,7 @@ export default function SignupPage() {
       <div className="flex flex-1 items-center justify-center px-4 py-12">
         <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
           <h1 className="text-2xl font-bold text-slate-900">Start your free trial</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             1 free reconciliation or 50 invoices. No card required.
           </p>
           <form onSubmit={onSubmit} className="mt-8 space-y-4">
@@ -105,7 +105,7 @@ export default function SignupPage() {
               {loading ? "Creating account…" : "Create account"}
             </button>
           </form>
-          <p className="mt-6 text-center text-sm text-slate-500">
+          <p className="mt-6 text-center text-sm text-slate-600">
             Already have an account?{" "}
             <Link href="/login" className="font-semibold text-teal-700 hover:underline">
               Log in

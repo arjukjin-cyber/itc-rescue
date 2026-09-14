@@ -8,6 +8,15 @@
   --accent: #f59e0b;
   --danger: #dc2626;
   --success: #059669;
+
+  /* Type scale (MSME-simple): page H1 → section H2 → body → meta */
+  --text-page: 1.5rem; /* ~text-2xl; sm bump in components */
+  --text-section: 1.875rem; /* ~text-3xl */
+  --text-body: 0.875rem; /* text-sm */
+  --text-meta: 0.8125rem; /* ~13px — readable muted labels */
+  --leading-body: 1.625;
+  --space-section-y: 4rem; /* py-16 rhythm */
+  --space-section-y-lg: 5rem; /* py-20 */
 }
 
 @theme inline {
@@ -30,6 +39,18 @@ body {
 
 html {
   scroll-behavior: smooth;
+}
+
+/* Sticky landing nav (~h-16) — keep section titles visible */
+.landing-section {
+  scroll-margin-top: 5rem;
+}
+
+/* Readable muted metadata in app shell */
+.text-meta {
+  font-size: var(--text-meta);
+  line-height: 1.4;
+  color: #475569; /* slate-600 */
 }
 
 @keyframes fade-up {
