@@ -55,8 +55,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const navLinkClass = (active: boolean) =>
-    `flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-2.5 text-sm font-medium transition ${
-      active ? "" : "hover:bg-[var(--color-bg-subtle)]"
+    `flex items-center gap-3 rounded-full px-3 py-2.5 text-sm transition ${
+      active
+        ? "font-semibold"
+        : "font-medium hover:bg-[var(--color-bg-subtle)]"
     }`;
 
   const navLinkStyle = (active: boolean) =>

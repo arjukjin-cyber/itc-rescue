@@ -325,29 +325,36 @@ export default function LandingPage() {
             ].map((s) => (
               <div
                 key={s.step}
-                className="relative p-6"
+                className="relative flex flex-col p-6 sm:p-7"
                 style={{
                   borderRadius: "var(--radius-lg)",
                   border: "1px solid var(--color-border)",
                   backgroundColor: "var(--color-bg-muted)",
                 }}
               >
-                <div
-                  className="mb-3 text-xs font-bold tracking-widest"
-                  style={{ color: "var(--color-accent)" }}
-                >
-                  {s.step}
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div
+                    className="flex h-11 w-11 items-center justify-center"
+                    style={{
+                      borderRadius: "var(--radius-md)",
+                      backgroundColor: "var(--color-accent-soft)",
+                      color: "var(--color-accent)",
+                      border: "1px solid var(--color-accent-ring)",
+                    }}
+                  >
+                    <s.icon size={20} />
+                  </div>
+                  <div
+                    className="text-xs font-semibold uppercase tracking-widest"
+                    style={{ color: "var(--color-text-muted)" }}
+                  >
+                    Step {s.step}
+                  </div>
                 </div>
-                <div
-                  className="mb-3 flex h-10 w-10 items-center justify-center text-white"
-                  style={{
-                    borderRadius: "var(--radius-md)",
-                    backgroundColor: "var(--color-accent)",
-                  }}
+                <h3
+                  className="text-xl font-bold tracking-tight"
+                  style={{ color: "var(--color-text)" }}
                 >
-                  <s.icon size={20} />
-                </div>
-                <h3 className="text-lg font-semibold" style={{ color: "var(--color-text)" }}>
                   {s.title}
                 </h3>
                 <p
