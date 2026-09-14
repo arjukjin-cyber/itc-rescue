@@ -79,9 +79,13 @@ export default function SignupPage() {
       </div>
       <div className="flex flex-1 items-center justify-center px-4 py-12">
         <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h1 className="text-2xl font-bold text-slate-900">Start your free trial</h1>
+          <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">
+            Waitlist · free trial
+          </p>
+          <h1 className="mt-1 text-2xl font-bold text-slate-900">Join the waitlist &amp; start free</h1>
           <p className="mt-1 text-sm text-slate-600">
-            1 free reconciliation or 50 invoices. No card required.
+            Work email gets you early access. Includes 1 free reconciliation (or 50 invoices) — no card.
+            Full chase &amp; unlimited recon unlock on a paid plan.
           </p>
           <form onSubmit={onSubmit} className="mt-8 space-y-4">
             {fields.map((field) => (
@@ -102,7 +106,7 @@ export default function SignupPage() {
               disabled={loading}
               className="w-full rounded-xl bg-teal-700 py-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-60"
             >
-              {loading ? "Creating account…" : "Create account"}
+              {loading ? "Joining…" : "Join waitlist & start trial"}
             </button>
           </form>
           <p className="mt-6 text-center text-sm text-slate-600">

@@ -10,6 +10,7 @@ import {
   canRunRecon,
   getResults,
   getSummary,
+  isPaywalled,
   saveRecon,
 } from "@/lib/storage";
 import { parseInvoiceFile, fetchSampleAsFile } from "@/lib/parseFile";
@@ -33,6 +34,7 @@ export default function ReconcilePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [paywall, setPaywall] = useState<string | null>(null);
+  const [trialUsed, setTrialUsed] = useState(false);
 
   useEffect(() => {
     const r = getResults();
@@ -40,6 +42,11 @@ export default function ReconcilePage() {
     if (r.length) {
       setResults(r);
       setSummary(s);
+    }
+    setTrialUsed(isPaywalled());
+    if (isPaywalled()) {
+      const gate = canRunRecon();
+      if (!gate.ok) setPaywall(gate.reason || "Upgrade required");
     }
   }, []);
 
@@ -74,6 +81,7 @@ export default function ReconcilePage() {
       setResults(matched);
       setSummary(sum);
       setFilter("itc_at_risk");
+      setTrialUsed(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Reconciliation failed");
     } finally {
@@ -114,6 +122,7 @@ export default function ReconcilePage() {
       setResults(matched);
       setSummary(sum);
       setFilter("itc_at_risk");
+      setTrialUsed(true);
     } catch {
       setError("Failed to load sample files");
     } finally {
@@ -131,17 +140,34 @@ export default function ReconcilePage() {
       </div>
 
       {paywall && (
-        <div className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-xl border-2 border-amber-400 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-2 text-sm text-amber-950">
             <Lock size={18} className="mt-0.5 shrink-0" />
-            <span>{paywall}</span>
+            <div>
+              <p className="font-semibold">Free trial used — upgrade to keep reconciling</p>
+              <p className="mt-0.5">{paywall}</p>
+              <p className="mt-1 text-xs text-amber-900/80">
+                Your chase board stays available. New reconciliations need Starter (₹999/mo) or Growth (₹2,499/mo).
+              </p>
+            </div>
           </div>
           <Link
             href="/settings"
-            className="shrink-0 rounded-lg bg-teal-700 px-4 py-2 text-center text-sm font-semibold text-white hover:bg-teal-800"
+            className="shrink-0 rounded-lg bg-teal-700 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-teal-800"
           >
-            Upgrade plan
+            View plans
           </Link>
+        </div>
+      )}
+
+      {!paywall && trialUsed && summary && (
+        <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-950">
+          <span className="font-semibold">Trial recon used.</span>{" "}
+          Chase vendors below on this result. Next upload needs a paid plan —{" "}
+          <Link href="/settings" className="font-semibold underline">
+            see Starter / Growth
+          </Link>
+          .
         </div>
       )}
 

@@ -48,7 +48,7 @@ export default function LandingPage() {
               </Link>
             </div>
             <p className="mt-3 text-sm text-slate-600">
-              Free trial: 1 reconciliation or 50 invoices · No government API needed
+              Waitlist open · Free trial: 1 reconciliation or 50 invoices · No government API needed
             </p>
           </div>
 
@@ -175,7 +175,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">Simple MSME pricing</h2>
           <p className="mt-4 text-lg leading-relaxed text-slate-700">
-            Soft paywall after free trial. Razorpay checkout coming soon — upgrade in Settings for now.
+            After your free recon, upgrade in Settings to keep going. Paid checkout (Razorpay) ships in the final pre-launch update.
           </p>
         </div>
         <div className="mx-auto mt-10 grid max-w-4xl gap-6 md:grid-cols-2 sm:mt-12">
