@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { COOKIE, createSessionToken } from "@/lib/auth";
+import { hasDatabase, upsertUser } from "@/lib/db";
 import type { UserSession } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -9,24 +10,49 @@ export async function POST(req: NextRequest) {
     const name = String(body.name || email.split("@")[0] || "User");
     const companyName = String(body.companyName || "").trim();
     const gstin = String(body.gstin || "").trim().toUpperCase();
+    const isSignup = Boolean(body.isSignup || body.companyName || body.gstin);
 
     if (!email || !email.includes("@")) {
       return NextResponse.json({ error: "Valid email required" }, { status: 400 });
     }
 
-    // Demo auth: any password accepted
-    const user: UserSession = {
-      email,
-      name,
-      companyName: companyName || undefined,
-      gstin: gstin || undefined,
-      plan: "trial",
-      reconCount: 0,
-      createdAt: new Date().toISOString(),
-    };
+    let user: UserSession;
+
+    if (hasDatabase()) {
+      const dbUser = await upsertUser({
+        email,
+        name,
+        companyName: companyName || undefined,
+        gstin: gstin || undefined,
+        isSignup,
+      });
+      user = {
+        email: dbUser.email,
+        name: dbUser.name,
+        companyName: dbUser.companyName,
+        gstin: dbUser.gstin,
+        plan: dbUser.plan,
+        reconCount: dbUser.reconCount,
+        createdAt: dbUser.createdAt,
+      };
+    } else {
+      // Local/demo fallback when DATABASE_URL is absent
+      user = {
+        email,
+        name,
+        companyName: companyName || undefined,
+        gstin: gstin || undefined,
+        plan: "trial",
+        reconCount: 0,
+        createdAt: new Date().toISOString(),
+      };
+    }
 
     const token = await createSessionToken(user);
-    const res = NextResponse.json({ user });
+    const res = NextResponse.json({
+      user,
+      persistence: hasDatabase() ? "postgres" : "demo",
+    });
     res.cookies.set(COOKIE, token, {
       httpOnly: true,
       sameSite: "lax",
@@ -35,7 +61,8 @@ export async function POST(req: NextRequest) {
       secure: process.env.NODE_ENV === "production",
     });
     return res;
-  } catch {
-    return NextResponse.json({ error: "Login failed" }, { status: 500 });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Login failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
