@@ -126,22 +126,35 @@ export default function ChasePage() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => setExpanded(isOpen ? null : item.id)}
-                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    className="btn-secondary px-3 py-1.5 text-xs"
                   >
                     {isOpen ? "Hide message" : "Show message"}
                   </button>
                   <button
-                    onClick={() => copyText(`${item.id}-wa`, msg)}
-                    className="inline-flex items-center gap-1 rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-800"
+                    onClick={() =>
+                      result &&
+                      copyText(`${item.id}-en`, whatsappEnglish(result, company))
+                    }
+                    className="btn-secondary inline-flex items-center gap-1 px-3 py-1.5 text-xs"
                   >
-                    {copied === `${item.id}-wa` ? <Check size={14} /> : <Copy size={14} />}
-                    Copy WhatsApp
+                    {copied === `${item.id}-en` ? <Check size={14} /> : <Copy size={14} />}
+                    Copy EN
+                  </button>
+                  <button
+                    onClick={() =>
+                      result &&
+                      copyText(`${item.id}-hi`, whatsappHindi(result, company))
+                    }
+                    className="btn-secondary inline-flex items-center gap-1 px-3 py-1.5 text-xs"
+                  >
+                    {copied === `${item.id}-hi` ? <Check size={14} /> : <Copy size={14} />}
+                    Copy HI
                   </button>
                   <a
                     href={waLink(msg)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                    className="btn-accent inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold"
                   >
                     <MessageCircle size={14} /> Open WhatsApp
                   </a>
