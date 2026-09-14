@@ -7,10 +7,10 @@ import {
   GitCompareArrows,
   MessageSquare,
   Kanban,
-  ArrowRight,
   FileSpreadsheet,
 } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
+import { EmptyState } from "@/components/EmptyState";
 import { getLocalUser, getSummary, getChaseItems, getSettings } from "@/lib/storage";
 import { formatINR } from "@/lib/reconcile";
 import type { ReconSummary } from "@/lib/types";
@@ -35,7 +35,7 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
           Namaste, {name} 👋
         </h1>
-        <p className="mt-1 text-slate-600">
+        <p className="mt-1.5 text-sm leading-relaxed text-slate-600 sm:text-base">
           {company ? `${company} · ` : ""}
           Unblock ITC before your next GSTR-3B filing.
         </p>
@@ -54,19 +54,13 @@ export default function DashboardPage() {
           <StatCard label="Unclaimed (2B only)" value={summary.unclaimed} tone="info" />
         </div>
       ) : (
-        <div className="rounded-2xl border border-dashed border-teal-300 bg-teal-50/50 p-8 text-center">
-          <FileSpreadsheet className="mx-auto text-teal-700" size={36} />
-          <h2 className="mt-3 text-lg font-semibold text-slate-900">No reconciliation yet</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Upload purchase register + GSTR-2B, or load our sample files for a 30-second demo.
-          </p>
-          <Link
-            href="/reconcile"
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800"
-          >
-            Start reconciling <ArrowRight size={16} />
-          </Link>
-        </div>
+        <EmptyState
+          icon={FileSpreadsheet}
+          title="No reconciliation yet"
+          description="Upload purchase register + GSTR-2B, or load our sample files for a 30-second demo."
+          actionLabel="Start reconciling"
+          actionHref="/reconcile"
+        />
       )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -105,29 +99,34 @@ export default function DashboardPage() {
             <div className="mt-3 font-semibold text-slate-900 group-hover:text-teal-800">
               {card.title}
             </div>
-            <div className="mt-1 text-xs text-slate-500">{card.desc}</div>
+            <div className="mt-1 text-meta">{card.desc}</div>
           </Link>
         ))}
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="font-semibold text-slate-900">Sample files (offline demo)</h3>
-        <p className="mt-1 text-sm text-slate-600">
-          Download these, then upload on the Reconcile page — or use &quot;Load sample files&quot; there.
-        </p>
-        <div className="mt-3 flex flex-wrap gap-3">
+      {/* Compact sample-files row */}
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="font-semibold text-slate-900">Sample files (offline demo)</h3>
+          <p className="mt-0.5 text-sm text-slate-600">
+            Download, then upload on Reconcile — or use &quot;Load sample files&quot; there.
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
           <a
             href="/samples/purchase-register.csv"
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50"
             download
           >
+            <FileSpreadsheet size={14} />
             purchase-register.csv
           </a>
           <a
             href="/samples/gstr-2b.csv"
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50"
             download
           >
+            <FileSpreadsheet size={14} />
             gstr-2b.csv
           </a>
         </div>

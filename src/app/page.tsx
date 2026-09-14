@@ -18,9 +18,9 @@ export default function LandingPage() {
 
       {/* Hero */}
       <section className="relative overflow-hidden border-b border-slate-200 bg-gradient-to-b from-white via-teal-50/40 to-slate-50">
-        <div className="mx-auto max-w-6xl px-4 pb-20 pt-16 sm:px-6 sm:pt-24">
+        <div className="mx-auto max-w-6xl px-4 pb-14 pt-12 sm:px-6 sm:pb-16 sm:pt-20">
           <div className="mx-auto max-w-3xl text-center animate-fade-up">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
               <AlertTriangle size={14} />
               April 2026 · GSTR-2B hard block is live
             </div>
@@ -28,12 +28,12 @@ export default function LandingPage() {
               Stop losing ITC because vendors{" "}
               <span className="text-teal-700">didn&apos;t file GSTR-1</span>
             </h1>
-            <p className="mt-6 text-lg text-slate-600 sm:text-xl">
+            <p className="mt-5 text-lg leading-relaxed text-slate-700 sm:text-xl sm:leading-relaxed">
               Upload your purchase register and GSTR-2B. ITC Rescue finds every mismatch,
               drafts WhatsApp chases in English &amp; Hindi, and tracks who fixed it —
               built for Indian MSMEs (₹50L–₹5cr).
             </p>
-            <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
                 href="/signup"
                 className="inline-flex w-full items-center justify-center rounded-xl bg-teal-700 px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-teal-700/25 hover:bg-teal-800 sm:w-auto"
@@ -47,19 +47,19 @@ export default function LandingPage() {
                 Log in · try demo samples
               </Link>
             </div>
-            <p className="mt-4 text-sm text-slate-500">
+            <p className="mt-3 text-sm text-slate-600">
               Free trial: 1 reconciliation or 50 invoices · No government API needed
             </p>
           </div>
 
-          {/* Preview card */}
-          <div className="mx-auto mt-16 max-w-4xl animate-fade-up delay-200">
+          {/* Preview card — pulled up so KPI strip peeks above the fold */}
+          <div className="mx-auto mt-10 max-w-4xl animate-fade-up delay-200 sm:mt-12">
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/60">
               <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
                 <div className="h-2.5 w-2.5 rounded-full bg-red-400" />
                 <div className="h-2.5 w-2.5 rounded-full bg-amber-400" />
                 <div className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                <span className="ml-2 text-xs font-medium text-slate-500">
+                <span className="ml-2 text-meta">
                   Reconciliation results · March 2026
                 </span>
               </div>
@@ -72,7 +72,7 @@ export default function LandingPage() {
                 ].map((s) => (
                   <div key={s.label} className="rounded-xl border border-slate-100 bg-slate-50 p-4 text-center">
                     <div className={`text-3xl font-bold ${s.tone}`}>{s.value}</div>
-                    <div className="mt-1 text-xs font-medium text-slate-500">{s.label}</div>
+                    <div className="mt-1 text-meta font-medium">{s.label}</div>
                   </div>
                 ))}
               </div>
@@ -85,17 +85,17 @@ export default function LandingPage() {
       </section>
 
       {/* Problem */}
-      <section id="problem" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+      <section id="problem" className="landing-section mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">
             The unpaid work every GST filer knows
           </h2>
-          <p className="mt-4 text-lg text-slate-600">
+          <p className="mt-4 text-lg leading-relaxed text-slate-700">
             From April 2026, claimed ITC that exceeds GSTR-2B can hard-block your GSTR-3B.
             Your books are fine — the vendor never uploaded the invoice in GSTR-1.
           </p>
         </div>
-        <div className="mt-12 grid gap-6 md:grid-cols-3">
+        <div className="mt-10 grid gap-5 md:grid-cols-3 sm:mt-12 sm:gap-6">
           {[
             {
               icon: AlertTriangle,
@@ -128,15 +128,15 @@ export default function LandingPage() {
       </section>
 
       {/* How it works */}
-      <section id="how" className="border-y border-slate-200 bg-white py-20">
+      <section id="how" className="landing-section border-y border-slate-200 bg-white py-16 sm:py-20">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">How it works</h2>
-            <p className="mt-4 text-lg text-slate-600">
+            <p className="mt-4 text-lg leading-relaxed text-slate-700">
               Three steps. No GST portal login. Works offline with your Excel exports.
             </p>
           </div>
-          <div className="mt-14 grid gap-8 md:grid-cols-3">
+          <div className="mt-10 grid gap-6 md:grid-cols-3 sm:mt-12 sm:gap-8">
             {[
               {
                 step: "01",
@@ -171,19 +171,19 @@ export default function LandingPage() {
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+      <section id="pricing" className="landing-section mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-16">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">Simple MSME pricing</h2>
-          <p className="mt-4 text-lg text-slate-600">
+          <p className="mt-4 text-lg leading-relaxed text-slate-700">
             Soft paywall after free trial. Razorpay checkout coming soon — upgrade in Settings for now.
           </p>
         </div>
-        <div className="mx-auto mt-12 grid max-w-4xl gap-6 md:grid-cols-2">
+        <div className="mx-auto mt-10 grid max-w-4xl gap-6 md:grid-cols-2 sm:mt-12">
           <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-            <div className="text-sm font-semibold uppercase tracking-wide text-slate-500">Starter</div>
+            <div className="text-sm font-semibold uppercase tracking-wide text-slate-600">Starter</div>
             <div className="mt-2 flex items-baseline gap-1">
               <span className="text-4xl font-extrabold text-slate-900">₹999</span>
-              <span className="text-slate-500">/mo</span>
+              <span className="text-slate-600">/mo</span>
             </div>
             <ul className="mt-6 space-y-3 text-sm text-slate-600">
               {[
@@ -213,7 +213,7 @@ export default function LandingPage() {
             <div className="text-sm font-semibold uppercase tracking-wide text-teal-700">Growth</div>
             <div className="mt-2 flex items-baseline gap-1">
               <span className="text-4xl font-extrabold text-slate-900">₹2,499</span>
-              <span className="text-slate-500">/mo</span>
+              <span className="text-slate-600">/mo</span>
             </div>
             <ul className="mt-6 space-y-3 text-sm text-slate-600">
               {[
@@ -240,8 +240,8 @@ export default function LandingPage() {
       </section>
 
       {/* Trust */}
-      <section className="border-t border-slate-200 bg-white py-14">
-        <div className="mx-auto flex max-w-6xl flex-col items-center gap-8 px-4 sm:flex-row sm:justify-center sm:gap-16 sm:px-6">
+      <section className="border-t border-slate-200 bg-white py-12">
+        <div className="mx-auto flex max-w-6xl flex-col items-center gap-6 px-4 sm:flex-row sm:justify-center sm:gap-16 sm:px-6">
           <div className="flex items-center gap-2 text-sm text-slate-600">
             <Shield size={18} className="text-teal-700" /> Your files stay in-browser for MVP
           </div>
@@ -251,16 +251,16 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="bg-teal-800 py-16">
+      {/* CTA — tighter gap after pricing */}
+      <section className="bg-teal-800 py-14">
         <div className="mx-auto max-w-3xl px-4 text-center sm:px-6">
           <h2 className="text-3xl font-bold text-white">Rescue your ITC before the next 3B due date</h2>
-          <p className="mt-3 text-teal-100">
+          <p className="mt-3 text-base leading-relaxed text-teal-100">
             Sign up in 30 seconds. Run a recon with our sample files — no GSTN credentials required.
           </p>
           <Link
             href="/signup"
-            className="mt-8 inline-flex rounded-xl bg-white px-8 py-3.5 text-base font-semibold text-teal-800 shadow hover:bg-teal-50"
+            className="mt-7 inline-flex rounded-xl bg-white px-8 py-3.5 text-base font-semibold text-teal-800 shadow hover:bg-teal-50"
           >
             Get started free
           </Link>
@@ -268,7 +268,7 @@ export default function LandingPage() {
       </section>
 
       <footer className="border-t border-slate-200 bg-slate-50 py-8">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 text-sm text-slate-500 sm:flex-row sm:px-6">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 text-sm text-slate-600 sm:flex-row sm:px-6">
           <div>© {new Date().getFullYear()} ITC Rescue · Built for Indian MSMEs</div>
           <div className="flex gap-4">
             <Link href="/login" className="hover:text-teal-700">Log in</Link>

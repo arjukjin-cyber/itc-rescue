@@ -1,16 +1,31 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Kanban } from "lucide-react";
+import { Inbox, Kanban } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import { getChaseItems, updateChaseStatus } from "@/lib/storage";
 import { formatINRPrecise } from "@/lib/reconcile";
 import type { ChaseItem, ChaseStatus } from "@/lib/types";
 
-const COLUMNS: { key: ChaseStatus; label: string; tone: string }[] = [
-  { key: "pending", label: "Pending", tone: "border-amber-200 bg-amber-50/50" },
-  { key: "fixed", label: "Fixed", tone: "border-emerald-200 bg-emerald-50/50" },
-  { key: "still_blocked", label: "Still blocked", tone: "border-red-200 bg-red-50/50" },
+const COLUMNS: { key: ChaseStatus; label: string; tone: string; emptyHint: string }[] = [
+  {
+    key: "pending",
+    label: "Pending",
+    tone: "border-amber-200 bg-amber-50/50",
+    emptyHint: "Move an invoice here while you wait on the vendor",
+  },
+  {
+    key: "fixed",
+    label: "Fixed",
+    tone: "border-emerald-200 bg-emerald-50/50",
+    emptyHint: "Move here when the vendor files GSTR-1",
+  },
+  {
+    key: "still_blocked",
+    label: "Still blocked",
+    tone: "border-red-200 bg-red-50/50",
+    emptyHint: "Park stuck invoices here for follow-up",
+  },
 ];
 
 export default function StatusPage() {
@@ -26,28 +41,22 @@ export default function StatusPage() {
 
   if (!items.length) {
     return (
-      <div className="mx-auto max-w-3xl rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
-        <Kanban className="mx-auto text-teal-700" size={36} />
-        <h1 className="mt-3 text-xl font-bold text-slate-900">Status board is empty</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          After a reconciliation, at-risk invoices show up here so you can track vendor fixes.
-        </p>
-        <Link
-          href="/reconcile"
-          className="mt-5 inline-block rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800"
-        >
-          Go to Reconcile
-        </Link>
-      </div>
+      <EmptyState
+        icon={Kanban}
+        title="Status board is empty"
+        description="After a reconciliation, at-risk invoices show up here so you can track vendor fixes."
+        actionLabel="Go to Reconcile"
+        actionHref="/reconcile"
+      />
     );
   }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Status board</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Drag mentally — tap to move invoices across Pending / Fixed / Still blocked
+        <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">Status board</h1>
+        <p className="mt-1.5 text-sm text-slate-600">
+          Tap to move invoices across Pending / Fixed / Still blocked
         </p>
       </div>
 
@@ -57,7 +66,7 @@ export default function StatusPage() {
           return (
             <div
               key={col.key}
-              className={`rounded-xl border p-3 ${col.tone}`}
+              className={`flex min-h-[16rem] flex-col rounded-xl border p-3 ${col.tone}`}
             >
               <div className="mb-3 flex items-center justify-between px-1">
                 <h2 className="text-sm font-bold text-slate-800">{col.label}</h2>
@@ -65,14 +74,14 @@ export default function StatusPage() {
                   {colItems.length}
                 </span>
               </div>
-              <div className="space-y-2">
+              <div className="flex flex-1 flex-col space-y-2">
                 {colItems.map((item) => (
                   <div
                     key={item.id}
                     className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"
                   >
                     <div className="font-semibold text-slate-900">{item.vendorName}</div>
-                    <div className="mt-0.5 text-xs text-slate-500">
+                    <div className="mt-0.5 text-meta">
                       {item.invoiceNumber} · {formatINRPrecise(item.amount)}
                     </div>
                     <div className="mt-3 flex flex-wrap gap-1">
@@ -89,8 +98,14 @@ export default function StatusPage() {
                   </div>
                 ))}
                 {!colItems.length && (
-                  <div className="rounded-lg border border-dashed border-slate-200 bg-white/60 px-3 py-6 text-center text-xs text-slate-400">
-                    No items
+                  <div className="flex min-h-[10rem] flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white/80 px-4 py-6 text-center">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+                      <Inbox size={18} aria-hidden />
+                    </div>
+                    <p className="mt-2.5 text-sm font-semibold text-slate-700">No items</p>
+                    <p className="mt-1 max-w-[13rem] text-meta leading-snug text-slate-600">
+                      {col.emptyHint}
+                    </p>
                   </div>
                 )}
               </div>

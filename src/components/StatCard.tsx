@@ -18,9 +18,11 @@ export function StatCard({
   };
   return (
     <div className={`rounded-xl border p-4 shadow-sm ${tones[tone]}`}>
-      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
-      {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
+      <div className="text-meta font-medium uppercase tracking-wide text-slate-600">
+        {label}
+      </div>
+      <div className="mt-1.5 text-2xl font-bold tabular-nums text-slate-900">{value}</div>
+      {sub && <div className="mt-1 text-meta text-slate-600">{sub}</div>}
     </div>
   );
 }
