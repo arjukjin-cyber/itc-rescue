@@ -17,6 +17,21 @@ const KEYS = {
   trial: "itc_trial",
 } as const;
 
+function lsGet(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(key);
+}
+
+function lsSet(key: string, value: string) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(key, value);
+}
+
+function lsRemove(key: string) {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(key);
+}
+
 function safeParse<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
   try {
@@ -27,21 +42,20 @@ function safeParse<T>(raw: string | null, fallback: T): T {
 }
 
 export function getLocalUser(): UserSession | null {
-  if (typeof window === "undefined") return null;
-  return safeParse(localStorage.getItem(KEYS.session), null);
+  return safeParse(lsGet(KEYS.session), null);
 }
 
 export function setLocalUser(user: UserSession) {
-  localStorage.setItem(KEYS.session, JSON.stringify(user));
+  lsSet(KEYS.session, JSON.stringify(user));
 }
 
 export function clearLocalUser() {
-  localStorage.removeItem(KEYS.session);
+  lsRemove(KEYS.session);
 }
 
 export function saveRecon(results: MatchResult[], summary: ReconSummary) {
-  localStorage.setItem(KEYS.results, JSON.stringify(results));
-  localStorage.setItem(KEYS.summary, JSON.stringify(summary));
+  lsSet(KEYS.results, JSON.stringify(results));
+  lsSet(KEYS.summary, JSON.stringify(summary));
 
   // Seed chase list from at-risk + mismatch
   const existing = getChaseItems();
@@ -59,25 +73,25 @@ export function saveRecon(results: MatchResult[], summary: ReconSummary) {
       status: statusMap.get(r.id) || ("pending" as const),
       lastUpdated: new Date().toISOString(),
     }));
-  localStorage.setItem(KEYS.chase, JSON.stringify(chase));
+  lsSet(KEYS.chase, JSON.stringify(chase));
 
   // Increment trial usage
   const trial = getTrialUsage();
   trial.reconCount += 1;
   trial.invoiceCount += results.length;
-  localStorage.setItem(KEYS.trial, JSON.stringify(trial));
+  lsSet(KEYS.trial, JSON.stringify(trial));
 }
 
 export function getResults(): MatchResult[] {
-  return safeParse(localStorage.getItem(KEYS.results), []);
+  return safeParse(lsGet(KEYS.results), []);
 }
 
 export function getSummary(): ReconSummary | null {
-  return safeParse(localStorage.getItem(KEYS.summary), null);
+  return safeParse(lsGet(KEYS.summary), null);
 }
 
 export function getChaseItems(): ChaseItem[] {
-  return safeParse(localStorage.getItem(KEYS.chase), []);
+  return safeParse(lsGet(KEYS.chase), []);
 }
 
 export function updateChaseStatus(
@@ -87,13 +101,13 @@ export function updateChaseStatus(
   const items = getChaseItems().map((c) =>
     c.id === id ? { ...c, status, lastUpdated: new Date().toISOString() } : c
   );
-  localStorage.setItem(KEYS.chase, JSON.stringify(items));
+  lsSet(KEYS.chase, JSON.stringify(items));
   return items;
 }
 
 export function getSettings(): CompanySettings {
   const user = getLocalUser();
-  return safeParse(localStorage.getItem(KEYS.settings), {
+  return safeParse(lsGet(KEYS.settings), {
     companyName: user?.companyName || user?.name || "My Company",
     gstin: user?.gstin || "",
     email: user?.email || "",
@@ -103,7 +117,7 @@ export function getSettings(): CompanySettings {
 }
 
 export function saveSettings(s: CompanySettings) {
-  localStorage.setItem(KEYS.settings, JSON.stringify(s));
+  lsSet(KEYS.settings, JSON.stringify(s));
   const user = getLocalUser();
   if (user) {
     setLocalUser({
@@ -119,7 +133,7 @@ export function getTrialUsage(): {
   reconCount: number;
   invoiceCount: number;
 } {
-  return safeParse(localStorage.getItem(KEYS.trial), {
+  return safeParse(lsGet(KEYS.trial), {
     reconCount: 0,
     invoiceCount: 0,
   });
@@ -127,7 +141,7 @@ export function getTrialUsage(): {
 
 /** Fresh account / signup — trial starts at 0/1 */
 export function resetTrialUsage() {
-  localStorage.setItem(
+  lsSet(
     KEYS.trial,
     JSON.stringify({ reconCount: 0, invoiceCount: 0 })
   );
@@ -135,9 +149,9 @@ export function resetTrialUsage() {
 
 /** Clear recon + chase so a new signup doesn't inherit prior demo state */
 export function clearReconData() {
-  localStorage.removeItem(KEYS.results);
-  localStorage.removeItem(KEYS.summary);
-  localStorage.removeItem(KEYS.chase);
+  lsRemove(KEYS.results);
+  lsRemove(KEYS.summary);
+  lsRemove(KEYS.chase);
 }
 
 /** Invoices that still need vendor action (shared by chase + status) */

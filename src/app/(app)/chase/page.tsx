@@ -17,9 +17,12 @@ export default function ChasePage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [lang, setLang] = useState<"en" | "hi">("en");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [allFixed, setAllFixed] = useState(false);
 
   function reload() {
-    setItems(getOpenChaseItems());
+    const open = getOpenChaseItems();
+    setItems(open);
+    setAllFixed(open.length === 0 && getChaseItems().some((c) => c.status === "fixed"));
     const map = new Map(getResults().map((r) => [r.id, r]));
     setResultsMap(map);
     setCompany(getSettings().companyName || "My Company");
@@ -50,7 +53,6 @@ export default function ChasePage() {
   }
 
   if (!items.length) {
-    const allFixed = getChaseItems().some((c) => c.status === "fixed");
     return (
       <EmptyState
         icon={MessageCircle}
