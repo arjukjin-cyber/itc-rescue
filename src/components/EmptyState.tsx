@@ -11,6 +11,7 @@ export function EmptyState({
   description,
   actionLabel,
   actionHref,
+  onAction,
   className = "",
 }: {
   icon: LucideIcon;
@@ -18,8 +19,11 @@ export function EmptyState({
   description: string;
   actionLabel?: string;
   actionHref?: string;
+  onAction?: () => void;
   className?: string;
 }) {
+  const showAction = Boolean(actionLabel && (actionHref || onAction));
+
   return (
     <div
       className={`mx-auto w-full max-w-md px-6 py-10 text-center sm:px-8 sm:py-12 ${className}`}
@@ -52,13 +56,22 @@ export function EmptyState({
       >
         {description}
       </p>
-      {actionLabel && actionHref && (
+      {showAction && actionHref && !onAction && (
         <Link
           href={actionHref}
           className="btn-accent mt-6 inline-flex items-center justify-center px-5 py-2.5 text-sm font-semibold"
         >
           {actionLabel}
         </Link>
+      )}
+      {showAction && onAction && (
+        <button
+          type="button"
+          onClick={onAction}
+          className="btn-accent mt-6 inline-flex items-center justify-center px-5 py-2.5 text-sm font-semibold"
+        >
+          {actionLabel}
+        </button>
       )}
     </div>
   );
