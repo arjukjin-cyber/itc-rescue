@@ -67,7 +67,7 @@ export default function SignupPage() {
   const fields: { key: keyof FormState; label: string; type: string; required: boolean }[] = [
     { key: "name", label: "Your name", type: "text", required: true },
     { key: "email", label: "Work email", type: "email", required: true },
-    { key: "password", label: "Password (anything for demo)", type: "password", required: true },
+    { key: "password", label: "Password (min 6 characters)", type: "password", required: true },
     { key: "companyName", label: "Company name", type: "text", required: false },
     { key: "gstin", label: "Company GSTIN (optional)", type: "text", required: false },
   ];

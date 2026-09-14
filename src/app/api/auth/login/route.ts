@@ -1,42 +1,60 @@
 import { NextRequest, NextResponse } from "next/server";
 import { COOKIE, createSessionToken } from "@/lib/auth";
-import { hasDatabase, upsertUser } from "@/lib/db";
+import { authenticateUser, hasDatabase, registerUser } from "@/lib/db";
 import type { UserSession } from "@/lib/types";
+
+function toSession(u: {
+  email: string;
+  name: string;
+  companyName?: string;
+  gstin?: string;
+  plan: UserSession["plan"];
+  reconCount: number;
+  createdAt: string;
+}): UserSession {
+  return {
+    email: u.email,
+    name: u.name,
+    companyName: u.companyName,
+    gstin: u.gstin,
+    plan: u.plan,
+    reconCount: u.reconCount,
+    createdAt: u.createdAt,
+  };
+}
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
     const name = String(body.name || email.split("@")[0] || "User");
     const companyName = String(body.companyName || "").trim();
     const gstin = String(body.gstin || "").trim().toUpperCase();
-    const isSignup = Boolean(body.isSignup || body.companyName || body.gstin);
+    const isSignup = Boolean(body.isSignup);
 
     if (!email || !email.includes("@")) {
       return NextResponse.json({ error: "Valid email required" }, { status: 400 });
+    }
+    if (!password) {
+      return NextResponse.json({ error: "Password required" }, { status: 400 });
     }
 
     let user: UserSession;
 
     if (hasDatabase()) {
-      const dbUser = await upsertUser({
-        email,
-        name,
-        companyName: companyName || undefined,
-        gstin: gstin || undefined,
-        isSignup,
-      });
-      user = {
-        email: dbUser.email,
-        name: dbUser.name,
-        companyName: dbUser.companyName,
-        gstin: dbUser.gstin,
-        plan: dbUser.plan,
-        reconCount: dbUser.reconCount,
-        createdAt: dbUser.createdAt,
-      };
+      const dbUser = isSignup
+        ? await registerUser({
+            email,
+            name,
+            password,
+            companyName: companyName || undefined,
+            gstin: gstin || undefined,
+          })
+        : await authenticateUser({ email, password });
+      user = toSession(dbUser);
     } else {
-      // Local/demo fallback when DATABASE_URL is absent
+      // Local-only fallback without DATABASE_URL
       user = {
         email,
         name,
@@ -63,6 +81,7 @@ export async function POST(req: NextRequest) {
     return res;
   } catch (e) {
     const message = e instanceof Error ? e.message : "Login failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status = message.includes("Invalid") || message.includes("exists") ? 401 : 500;
+    return NextResponse.json({ error: message }, { status: status === 401 && message.includes("exists") ? 409 : status });
   }
 }
