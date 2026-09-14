@@ -140,20 +140,39 @@ export default function ReconcilePage() {
       </div>
 
       {paywall && (
-        <div className="flex flex-col gap-3 rounded-xl border-2 border-amber-400 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-2 text-sm text-amber-950">
-            <Lock size={18} className="mt-0.5 shrink-0" />
+        <div
+          className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
+          style={{
+            borderRadius: "var(--radius-lg)",
+            border: "1.5px solid var(--color-accent-ring)",
+            backgroundColor: "var(--color-accent-soft)",
+          }}
+        >
+          <div
+            className="flex items-start gap-2 text-sm"
+            style={{ color: "var(--color-text)" }}
+          >
+            <Lock
+              size={18}
+              className="mt-0.5 shrink-0"
+              style={{ color: "var(--color-accent)" }}
+            />
             <div>
-              <p className="font-semibold">Free trial used — upgrade to keep reconciling</p>
-              <p className="mt-0.5">{paywall}</p>
-              <p className="mt-1 text-xs text-amber-900/80">
-                Your chase board stays available. New reconciliations need Starter (₹999/mo) or Growth (₹2,499/mo).
+              <p className="font-semibold" style={{ color: "var(--color-accent)" }}>
+                Free trial used — upgrade to keep reconciling
+              </p>
+              <p className="mt-0.5" style={{ color: "var(--color-text-secondary)" }}>
+                {paywall}
+              </p>
+              <p className="mt-1 text-xs" style={{ color: "var(--color-text-muted)" }}>
+                Your chase board stays available. New reconciliations need Starter (₹999/mo) or Growth
+                (₹2,499/mo).
               </p>
             </div>
           </div>
           <Link
             href="/settings"
-            className="shrink-0 rounded-lg bg-teal-700 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-teal-800"
+            className="btn-accent shrink-0 px-4 py-2.5 text-center text-sm font-semibold"
           >
             View plans
           </Link>
@@ -161,10 +180,26 @@ export default function ReconcilePage() {
       )}
 
       {!paywall && trialUsed && summary && (
-        <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-950">
-          <span className="font-semibold">Trial recon used.</span>{" "}
-          Chase vendors below on this result. Next upload needs a paid plan —{" "}
-          <Link href="/settings" className="font-semibold underline">
+        <div
+          className="px-4 py-3 text-sm"
+          style={{
+            borderRadius: "var(--radius-lg)",
+            border: "1px solid var(--color-accent-ring)",
+            backgroundColor: "var(--color-accent-soft)",
+            color: "var(--color-text)",
+          }}
+        >
+          <span className="font-semibold" style={{ color: "var(--color-accent)" }}>
+            Trial recon used.
+          </span>{" "}
+          <span style={{ color: "var(--color-text-secondary)" }}>
+            Chase vendors below on this result. Next upload needs a paid plan —{" "}
+          </span>
+          <Link
+            href="/settings"
+            className="font-semibold underline"
+            style={{ color: "var(--color-accent)" }}
+          >
             see Starter / Growth
           </Link>
           .
@@ -244,51 +279,98 @@ export default function ReconcilePage() {
             ))}
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div
+            className="overflow-hidden shadow-sm"
+            style={{
+              borderRadius: "var(--radius-lg)",
+              border: "1px solid var(--color-border)",
+              backgroundColor: "var(--color-bg)",
+            }}
+          >
             <div className="table-scroll overflow-x-auto">
               <table className="min-w-full text-left text-sm">
-                <thead className="border-b border-slate-100 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <thead
+                  className="sticky top-0 text-xs uppercase tracking-wide"
+                  style={{
+                    borderBottom: "1px solid var(--color-border)",
+                    backgroundColor: "var(--color-bg-muted)",
+                    color: "var(--color-text-muted)",
+                  }}
+                >
                   <tr>
-                    <th className="px-4 py-3 font-semibold">Status</th>
-                    <th className="px-4 py-3 font-semibold">Vendor</th>
-                    <th className="px-4 py-3 font-semibold">GSTIN</th>
-                    <th className="px-4 py-3 font-semibold">Invoice</th>
-                    <th className="px-4 py-3 font-semibold">Date</th>
-                    <th className="px-4 py-3 font-semibold text-right">Books tax</th>
-                    <th className="px-4 py-3 font-semibold text-right">2B tax</th>
-                    <th className="px-4 py-3 font-semibold">Notes</th>
+                    <th className="px-4 py-3.5 font-semibold">Status</th>
+                    <th className="px-4 py-3.5 font-semibold">Vendor</th>
+                    <th className="px-4 py-3.5 font-semibold">GSTIN</th>
+                    <th className="px-4 py-3.5 font-semibold">Invoice</th>
+                    <th className="px-4 py-3.5 font-semibold">Date</th>
+                    <th className="px-4 py-3.5 font-semibold text-right">Books tax</th>
+                    <th className="px-4 py-3.5 font-semibold text-right">2B tax</th>
+                    <th className="px-4 py-3.5 font-semibold">Notes</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody style={{ borderColor: "var(--color-border)" }} className="divide-y divide-slate-100">
                   {filtered.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-50/80">
-                      <td className="whitespace-nowrap px-4 py-3">
+                    <tr
+                      key={r.id}
+                      className="hover:bg-[var(--color-bg-muted)]"
+                    >
+                      <td className="whitespace-nowrap px-4 py-3.5">
                         <CategoryBadge category={r.category} />
                       </td>
-                      <td className="max-w-[160px] truncate px-4 py-3 font-medium text-slate-900">
+                      <td
+                        className="max-w-[160px] truncate px-4 py-3.5 font-medium"
+                        style={{ color: "var(--color-text)" }}
+                      >
                         {r.vendorName}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-600">
+                      <td
+                        className="whitespace-nowrap px-4 py-3.5 font-mono"
+                        style={{
+                          fontSize: "0.8125rem",
+                          lineHeight: "1.125rem",
+                          color: "var(--color-text-secondary)",
+                          fontFamily: "var(--font-mono), ui-monospace, monospace",
+                        }}
+                      >
                         {r.gstin}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3">{r.invoiceNumber}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                      <td
+                        className="whitespace-nowrap px-4 py-3.5 font-mono"
+                        style={{
+                          fontSize: "0.8125rem",
+                          color: "var(--color-text)",
+                          fontFamily: "var(--font-mono), ui-monospace, monospace",
+                        }}
+                      >
+                        {r.invoiceNumber}
+                      </td>
+                      <td
+                        className="whitespace-nowrap px-4 py-3.5"
+                        style={{ color: "var(--color-text-secondary)" }}
+                      >
                         {r.invoiceDate}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+                      <td className="whitespace-nowrap px-4 py-3.5 text-right tabular-nums">
                         {r.booksTax ? formatINRPrecise(r.booksTax) : "—"}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+                      <td className="whitespace-nowrap px-4 py-3.5 text-right tabular-nums">
                         {r.gstr2bTax ? formatINRPrecise(r.gstr2bTax) : "—"}
                       </td>
-                      <td className="max-w-[200px] truncate px-4 py-3 text-xs text-slate-500">
+                      <td
+                        className="max-w-[200px] truncate px-4 py-3.5 text-xs"
+                        style={{ color: "var(--color-text-muted)" }}
+                      >
                         {r.notes || "—"}
                       </td>
                     </tr>
                   ))}
                   {!filtered.length && (
                     <tr>
-                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                      <td
+                        colSpan={8}
+                        className="px-4 py-8 text-center"
+                        style={{ color: "var(--color-text-muted)" }}
+                      >
                         No rows in this filter
                       </td>
                     </tr>

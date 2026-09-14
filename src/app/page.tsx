@@ -105,9 +105,23 @@ export default function LandingPage() {
                 Log in · try demo samples
               </Link>
             </div>
-            <p className="mt-3 text-sm" style={{ color: "var(--color-text-muted)" }}>
-              Waitlist open · Free trial: 1 reconciliation or 50 invoices · No government API needed
-            </p>
+            <div
+              className="mt-5 inline-flex max-w-xl flex-col items-center gap-1 px-4 py-2.5 text-sm sm:flex-row sm:gap-2"
+              style={{
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--color-accent-ring)",
+                backgroundColor: "var(--color-accent-soft)",
+                color: "var(--color-accent)",
+              }}
+            >
+              <span className="font-semibold">Waitlist open</span>
+              <span className="hidden sm:inline" style={{ color: "var(--color-text-muted)" }}>
+                ·
+              </span>
+              <span style={{ color: "var(--color-text-secondary)" }}>
+                Free trial: 1 reconciliation or 50 invoices · No government API needed
+              </span>
+            </div>
           </div>
 
           {/* Preview card — KPI strip uses status token map */}
@@ -374,7 +388,7 @@ export default function LandingPage() {
             className="p-8 shadow-sm"
             style={{
               borderRadius: "var(--radius-lg)",
-              border: "1px solid var(--color-border)",
+              border: "1.5px solid var(--color-border-strong)",
               backgroundColor: "var(--color-bg)",
             }}
           >
@@ -416,7 +430,8 @@ export default function LandingPage() {
               className="mt-8 block py-3 text-center text-sm font-semibold"
               style={{
                 borderRadius: "var(--radius-md)",
-                border: "1px solid var(--color-border-strong)",
+                border: "1.5px solid var(--color-border-strong)",
+                backgroundColor: "var(--color-bg)",
                 color: "var(--color-text)",
               }}
             >
@@ -428,7 +443,7 @@ export default function LandingPage() {
             style={{
               borderRadius: "var(--radius-lg)",
               border: "2px solid var(--color-accent)",
-              backgroundColor: "var(--color-bg)",
+              backgroundColor: "var(--color-accent-soft)",
             }}
           >
             <div
