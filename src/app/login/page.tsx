@@ -9,8 +9,8 @@ import type { UserSession } from "@/lib/types";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("demo@itcrescue.in");
-  const [password, setPassword] = useState("demo");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -22,7 +22,7 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name: "Demo User", companyName: "Demo Traders Pvt Ltd" }),
+        body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -32,7 +32,7 @@ export default function LoginPage() {
       const user = data.user as UserSession;
       const prev = getLocalUser();
       setLocalUser(user);
-      // New email = new account for demo auth: don't inherit leftover trial/recon
+      // New email: don't inherit leftover client recon/trial from a prior session
       if (!prev || prev.email !== user.email) {
         resetTrialUsage();
         clearReconData();
@@ -56,7 +56,7 @@ export default function LoginPage() {
         <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
           <h1 className="text-2xl font-bold text-slate-900">Welcome back</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Demo auth — any password works. Prefilled for a quick start.
+            Sign in with your work email and password. Accounts are stored securely.
           </p>
           <form onSubmit={onSubmit} className="mt-8 space-y-4">
             <div>
