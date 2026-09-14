@@ -125,6 +125,26 @@ export function getTrialUsage(): {
   });
 }
 
+/** Fresh account / signup — trial starts at 0/1 */
+export function resetTrialUsage() {
+  localStorage.setItem(
+    KEYS.trial,
+    JSON.stringify({ reconCount: 0, invoiceCount: 0 })
+  );
+}
+
+/** Clear recon + chase so a new signup doesn't inherit prior demo state */
+export function clearReconData() {
+  localStorage.removeItem(KEYS.results);
+  localStorage.removeItem(KEYS.summary);
+  localStorage.removeItem(KEYS.chase);
+}
+
+/** Invoices that still need vendor action (shared by chase + status) */
+export function getOpenChaseItems(): ChaseItem[] {
+  return getChaseItems().filter((c) => c.status === "pending" || c.status === "still_blocked");
+}
+
 /** Soft paywall: free trial = 1 recon OR 50 invoices */
 export function isPaywalled(): boolean {
   const settings = getSettings();

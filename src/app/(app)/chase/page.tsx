@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Copy, Check, MessageCircle } from "lucide-react";
 import { CategoryBadge } from "@/components/Badge";
 import { EmptyState } from "@/components/EmptyState";
-import { getChaseItems, getResults, getSettings } from "@/lib/storage";
+import { getChaseItems, getOpenChaseItems, getResults, getSettings } from "@/lib/storage";
 import { formatINRPrecise } from "@/lib/reconcile";
 import { whatsappEnglish, whatsappHindi, emailSubject, emailBody } from "@/lib/templates";
 import type { ChaseItem, MatchResult } from "@/lib/types";
@@ -18,11 +18,25 @@ export default function ChasePage() {
   const [lang, setLang] = useState<"en" | "hi">("en");
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  useEffect(() => {
-    setItems(getChaseItems());
+  function reload() {
+    setItems(getOpenChaseItems());
     const map = new Map(getResults().map((r) => [r.id, r]));
     setResultsMap(map);
     setCompany(getSettings().companyName || "My Company");
+  }
+
+  useEffect(() => {
+    reload();
+    const onFocus = () => reload();
+    window.addEventListener("focus", onFocus);
+    const onVis = () => {
+      if (document.visibilityState === "visible") reload();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   function copyText(key: string, text: string) {
@@ -36,13 +50,18 @@ export default function ChasePage() {
   }
 
   if (!items.length) {
+    const allFixed = getChaseItems().some((c) => c.status === "fixed");
     return (
       <EmptyState
         icon={MessageCircle}
-        title="No vendors to chase"
-        description="Run a reconciliation first. ITC-at-risk and value-mismatch rows appear here."
-        actionLabel="Go to Reconcile"
-        actionHref="/reconcile"
+        title={allFixed ? "Nothing left to chase" : "No vendors to chase"}
+        description={
+          allFixed
+            ? "All chase invoices are Fixed or cleared. Track them on the Status board."
+            : "Run a reconciliation first. ITC-at-risk and value-mismatch rows appear here."
+        }
+        actionLabel={allFixed ? "Open Status board" : "Go to Reconcile"}
+        actionHref={allFixed ? "/status" : "/reconcile"}
       />
     );
   }
@@ -53,7 +72,7 @@ export default function ChasePage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Vendor chase list</h1>
           <p className="mt-1 text-sm text-slate-600">
-            {items.length} invoices need vendor action · Copy WhatsApp or open chat
+            {items.length} invoice{items.length === 1 ? "" : "s"} need vendor action · Copy WhatsApp or open chat
           </p>
         </div>
         <div className="flex rounded-lg border border-slate-200 bg-white p-1">

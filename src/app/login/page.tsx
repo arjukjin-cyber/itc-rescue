@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { Logo } from "@/components/Logo";
-import { setLocalUser } from "@/lib/storage";
+import { clearReconData, getLocalUser, resetTrialUsage, setLocalUser } from "@/lib/storage";
 import type { UserSession } from "@/lib/types";
 
 export default function LoginPage() {
@@ -29,7 +29,14 @@ export default function LoginPage() {
         setError(data.error || "Login failed");
         return;
       }
-      setLocalUser(data.user as UserSession);
+      const user = data.user as UserSession;
+      const prev = getLocalUser();
+      setLocalUser(user);
+      // New email = new account for demo auth: don't inherit leftover trial/recon
+      if (!prev || prev.email !== user.email) {
+        resetTrialUsage();
+        clearReconData();
+      }
       router.push("/dashboard");
     } catch {
       setError("Something went wrong");
