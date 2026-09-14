@@ -11,24 +11,76 @@ import {
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 
+const PREVIEW_STATS: {
+  label: string;
+  value: string;
+  fg: string;
+  bg: string;
+}[] = [
+  {
+    label: "Matched",
+    value: "8",
+    fg: "var(--color-status-ok-fg)",
+    bg: "var(--color-status-ok-bg)",
+  },
+  {
+    label: "ITC at risk",
+    value: "3",
+    fg: "var(--color-status-risk-fg)",
+    bg: "var(--color-status-risk-bg)",
+  },
+  {
+    label: "Value mismatch",
+    value: "1",
+    fg: "var(--color-status-warn-fg)",
+    bg: "var(--color-status-warn-bg)",
+  },
+  {
+    label: "Unclaimed",
+    value: "1",
+    fg: "var(--color-status-info-fg)",
+    bg: "var(--color-status-info-bg)",
+  },
+];
+
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen" style={{ backgroundColor: "var(--color-bg-muted)" }}>
       <Navbar />
 
-      {/* Hero */}
-      <section className="relative overflow-hidden border-b border-slate-200 bg-gradient-to-b from-white via-teal-50/40 to-slate-50">
+      {/* Hero — no decorative gradients; high-contrast H1 + filled accent CTA */}
+      <section
+        className="relative overflow-hidden border-b"
+        style={{
+          backgroundColor: "var(--color-bg)",
+          borderColor: "var(--color-border)",
+        }}
+      >
         <div className="mx-auto max-w-6xl px-4 pb-14 pt-12 sm:px-6 sm:pb-16 sm:pt-20">
           <div className="mx-auto max-w-3xl text-center animate-fade-up">
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+            <div
+              className="mb-5 inline-flex items-center gap-2 px-3 py-1 text-xs font-semibold"
+              style={{
+                borderRadius: "9999px",
+                border: "1px solid color-mix(in srgb, var(--color-status-warn-fg) 28%, transparent)",
+                backgroundColor: "var(--color-status-warn-bg)",
+                color: "var(--color-status-warn-fg)",
+              }}
+            >
               <AlertTriangle size={14} />
               April 2026 · GSTR-2B hard block is live
             </div>
-            <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
+            <h1
+              className="text-4xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl"
+              style={{ color: "var(--color-text)" }}
+            >
               Stop losing ITC because vendors{" "}
-              <span className="text-teal-700">didn&apos;t file GSTR-1</span>
+              <span style={{ color: "var(--color-accent)" }}>didn&apos;t file GSTR-1</span>
             </h1>
-            <p className="mt-5 text-lg leading-relaxed text-slate-700 sm:text-xl sm:leading-relaxed">
+            <p
+              className="mt-5 text-lg leading-relaxed sm:text-xl sm:leading-relaxed"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
               Upload your purchase register and GSTR-2B. ITC Rescue finds every mismatch,
               drafts WhatsApp chases in English &amp; Hindi, and tracks who fixed it —
               built for Indian MSMEs (₹50L–₹5cr).
@@ -36,48 +88,99 @@ export default function LandingPage() {
             <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
                 href="/signup"
-                className="inline-flex w-full items-center justify-center rounded-xl bg-teal-700 px-8 py-3.5 text-base font-semibold text-white shadow-lg shadow-teal-700/25 hover:bg-teal-800 sm:w-auto"
+                className="btn-accent inline-flex w-full items-center justify-center px-8 py-3.5 text-base font-semibold shadow-md sm:w-auto"
               >
                 Start free trial
               </Link>
               <Link
                 href="/login"
-                className="inline-flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-8 py-3.5 text-base font-semibold text-slate-800 hover:bg-slate-50 sm:w-auto"
+                className="inline-flex w-full items-center justify-center px-8 py-3.5 text-base font-semibold sm:w-auto"
+                style={{
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--color-border-strong)",
+                  backgroundColor: "var(--color-bg)",
+                  color: "var(--color-text)",
+                }}
               >
                 Log in · try demo samples
               </Link>
             </div>
-            <p className="mt-3 text-sm text-slate-600">
+            <p className="mt-3 text-sm" style={{ color: "var(--color-text-muted)" }}>
               Waitlist open · Free trial: 1 reconciliation or 50 invoices · No government API needed
             </p>
           </div>
 
-          {/* Preview card — pulled up so KPI strip peeks above the fold */}
+          {/* Preview card — KPI strip uses status token map */}
           <div className="mx-auto mt-10 max-w-4xl animate-fade-up delay-200 sm:mt-12">
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/60">
-              <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
-                <div className="h-2.5 w-2.5 rounded-full bg-red-400" />
-                <div className="h-2.5 w-2.5 rounded-full bg-amber-400" />
-                <div className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                <span className="ml-2 text-meta">
-                  Reconciliation results · March 2026
-                </span>
+            <div
+              className="overflow-hidden shadow-md"
+              style={{
+                borderRadius: "var(--radius-lg)",
+                border: "1px solid var(--color-border)",
+                backgroundColor: "var(--color-bg)",
+              }}
+            >
+              <div
+                className="flex items-center gap-2 px-4 py-3"
+                style={{
+                  borderBottom: "1px solid var(--color-border)",
+                  backgroundColor: "var(--color-bg-muted)",
+                }}
+              >
+                <div
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: "var(--color-status-risk-fg)" }}
+                />
+                <div
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: "var(--color-status-warn-fg)" }}
+                />
+                <div
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: "var(--color-status-ok-fg)" }}
+                />
+                <span className="ml-2 text-meta">Reconciliation results · March 2026</span>
               </div>
               <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4 sm:gap-4 sm:p-6">
-                {[
-                  { label: "Matched", value: "8", tone: "text-emerald-700" },
-                  { label: "ITC at risk", value: "3", tone: "text-red-600" },
-                  { label: "Value mismatch", value: "1", tone: "text-amber-700" },
-                  { label: "Unclaimed", value: "1", tone: "text-sky-700" },
-                ].map((s) => (
-                  <div key={s.label} className="rounded-xl border border-slate-100 bg-slate-50 p-4 text-center">
-                    <div className={`text-3xl font-bold ${s.tone}`}>{s.value}</div>
-                    <div className="mt-1 text-meta font-medium">{s.label}</div>
+                {PREVIEW_STATS.map((s) => (
+                  <div
+                    key={s.label}
+                    className="p-4 text-center"
+                    style={{
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid var(--color-border)",
+                      backgroundColor: "var(--color-bg-muted)",
+                    }}
+                  >
+                    <div className="text-3xl font-bold" style={{ color: s.fg }}>
+                      {s.value}
+                    </div>
+                    <div
+                      className="mt-1 text-meta font-medium"
+                      style={{
+                        display: "inline-block",
+                        marginTop: "0.35rem",
+                        padding: "0.125rem 0.5rem",
+                        borderRadius: "var(--radius-sm)",
+                        backgroundColor: s.bg,
+                        color: s.fg,
+                      }}
+                    >
+                      {s.label}
+                    </div>
                   </div>
                 ))}
               </div>
-              <div className="border-t border-slate-100 bg-red-50 px-6 py-4 text-sm text-red-800">
-                <strong>₹86,400 ITC at risk</strong> — vendors missing from GSTR-2B. Chase them before filing GSTR-3B.
+              <div
+                className="px-6 py-4 text-sm font-medium"
+                style={{
+                  borderTop: "1px solid var(--color-border)",
+                  backgroundColor: "var(--color-status-risk-bg)",
+                  color: "var(--color-status-risk-fg)",
+                }}
+              >
+                <strong>₹86,400 ITC at risk</strong> — vendors missing from GSTR-2B. Chase them
+                before filing GSTR-3B.
               </div>
             </div>
           </div>
@@ -87,10 +190,16 @@ export default function LandingPage() {
       {/* Problem */}
       <section id="problem" className="landing-section mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">
+          <h2
+            className="text-3xl font-bold sm:text-4xl"
+            style={{ color: "var(--color-text)" }}
+          >
             The unpaid work every GST filer knows
           </h2>
-          <p className="mt-4 text-lg leading-relaxed text-slate-700">
+          <p
+            className="mt-4 text-lg leading-relaxed"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
             From April 2026, claimed ITC that exceeds GSTR-2B can hard-block your GSTR-3B.
             Your books are fine — the vendor never uploaded the invoice in GSTR-1.
           </p>
@@ -115,24 +224,58 @@ export default function LandingPage() {
           ].map((card) => (
             <div
               key={card.title}
-              className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+              className="p-6 shadow-sm"
+              style={{
+                borderRadius: "var(--radius-lg)",
+                border: "1px solid var(--color-border)",
+                backgroundColor: "var(--color-bg)",
+              }}
             >
-              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+              <div
+                className="mb-4 flex h-11 w-11 items-center justify-center"
+                style={{
+                  borderRadius: "var(--radius-md)",
+                  backgroundColor: "var(--color-accent-soft)",
+                  color: "var(--color-accent)",
+                }}
+              >
                 <card.icon size={22} />
               </div>
-              <h3 className="text-lg font-semibold text-slate-900">{card.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-slate-600">{card.desc}</p>
+              <h3 className="text-lg font-semibold" style={{ color: "var(--color-text)" }}>
+                {card.title}
+              </h3>
+              <p
+                className="mt-2 text-sm leading-relaxed"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                {card.desc}
+              </p>
             </div>
           ))}
         </div>
       </section>
 
       {/* How it works */}
-      <section id="how" className="landing-section border-y border-slate-200 bg-white py-16 sm:py-20">
+      <section
+        id="how"
+        className="landing-section border-y py-16 sm:py-20"
+        style={{
+          backgroundColor: "var(--color-bg)",
+          borderColor: "var(--color-border)",
+        }}
+      >
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">How it works</h2>
-            <p className="mt-4 text-lg leading-relaxed text-slate-700">
+            <h2
+              className="text-3xl font-bold sm:text-4xl"
+              style={{ color: "var(--color-text)" }}
+            >
+              How it works
+            </h2>
+            <p
+              className="mt-4 text-lg leading-relaxed"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
               Three steps. No GST portal login. Works offline with your Excel exports.
             </p>
           </div>
@@ -157,13 +300,39 @@ export default function LandingPage() {
                 desc: "Copy English or Hindi WhatsApp messages. Move vendors across Pending → Fixed → Still blocked on your status board.",
               },
             ].map((s) => (
-              <div key={s.step} className="relative rounded-2xl border border-slate-200 bg-slate-50 p-6">
-                <div className="mb-3 text-xs font-bold tracking-widest text-teal-600">{s.step}</div>
-                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-teal-700 text-white">
+              <div
+                key={s.step}
+                className="relative p-6"
+                style={{
+                  borderRadius: "var(--radius-lg)",
+                  border: "1px solid var(--color-border)",
+                  backgroundColor: "var(--color-bg-muted)",
+                }}
+              >
+                <div
+                  className="mb-3 text-xs font-bold tracking-widest"
+                  style={{ color: "var(--color-accent)" }}
+                >
+                  {s.step}
+                </div>
+                <div
+                  className="mb-3 flex h-10 w-10 items-center justify-center text-white"
+                  style={{
+                    borderRadius: "var(--radius-md)",
+                    backgroundColor: "var(--color-accent)",
+                  }}
+                >
                   <s.icon size={20} />
                 </div>
-                <h3 className="text-lg font-semibold text-slate-900">{s.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">{s.desc}</p>
+                <h3 className="text-lg font-semibold" style={{ color: "var(--color-text)" }}>
+                  {s.title}
+                </h3>
+                <p
+                  className="mt-2 text-sm leading-relaxed"
+                  style={{ color: "var(--color-text-secondary)" }}
+                >
+                  {s.desc}
+                </p>
               </div>
             ))}
           </div>
@@ -173,19 +342,44 @@ export default function LandingPage() {
       {/* Pricing */}
       <section id="pricing" className="landing-section mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-16">
         <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl">Simple MSME pricing</h2>
-          <p className="mt-4 text-lg leading-relaxed text-slate-700">
+          <h2
+            className="text-3xl font-bold sm:text-4xl"
+            style={{ color: "var(--color-text)" }}
+          >
+            Simple MSME pricing
+          </h2>
+          <p
+            className="mt-4 text-lg leading-relaxed"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
             After your free recon, upgrade in Settings to keep going. Paid checkout (Razorpay) ships in the final pre-launch update.
           </p>
         </div>
         <div className="mx-auto mt-10 grid max-w-4xl gap-6 md:grid-cols-2 sm:mt-12">
-          <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-            <div className="text-sm font-semibold uppercase tracking-wide text-slate-600">Starter</div>
-            <div className="mt-2 flex items-baseline gap-1">
-              <span className="text-4xl font-extrabold text-slate-900">₹999</span>
-              <span className="text-slate-600">/mo</span>
+          <div
+            className="p-8 shadow-sm"
+            style={{
+              borderRadius: "var(--radius-lg)",
+              border: "1px solid var(--color-border)",
+              backgroundColor: "var(--color-bg)",
+            }}
+          >
+            <div
+              className="text-sm font-semibold uppercase tracking-wide"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              Starter
             </div>
-            <ul className="mt-6 space-y-3 text-sm text-slate-600">
+            <div className="mt-2 flex items-baseline gap-1">
+              <span className="text-4xl font-extrabold" style={{ color: "var(--color-text)" }}>
+                ₹999
+              </span>
+              <span style={{ color: "var(--color-text-secondary)" }}>/mo</span>
+            </div>
+            <ul
+              className="mt-6 space-y-3 text-sm"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
               {[
                 "Unlimited reconciliations",
                 "Up to 500 invoices / month",
@@ -194,28 +388,60 @@ export default function LandingPage() {
                 "Email support",
               ].map((f) => (
                 <li key={f} className="flex items-start gap-2">
-                  <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-teal-600" />
+                  <CheckCircle2
+                    size={16}
+                    className="mt-0.5 shrink-0"
+                    style={{ color: "var(--color-accent)" }}
+                  />
                   {f}
                 </li>
               ))}
             </ul>
             <Link
               href="/signup"
-              className="mt-8 block rounded-xl border border-slate-300 py-3 text-center text-sm font-semibold text-slate-800 hover:bg-slate-50"
+              className="mt-8 block py-3 text-center text-sm font-semibold"
+              style={{
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--color-border-strong)",
+                color: "var(--color-text)",
+              }}
             >
               Start free trial
             </Link>
           </div>
-          <div className="relative rounded-2xl border-2 border-teal-600 bg-white p-8 shadow-lg shadow-teal-100">
-            <div className="absolute -top-3 right-6 rounded-full bg-teal-700 px-3 py-0.5 text-xs font-bold text-white">
+          <div
+            className="relative p-8 shadow-md"
+            style={{
+              borderRadius: "var(--radius-lg)",
+              border: "2px solid var(--color-accent)",
+              backgroundColor: "var(--color-bg)",
+            }}
+          >
+            <div
+              className="absolute -top-3 right-6 px-3 py-0.5 text-xs font-bold text-white"
+              style={{
+                borderRadius: "9999px",
+                backgroundColor: "var(--color-accent)",
+              }}
+            >
               Popular
             </div>
-            <div className="text-sm font-semibold uppercase tracking-wide text-teal-700">Growth</div>
-            <div className="mt-2 flex items-baseline gap-1">
-              <span className="text-4xl font-extrabold text-slate-900">₹2,499</span>
-              <span className="text-slate-600">/mo</span>
+            <div
+              className="text-sm font-semibold uppercase tracking-wide"
+              style={{ color: "var(--color-accent)" }}
+            >
+              Growth
             </div>
-            <ul className="mt-6 space-y-3 text-sm text-slate-600">
+            <div className="mt-2 flex items-baseline gap-1">
+              <span className="text-4xl font-extrabold" style={{ color: "var(--color-text)" }}>
+                ₹2,499
+              </span>
+              <span style={{ color: "var(--color-text-secondary)" }}>/mo</span>
+            </div>
+            <ul
+              className="mt-6 space-y-3 text-sm"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
               {[
                 "Everything in Starter",
                 "Unlimited invoices",
@@ -224,14 +450,18 @@ export default function LandingPage() {
                 "Priority support",
               ].map((f) => (
                 <li key={f} className="flex items-start gap-2">
-                  <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-teal-600" />
+                  <CheckCircle2
+                    size={16}
+                    className="mt-0.5 shrink-0"
+                    style={{ color: "var(--color-accent)" }}
+                  />
                   {f}
                 </li>
               ))}
             </ul>
             <Link
               href="/signup"
-              className="mt-8 block rounded-xl bg-teal-700 py-3 text-center text-sm font-semibold text-white hover:bg-teal-800"
+              className="btn-accent mt-8 block py-3 text-center text-sm font-semibold"
             >
               Start free trial
             </Link>
@@ -240,39 +470,74 @@ export default function LandingPage() {
       </section>
 
       {/* Trust */}
-      <section className="border-t border-slate-200 bg-white py-12">
+      <section
+        className="border-t py-12"
+        style={{
+          backgroundColor: "var(--color-bg)",
+          borderColor: "var(--color-border)",
+        }}
+      >
         <div className="mx-auto flex max-w-6xl flex-col items-center gap-6 px-4 sm:flex-row sm:justify-center sm:gap-16 sm:px-6">
-          <div className="flex items-center gap-2 text-sm text-slate-600">
-            <Shield size={18} className="text-teal-700" /> Your files stay in-browser for MVP
+          <div
+            className="flex items-center gap-2 text-sm"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            <Shield size={18} style={{ color: "var(--color-accent)" }} /> Your files stay
+            in-browser for MVP
           </div>
-          <div className="flex items-center gap-2 text-sm text-slate-600">
-            <Zap size={18} className="text-teal-700" /> Demo works offline with sample CSVs
+          <div
+            className="flex items-center gap-2 text-sm"
+            style={{ color: "var(--color-text-secondary)" }}
+          >
+            <Zap size={18} style={{ color: "var(--color-accent)" }} /> Demo works offline with
+            sample CSVs
           </div>
         </div>
       </section>
 
-      {/* CTA — tighter gap after pricing */}
-      <section className="bg-teal-800 py-14">
+      {/* CTA — solid accent band (not a gradient) */}
+      <section className="py-14" style={{ backgroundColor: "var(--color-accent)" }}>
         <div className="mx-auto max-w-3xl px-4 text-center sm:px-6">
-          <h2 className="text-3xl font-bold text-white">Rescue your ITC before the next 3B due date</h2>
-          <p className="mt-3 text-base leading-relaxed text-teal-100">
-            Sign up in 30 seconds. Run a recon with our sample files — no GSTN credentials required.
+          <h2 className="text-3xl font-bold text-white">
+            Rescue your ITC before the next 3B due date
+          </h2>
+          <p className="mt-3 text-base leading-relaxed text-white/90">
+            Sign up in 30 seconds. Run a recon with our sample files — no GSTN credentials
+            required.
           </p>
           <Link
             href="/signup"
-            className="mt-7 inline-flex rounded-xl bg-white px-8 py-3.5 text-base font-semibold text-teal-800 shadow hover:bg-teal-50"
+            className="mt-7 inline-flex px-8 py-3.5 text-base font-semibold shadow"
+            style={{
+              borderRadius: "var(--radius-md)",
+              backgroundColor: "var(--color-bg)",
+              color: "var(--color-accent)",
+            }}
           >
             Get started free
           </Link>
         </div>
       </section>
 
-      <footer className="border-t border-slate-200 bg-slate-50 py-8">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 text-sm text-slate-600 sm:flex-row sm:px-6">
+      <footer
+        className="border-t py-8"
+        style={{
+          backgroundColor: "var(--color-bg-muted)",
+          borderColor: "var(--color-border)",
+        }}
+      >
+        <div
+          className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 text-sm sm:flex-row sm:px-6"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
           <div>© {new Date().getFullYear()} ITC Rescue · Built for Indian MSMEs</div>
           <div className="flex gap-4">
-            <Link href="/login" className="hover:text-teal-700">Log in</Link>
-            <Link href="/signup" className="hover:text-teal-700">Sign up</Link>
+            <Link href="/login" className="hover:text-[var(--color-accent)]">
+              Log in
+            </Link>
+            <Link href="/signup" className="hover:text-[var(--color-accent)]">
+              Sign up
+            </Link>
           </div>
         </div>
       </footer>
