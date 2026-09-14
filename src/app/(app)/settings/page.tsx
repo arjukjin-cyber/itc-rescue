@@ -99,26 +99,57 @@ export default function SettingsPage() {
         </p>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => upgrade("starter")}
-            className={`rounded-xl border p-4 text-left transition hover:border-teal-400 ${
-              form.plan === "starter" ? "border-teal-600 bg-teal-50" : "border-slate-200"
-            }`}
+          <div
+            className="p-4 text-left shadow-sm"
+            style={{
+              borderRadius: "var(--radius-lg)",
+              border: "2px solid var(--color-accent)",
+              backgroundColor:
+                form.plan === "starter" ? "var(--color-accent-soft)" : "var(--color-bg)",
+            }}
           >
-            <div className="text-sm font-bold text-slate-900">Starter · ₹999/mo</div>
-            <div className="mt-1 text-xs text-slate-500">Unlimited recon · 500 invoices/mo</div>
-          </button>
-          <button
-            type="button"
-            onClick={() => upgrade("growth")}
-            className={`rounded-xl border p-4 text-left transition hover:border-teal-400 ${
-              form.plan === "growth" ? "border-teal-600 bg-teal-50" : "border-slate-200"
-            }`}
+            <div className="text-sm font-bold" style={{ color: "var(--color-text)" }}>
+              Starter · ₹999/mo
+            </div>
+            <div className="mt-1 text-xs" style={{ color: "var(--color-text-secondary)" }}>
+              Unlimited recon · 500 invoices/mo
+            </div>
+            <button
+              type="button"
+              onClick={() => upgrade("starter")}
+              disabled={form.plan === "starter"}
+              className="btn-accent mt-3 w-full py-2 text-xs font-semibold disabled:opacity-60"
+            >
+              {form.plan === "starter" ? "Current plan" : "Upgrade to Starter"}
+            </button>
+          </div>
+          <div
+            className="p-4 text-left shadow-sm"
+            style={{
+              borderRadius: "var(--radius-lg)",
+              border:
+                form.plan === "growth"
+                  ? "2px solid var(--color-accent)"
+                  : "1.5px solid var(--color-border-strong)",
+              backgroundColor:
+                form.plan === "growth" ? "var(--color-accent-soft)" : "var(--color-bg)",
+            }}
           >
-            <div className="text-sm font-bold text-slate-900">Growth · ₹2,499/mo</div>
-            <div className="mt-1 text-xs text-slate-500">Unlimited invoices · priority support</div>
-          </button>
+            <div className="text-sm font-bold" style={{ color: "var(--color-text)" }}>
+              Growth · ₹2,499/mo
+            </div>
+            <div className="mt-1 text-xs" style={{ color: "var(--color-text-secondary)" }}>
+              Unlimited invoices · priority support
+            </div>
+            <button
+              type="button"
+              onClick={() => upgrade("growth")}
+              disabled={form.plan === "growth"}
+              className="btn-secondary mt-3 w-full py-2 text-xs disabled:opacity-60"
+            >
+              {form.plan === "growth" ? "Current plan" : "Upgrade to Growth"}
+            </button>
+          </div>
         </div>
 
         {razorpayNote && (
