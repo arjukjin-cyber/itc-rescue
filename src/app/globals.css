@@ -66,6 +66,11 @@ html {
   scroll-margin-top: 5rem;
 }
 
+/* Landing hero subcopy — secondary body, never muted */
+.hero-subcopy {
+  color: var(--color-text-secondary);
+}
+
 /* Readable muted metadata in app shell */
 .text-meta {
   font-size: var(--text-meta);
