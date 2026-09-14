@@ -102,7 +102,7 @@ export default function LandingPage() {
                   color: "var(--color-text)",
                 }}
               >
-                Log in · try demo samples
+                Log in
               </Link>
             </div>
             <div
