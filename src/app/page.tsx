@@ -148,11 +148,14 @@ export default function LandingPage() {
                     className="p-4 text-center"
                     style={{
                       borderRadius: "var(--radius-md)",
-                      border: "1px solid var(--color-border)",
+                      border: `1px solid color-mix(in srgb, ${s.fg} 22%, var(--color-border))`,
                       backgroundColor: "var(--color-bg-muted)",
                     }}
                   >
-                    <div className="text-3xl font-bold" style={{ color: s.fg }}>
+                    <div
+                      className="text-3xl font-bold tabular-nums"
+                      style={{ color: s.fg }}
+                    >
                       {s.value}
                     </div>
                     <div
@@ -187,8 +190,13 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Problem */}
-      <section id="problem" className="landing-section mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+      {/* Problem — muted zebra band */}
+      <section
+        id="problem"
+        className="landing-section py-16 sm:py-20"
+        style={{ backgroundColor: "var(--color-bg-muted)" }}
+      >
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
           <h2
             className="text-3xl font-bold sm:text-4xl"
@@ -253,9 +261,10 @@ export default function LandingPage() {
             </div>
           ))}
         </div>
+        </div>
       </section>
 
-      {/* How it works */}
+      {/* How it works — white zebra band */}
       <section
         id="how"
         className="landing-section border-y py-16 sm:py-20"
@@ -339,8 +348,13 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing */}
-      <section id="pricing" className="landing-section mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-16">
+      {/* Pricing — muted zebra band */}
+      <section
+        id="pricing"
+        className="landing-section py-16 sm:py-16"
+        style={{ backgroundColor: "var(--color-bg-muted)" }}
+      >
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
           <h2
             className="text-3xl font-bold sm:text-4xl"
@@ -467,9 +481,10 @@ export default function LandingPage() {
             </Link>
           </div>
         </div>
+        </div>
       </section>
 
-      {/* Trust */}
+      {/* Trust — white zebra band */}
       <section
         className="border-t py-12"
         style={{
