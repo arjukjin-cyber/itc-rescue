@@ -2,8 +2,8 @@ import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 
 /**
- * Shared zero-data empty state for app shell surfaces.
- * Keep copy calm and action-first for busy MSME ops.
+ * Shared zero-data empty state — tokens v0.1 contract:
+ * icon 40 · heading · secondary body · one teal CTA. Max width 28rem.
  */
 export function EmptyState({
   icon: Icon,
@@ -26,26 +26,26 @@ export function EmptyState({
 
   return (
     <div
-      className={`mx-auto w-full max-w-md px-6 py-10 text-center sm:px-8 sm:py-12 ${className}`}
+      className={`mx-auto w-full max-w-md px-5 py-8 text-center sm:px-6 sm:py-10 ${className}`}
       style={{
         backgroundColor: "var(--color-bg)",
         border: "1px dashed var(--color-border-strong)",
         borderRadius: "var(--radius-lg)",
-        boxShadow: "0 1px 2px #0000000d, 0 8px 24px #0f172a08",
+        boxShadow: "0 1px 2px #0000000d",
       }}
     >
       <div
-        className="mx-auto flex h-11 w-11 items-center justify-center"
+        className="mx-auto flex h-10 w-10 items-center justify-center"
         style={{
           backgroundColor: "var(--color-accent-soft)",
           color: "var(--color-accent)",
           borderRadius: "var(--radius-md)",
         }}
       >
-        <Icon size={22} strokeWidth={1.75} aria-hidden />
+        <Icon size={20} strokeWidth={1.75} aria-hidden />
       </div>
       <h2
-        className="mt-4 text-lg font-semibold sm:text-xl"
+        className="mt-3 text-lg font-semibold leading-7"
         style={{ color: "var(--color-text)" }}
       >
         {title}
@@ -59,7 +59,7 @@ export function EmptyState({
       {showAction && actionHref && !onAction && (
         <Link
           href={actionHref}
-          className="btn-accent mt-6 inline-flex items-center justify-center px-5 py-2.5 text-sm font-semibold"
+          className="btn-accent mt-4 inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold"
         >
           {actionLabel}
         </Link>
@@ -68,7 +68,7 @@ export function EmptyState({
         <button
           type="button"
           onClick={onAction}
-          className="btn-accent mt-6 inline-flex items-center justify-center px-5 py-2.5 text-sm font-semibold"
+          className="btn-accent mt-4 inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold"
         >
           {actionLabel}
         </button>

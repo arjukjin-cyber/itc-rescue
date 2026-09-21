@@ -49,7 +49,7 @@ export function StatCard({
   const toneStyle = TONE_STYLE[tone];
   return (
     <div
-      className="rounded-[var(--radius-md)] border p-4 shadow-sm"
+      className="rounded-[var(--radius-md)] border p-3 shadow-sm"
       style={toneStyle}
     >
       <div
