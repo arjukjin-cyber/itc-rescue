@@ -72,6 +72,27 @@ export async function ensureSchema() {
   `;
   await sql`CREATE INDEX IF NOT EXISTS chase_items_user_idx ON chase_items(user_id)`;
   await sql`CREATE INDEX IF NOT EXISTS recon_runs_user_idx ON recon_runs(user_id)`;
+  // Chase ids are MatchResult ids (shared sample keys). Global PK collided across users.
+  // Migrate to composite PK (user_id, id).
+  await sql.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name = 'chase_items' AND constraint_type = 'PRIMARY KEY'
+          AND constraint_name = 'chase_items_pkey'
+      ) THEN
+        ALTER TABLE chase_items DROP CONSTRAINT chase_items_pkey;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name = 'chase_items' AND constraint_type = 'PRIMARY KEY'
+          AND constraint_name = 'chase_items_user_id_pkey'
+      ) THEN
+        ALTER TABLE chase_items ADD CONSTRAINT chase_items_user_id_pkey PRIMARY KEY (user_id, id);
+      END IF;
+    END $$;
+  `);
   _schemaReady = true;
 }
 
@@ -115,13 +136,36 @@ export async function registerUser(input: {
   await ensureSchema();
   const sql = getSql();
   const email = input.email.trim().toLowerCase();
-  const password = String(input.password || "");
+  const password = String(input.password || "").trim();
   if (password.length < 6) {
     throw new Error("Password must be at least 6 characters");
   }
 
-  const existing = await sql`SELECT id FROM users WHERE email = ${email} LIMIT 1`;
+  const existing = await sql`
+    SELECT id, password_hash FROM users WHERE email = ${email} LIMIT 1
+  `;
   if (existing.length) {
+    const ex = existing[0] as Record<string, unknown>;
+    const prev = ex.password_hash == null ? "" : String(ex.password_hash);
+    // Heal pre-password / broken-hash accounts so DoD second-session login works
+    if (!prev || !prev.startsWith("$2")) {
+      const passwordHash = await bcrypt.hash(password, 10);
+      await sql.query(`UPDATE users SET password_hash = $1, name = $2 WHERE email = $3`, [
+        passwordHash,
+        input.name,
+        email,
+      ]);
+      const healedRows = await sql`
+        SELECT u.id, u.email, u.name, u.recon_count, u.invoice_count, u.created_at,
+               c.name AS company_name, c.gstin, c.plan
+        FROM users u
+        LEFT JOIN companies c ON c.id = u.company_id
+        WHERE u.email = ${email}
+        LIMIT 1
+      `;
+      if (!healedRows.length) throw new Error("Account repair failed");
+      return rowToUser(healedRows[0] as Record<string, unknown>);
+    }
     throw new Error("An account with this email already exists. Log in instead.");
   }
 
@@ -135,10 +179,12 @@ export async function registerUser(input: {
     INSERT INTO companies (id, name, gstin, plan)
     VALUES (${companyId}, ${companyName}, ${gstin}, 'trial')
   `;
-  await sql`
-    INSERT INTO users (id, email, name, company_id, password_hash, recon_count, invoice_count)
-    VALUES (${userId}, ${email}, ${input.name}, ${companyId}, ${passwordHash}, 0, 0)
-  `;
+  // sql.query avoids any neon tagged-template edge cases with bcrypt `$` hashes
+  await sql.query(
+    `INSERT INTO users (id, email, name, company_id, password_hash, recon_count, invoice_count)
+     VALUES ($1, $2, $3, $4, $5, 0, 0)`,
+    [userId, email, input.name, companyId, passwordHash]
+  );
 
   return {
     id: userId,
@@ -160,7 +206,7 @@ export async function authenticateUser(input: {
   await ensureSchema();
   const sql = getSql();
   const email = input.email.trim().toLowerCase();
-  const password = String(input.password || "");
+  const password = String(input.password || "").trim();
 
   const rows = await sql`
     SELECT u.id, u.email, u.name, u.password_hash, u.recon_count, u.invoice_count, u.created_at,
@@ -174,8 +220,14 @@ export async function authenticateUser(input: {
     throw new Error("Invalid email or password");
   }
   const row = rows[0] as Record<string, unknown>;
-  const hash = row.password_hash as string | null;
-  if (!hash) {
+  const rawHash = row.password_hash;
+  const hash =
+    rawHash == null || rawHash === ""
+      ? null
+      : typeof rawHash === "string"
+        ? rawHash
+        : String(rawHash);
+  if (!hash || !hash.startsWith("$2")) {
     throw new Error("This account needs a password reset. Sign up again with a new email, or contact support.");
   }
   const ok = await bcrypt.compare(password, hash);
@@ -219,13 +271,15 @@ export async function saveReconForUser(
     (existing as Record<string, unknown>[]).map((r) => [r.id as string, r.status as string])
   );
 
-  const chase: ChaseItem[] = [];
+  // Dedupe by MatchResult id — sample files can emit duplicate keys
+  const chaseById = new Map<string, ChaseItem>();
   for (const r of results) {
     if (r.category !== "itc_at_risk" && r.category !== "value_mismatch") continue;
+    if (!r.id || chaseById.has(r.id)) continue;
     const status = (statusMap.get(r.id) as ChaseStatus) || "pending";
     const rawAmount = Number(r.booksTax || r.gstr2bTax || 0);
     const amount = Number.isFinite(rawAmount) ? rawAmount : 0;
-    chase.push({
+    chaseById.set(r.id, {
       id: r.id,
       gstin: r.gstin || "",
       vendorName: r.vendorName || "",
@@ -237,16 +291,14 @@ export async function saveReconForUser(
       lastUpdated,
     });
   }
+  const chase = Array.from(chaseById.values());
 
   // Atomic: recon + chase + trial counter.
-  // Root cause (prod QA): recon INSERT committed, then chase INSERT failed on
-  // `${iso}::timestamptz` (neon HTTP param cast) → empty chase, recon_count stuck 0,
-  // second POST threw 500 instead of 402.
+  // Composite PK (user_id, id) + ON CONFLICT: sample invoice keys are global across users.
   const summaryJson = JSON.stringify(summary);
   const resultsJson = JSON.stringify(results);
 
   const queries = [
-    // jsonb via sql.query is proven working in prod for recon_runs
     sql.query(
       `INSERT INTO recon_runs (id, user_id, summary, results)
        VALUES ($1, $2, $3::jsonb, $4::jsonb)`,
@@ -256,17 +308,37 @@ export async function saveReconForUser(
   ];
 
   for (const c of chase) {
-    // NOW() — never pass ISO + ::timestamptz (breaks neon HTTP)
     queries.push(
-      sql`
-        INSERT INTO chase_items (
+      sql.query(
+        `INSERT INTO chase_items (
           id, user_id, recon_id, gstin, vendor_name, invoice_number, invoice_date,
           amount, category, status, last_updated
         ) VALUES (
-          ${c.id}, ${userId}, ${reconId}, ${c.gstin}, ${c.vendorName}, ${c.invoiceNumber},
-          ${c.invoiceDate}, ${c.amount}, ${c.category}, ${c.status}, NOW()
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW()
         )
-      `
+        ON CONFLICT (user_id, id) DO UPDATE SET
+          recon_id = EXCLUDED.recon_id,
+          gstin = EXCLUDED.gstin,
+          vendor_name = EXCLUDED.vendor_name,
+          invoice_number = EXCLUDED.invoice_number,
+          invoice_date = EXCLUDED.invoice_date,
+          amount = EXCLUDED.amount,
+          category = EXCLUDED.category,
+          status = EXCLUDED.status,
+          last_updated = NOW()`,
+        [
+          c.id,
+          userId,
+          reconId,
+          c.gstin,
+          c.vendorName,
+          c.invoiceNumber,
+          c.invoiceDate,
+          c.amount,
+          c.category,
+          c.status,
+        ]
+      )
     );
   }
 
