@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Copy, Check, MessageCircle } from "lucide-react";
-import { CategoryBadge } from "@/components/Badge";
+import { CategoryBadge, StatusBadge } from "@/components/Badge";
 import { EmptyState } from "@/components/EmptyState";
 import { getSettings } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
@@ -111,7 +111,7 @@ export default function ChasePage() {
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         {items.map((item) => {
           const result = resultsMap.get(item.id);
           const msg = result
@@ -126,18 +126,21 @@ export default function ChasePage() {
               key={item.id}
               className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
             >
-              <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold text-slate-900">{item.vendorName}</span>
-                    <CategoryBadge category={item.category} />
+                    <span className="inline-flex flex-wrap items-center gap-1.5">
+                      <CategoryBadge category={item.category} />
+                      <StatusBadge status={item.status} />
+                    </span>
                   </div>
                   <div className="mt-1 text-xs text-slate-500">
                     {item.invoiceNumber} · {item.invoiceDate} · {item.gstin} ·{" "}
                     {formatINRPrecise(item.amount)}
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => setExpanded(isOpen ? null : item.id)}
                     className="btn-secondary px-3 py-1.5 text-xs"
@@ -175,8 +178,8 @@ export default function ChasePage() {
                 </div>
               </div>
               {isOpen && result && (
-                <div className="border-t border-slate-100 bg-slate-50 p-4">
-                  <pre className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                <div className="border-t border-slate-100 bg-slate-50 px-4 py-3">
+                  <pre className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                     {msg}
                   </pre>
                   <div className="mt-3 flex flex-wrap gap-2">

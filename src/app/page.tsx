@@ -85,7 +85,12 @@ export default function LandingPage() {
               drafts WhatsApp chases in English &amp; Hindi, and tracks who fixed it —
               built for Indian MSMEs (₹50L–₹5cr).
             </p>
-            <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            {/* CTA strip — one filled teal primary above the fold */}
+            <div
+              className="mt-7 flex w-full max-w-xl flex-col items-stretch justify-center gap-3 sm:mx-auto sm:flex-row sm:items-center sm:justify-center"
+              role="group"
+              aria-label="Primary actions"
+            >
               <Link
                 href="/signup"
                 className="btn-accent inline-flex w-full items-center justify-center px-8 py-3.5 text-base font-semibold shadow-md sm:w-auto"
@@ -94,34 +99,21 @@ export default function LandingPage() {
               </Link>
               <Link
                 href="/login"
-                className="inline-flex w-full items-center justify-center px-8 py-3.5 text-base font-semibold sm:w-auto"
-                style={{
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--color-border-strong)",
-                  backgroundColor: "var(--color-bg)",
-                  color: "var(--color-text)",
-                }}
+                className="btn-secondary inline-flex w-full items-center justify-center px-8 py-3.5 text-base sm:w-auto"
               >
                 Log in · try demo samples
               </Link>
             </div>
-            <div
-              className="mt-5 inline-flex max-w-xl flex-col items-center gap-1 px-4 py-2.5 text-sm sm:flex-row sm:gap-2"
-              style={{
-                borderRadius: "var(--radius-md)",
-                border: "1px solid var(--color-accent-ring)",
-                backgroundColor: "var(--color-accent-soft)",
-                color: "var(--color-accent)",
-              }}
+            <p
+              className="mt-4 text-sm"
+              style={{ color: "var(--color-text-secondary)" }}
             >
-              <span className="font-semibold">Waitlist open</span>
-              <span className="hidden sm:inline" style={{ color: "var(--color-text-muted)" }}>
-                ·
+              <span className="font-semibold" style={{ color: "var(--color-text)" }}>
+                Waitlist open
               </span>
-              <span style={{ color: "var(--color-text-secondary)" }}>
-                Free trial: 1 reconciliation or 50 invoices · No government API needed
-              </span>
-            </div>
+              <span aria-hidden> · </span>
+              Free trial: 1 reconciliation or 50 invoices · No government API needed
+            </p>
           </div>
 
           {/* Preview card — KPI strip uses status token map */}

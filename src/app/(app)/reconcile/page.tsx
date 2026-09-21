@@ -186,32 +186,17 @@ export default function ReconcilePage() {
       </div>
 
       {paywall && (
-        <div
-          className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
-          style={{
-            borderRadius: "var(--radius-lg)",
-            border: "1.5px solid var(--color-status-risk-fg)",
-            backgroundColor: "var(--color-status-risk-bg)",
-          }}
-        >
-          <div className="flex items-start gap-2 text-sm">
-            <Lock
-              size={18}
-              className="mt-0.5 shrink-0"
-              style={{ color: "var(--color-status-risk-fg)" }}
-            />
-            <div>
-              <p className="font-semibold" style={{ color: "var(--color-status-risk-fg)" }}>
-                Free trial used — upgrade to continue
-              </p>
-              <p className="mt-0.5" style={{ color: "var(--color-text-secondary)" }}>
-                {paywall}
-              </p>
+        <div className="toast-risk" role="alert">
+          <div className="flex min-w-0 items-start gap-2 text-sm">
+            <Lock size={18} className="mt-0.5 shrink-0" aria-hidden />
+            <div className="min-w-0">
+              <p className="toast-risk-title">Free trial used — upgrade to continue</p>
+              <p className="toast-risk-body">{paywall}</p>
             </div>
           </div>
           <Link
             href="/settings"
-            className="btn-accent shrink-0 px-4 py-2.5 text-center text-sm font-semibold"
+            className="btn-accent shrink-0 px-4 py-2 text-center text-sm font-semibold"
           >
             Upgrade in Settings
           </Link>
