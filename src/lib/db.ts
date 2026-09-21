@@ -1,5 +1,6 @@
 import { neon, NeonQueryFunction } from "@neondatabase/serverless";
 import bcrypt from "bcryptjs";
+import type { ChaseItem, ChaseStatus, MatchResult, ReconSummary } from "./types";
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 let _schemaReady = false;
@@ -45,6 +46,32 @@ export async function ensureSchema() {
   `;
   // Upgrade older schemas that lack password_hash
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS recon_runs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      summary JSONB NOT NULL,
+      results JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS chase_items (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      recon_id TEXT REFERENCES recon_runs(id) ON DELETE CASCADE,
+      gstin TEXT NOT NULL DEFAULT '',
+      vendor_name TEXT NOT NULL DEFAULT '',
+      invoice_number TEXT NOT NULL DEFAULT '',
+      invoice_date TEXT NOT NULL DEFAULT '',
+      amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+      category TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS chase_items_user_idx ON chase_items(user_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS recon_runs_user_idx ON recon_runs(user_id)`;
   _schemaReady = true;
 }
 
@@ -171,4 +198,146 @@ export async function getUserByEmail(email: string): Promise<DbUser | null> {
   `;
   if (!rows.length) return null;
   return rowToUser(rows[0] as Record<string, unknown>);
+}
+
+
+
+export async function saveReconForUser(
+  userId: string,
+  results: MatchResult[],
+  summary: ReconSummary
+): Promise<{ reconId: string; chase: ChaseItem[] }> {
+  await ensureSchema();
+  const sql = getSql();
+  const reconId = id("recon");
+  await sql`
+    INSERT INTO recon_runs (id, user_id, summary, results)
+    VALUES (${reconId}, ${userId}, ${JSON.stringify(summary)}::jsonb, ${JSON.stringify(results)}::jsonb)
+  `;
+  // Replace open chase with new at-risk / mismatch set, preserve statuses for same ids
+  const existing = await sql`
+    SELECT id, status FROM chase_items WHERE user_id = ${userId}
+  `;
+  const statusMap = new Map(
+    (existing as Record<string, unknown>[]).map((r) => [r.id as string, r.status as string])
+  );
+  await sql`DELETE FROM chase_items WHERE user_id = ${userId}`;
+
+  const chase: ChaseItem[] = [];
+  for (const r of results) {
+    if (r.category !== "itc_at_risk" && r.category !== "value_mismatch") continue;
+    const status = (statusMap.get(r.id) as ChaseStatus) || "pending";
+    const amount = r.booksTax || r.gstr2bTax;
+    const lastUpdated = new Date().toISOString();
+    await sql`
+      INSERT INTO chase_items (
+        id, user_id, recon_id, gstin, vendor_name, invoice_number, invoice_date,
+        amount, category, status, last_updated
+      ) VALUES (
+        ${r.id}, ${userId}, ${reconId}, ${r.gstin}, ${r.vendorName}, ${r.invoiceNumber},
+        ${r.invoiceDate}, ${amount}, ${r.category}, ${status}, ${lastUpdated}::timestamptz
+      )
+    `;
+    chase.push({
+      id: r.id,
+      gstin: r.gstin,
+      vendorName: r.vendorName,
+      invoiceNumber: r.invoiceNumber,
+      invoiceDate: r.invoiceDate,
+      amount,
+      category: r.category,
+      status,
+      lastUpdated,
+    });
+  }
+
+  await sql`
+    UPDATE users
+    SET recon_count = recon_count + 1,
+        invoice_count = invoice_count + ${results.length}
+    WHERE id = ${userId}
+  `;
+
+  return { reconId, chase };
+}
+
+export async function getLatestReconForUser(userId: string): Promise<{
+  results: MatchResult[];
+  summary: ReconSummary;
+} | null> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT summary, results FROM recon_runs
+    WHERE user_id = ${userId}
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  if (!rows.length) return null;
+  const row = rows[0] as Record<string, unknown>;
+  return {
+    summary: row.summary as ReconSummary,
+    results: row.results as MatchResult[],
+  };
+}
+
+export async function listChaseForUser(userId: string): Promise<ChaseItem[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT id, gstin, vendor_name, invoice_number, invoice_date, amount, category, status, last_updated
+    FROM chase_items
+    WHERE user_id = ${userId}
+    ORDER BY last_updated DESC
+  `;
+  return (rows as Record<string, unknown>[]).map((r) => ({
+    id: r.id as string,
+    gstin: r.gstin as string,
+    vendorName: r.vendor_name as string,
+    invoiceNumber: r.invoice_number as string,
+    invoiceDate: r.invoice_date as string,
+    amount: Number(r.amount || 0),
+    category: r.category as ChaseItem["category"],
+    status: r.status as ChaseStatus,
+    lastUpdated: new Date(r.last_updated as string).toISOString(),
+  }));
+}
+
+export async function updateChaseStatusForUser(
+  userId: string,
+  chaseId: string,
+  status: ChaseStatus
+): Promise<ChaseItem[]> {
+  await ensureSchema();
+  const sql = getSql();
+  await sql`
+    UPDATE chase_items
+    SET status = ${status}, last_updated = NOW()
+    WHERE user_id = ${userId} AND id = ${chaseId}
+  `;
+  return listChaseForUser(userId);
+}
+
+export async function canUserRunRecon(userId: string): Promise<{ ok: boolean; reason?: string }> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT u.recon_count, c.plan
+    FROM users u
+    LEFT JOIN companies c ON c.id = u.company_id
+    WHERE u.id = ${userId}
+    LIMIT 1
+  `;
+  if (!rows.length) return { ok: false, reason: "Account not found" };
+  const row = rows[0] as Record<string, unknown>;
+  const plan = (row.plan as string) || "trial";
+  if (plan !== "trial") return { ok: true };
+  if (Number(row.recon_count || 0) >= 1) {
+    return {
+      ok: false,
+      reason:
+        "Free trial allows 1 reconciliation. Upgrade to Starter (₹999/mo) or Growth (₹2,499/mo) to continue.",
+    };
+  }
+  return { ok: true };
 }

@@ -5,7 +5,8 @@ import Link from "next/link";
 import { Copy, Check, MessageCircle } from "lucide-react";
 import { CategoryBadge } from "@/components/Badge";
 import { EmptyState } from "@/components/EmptyState";
-import { getChaseItems, getOpenChaseItems, getResults, getSettings } from "@/lib/storage";
+import { getSettings } from "@/lib/storage";
+import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
 import { formatINRPrecise } from "@/lib/reconcile";
 import { whatsappEnglish, whatsappHindi, emailSubject, emailBody } from "@/lib/templates";
 import type { ChaseItem, MatchResult } from "@/lib/types";
@@ -19,21 +20,23 @@ export default function ChasePage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [allFixed, setAllFixed] = useState(false);
 
-  function reload() {
-    const open = getOpenChaseItems();
+  async function reload() {
+    const [{ items: all }, recon] = await Promise.all([fetchChaseItems(), fetchReconState()]);
+    const open = all.filter((c) => c.status === "pending" || c.status === "still_blocked");
     setItems(open);
-    setAllFixed(open.length === 0 && getChaseItems().some((c) => c.status === "fixed"));
-    const map = new Map(getResults().map((r) => [r.id, r]));
-    setResultsMap(map);
+    setAllFixed(open.length === 0 && all.some((c) => c.status === "fixed"));
+    setResultsMap(new Map(recon.results.map((r) => [r.id, r])));
     setCompany(getSettings().companyName || "My Company");
   }
 
   useEffect(() => {
-    reload();
-    const onFocus = () => reload();
+    void reload();
+    const onFocus = () => {
+      void reload();
+    };
     window.addEventListener("focus", onFocus);
     const onVis = () => {
-      if (document.visibilityState === "visible") reload();
+      if (document.visibilityState === "visible") void reload();
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {

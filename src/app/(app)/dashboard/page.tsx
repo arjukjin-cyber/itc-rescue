@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { EmptyState } from "@/components/EmptyState";
-import { getLocalUser, getSummary, getChaseItems, getSettings } from "@/lib/storage";
+import { getLocalUser, getSettings } from "@/lib/storage";
+import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
 import { formatINR } from "@/lib/reconcile";
 import type { ReconSummary } from "@/lib/types";
 
@@ -24,9 +25,12 @@ export default function DashboardPage() {
   useEffect(() => {
     const u = getLocalUser();
     if (u) setName(u.name?.split(" ")[0] || "there");
-    setSummary(getSummary());
-    setPending(getChaseItems().filter((c) => c.status === "pending").length);
     setCompany(getSettings().companyName);
+    (async () => {
+      const [recon, chase] = await Promise.all([fetchReconState(), fetchChaseItems()]);
+      setSummary(recon.summary);
+      setPending(chase.items.filter((c) => c.status === "pending").length);
+    })();
   }, []);
 
   return (
