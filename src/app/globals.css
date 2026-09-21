@@ -117,6 +117,42 @@ html {
   background-color: var(--color-bg-subtle);
 }
 
+/* Ghost action — secondary hierarchy; text only + soft hover */
+.btn-ghost {
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background-color: transparent;
+  color: var(--color-text-secondary);
+  font-weight: 550;
+}
+.btn-ghost:hover {
+  background-color: var(--color-bg-muted);
+  color: var(--color-text);
+}
+
+/* Filter / lang chips — inactive ghost; active = accent-soft pill */
+.chip-filter {
+  border-radius: 9999px;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+  padding: 0.375rem 0.75rem;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.chip-filter:hover {
+  background-color: var(--color-bg-muted);
+  color: var(--color-text);
+}
+.chip-filter[data-active="true"] {
+  border-color: var(--color-accent-ring);
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
@@ -261,7 +297,9 @@ html {
   border: 0;
 }
 
-/* Mobile landing — hero CTA sticky-safe above bottom chrome */
+/* Mobile landing — hero CTA sticky-safe above bottom chrome.
+   Parent hero must NOT use overflow:hidden (breaks sticky).
+   Keep no siblings below the CTA inside the sticky containing block. */
 .hero-cta-sticky {
   /* desktop: flow in hero */
 }
@@ -277,9 +315,11 @@ html {
     padding: 0.75rem 1rem;
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
     border-top: 1px solid var(--color-border);
-    background-color: color-mix(in srgb, var(--color-bg) 92%, transparent);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background-color: color-mix(in srgb, var(--color-bg) 96%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    /* isolate so sticky bar never paints under waitlist / preview */
+    box-shadow: 0 -4px 12px color-mix(in srgb, var(--color-text) 6%, transparent);
   }
 }
 

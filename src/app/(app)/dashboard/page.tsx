@@ -78,52 +78,86 @@ export default function DashboardPage() {
         />
       )}
 
+      {/* Next-action cards — matching next step is sole primary tile; rest ghost */}
       <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-4">
         {[
           {
+            id: "reconcile",
             href: "/reconcile",
             icon: Upload,
             title: "Upload & reconcile",
             desc: "Match books vs GSTR-2B",
           },
           {
+            id: "results",
             href: "/reconcile",
             icon: GitCompareArrows,
             title: "View results",
-            desc: summary ? `${summary.totalBooks} books · ${summary.totalGstr2b} in 2B` : "Run a recon first",
+            desc: summary
+              ? `${summary.totalBooks} books · ${summary.totalGstr2b} in 2B`
+              : "Run a recon first",
           },
           {
+            id: "chase",
             href: "/chase",
             icon: MessageSquare,
             title: "Vendor chase",
-            desc: pending ? `${pending} pending follow-ups` : "WhatsApp EN + HI templates",
+            desc: pending
+              ? `${pending} pending follow-ups`
+              : "WhatsApp EN + HI templates",
           },
           {
+            id: "status",
             href: "/status",
             icon: Kanban,
             title: "Status board",
             desc: "Pending · Fixed · Still blocked",
           },
-        ].map((card) => (
-          <Link
-            key={card.title}
-            href={card.href}
-            className="group rounded-[var(--radius-md)] border p-3 shadow-sm transition hover:shadow-md"
-            style={{
-              borderColor: "var(--color-border)",
-              backgroundColor: "var(--color-bg)",
-            }}
-          >
-            <card.icon style={{ color: "var(--color-accent)" }} size={20} />
-            <div
-              className="mt-2 text-sm font-semibold group-hover:opacity-90"
-              style={{ color: "var(--color-text)" }}
+        ].map((card) => {
+          const isPrimary = summary ? card.id === "chase" : card.id === "reconcile";
+          return (
+            <Link
+              key={card.title}
+              href={card.href}
+              className={
+                isPrimary
+                  ? "group rounded-[var(--radius-md)] border p-3 shadow-sm transition hover:shadow-md"
+                  : "group btn-ghost rounded-[var(--radius-md)] border p-3 transition"
+              }
+              style={
+                isPrimary
+                  ? {
+                      borderColor: "var(--color-accent-ring)",
+                      backgroundColor: "var(--color-accent-soft)",
+                    }
+                  : {
+                      borderColor: "var(--color-border)",
+                      backgroundColor: "transparent",
+                    }
+              }
             >
-              {card.title}
-            </div>
-            <div className="mt-0.5 text-meta">{card.desc}</div>
-          </Link>
-        ))}
+              <card.icon
+                style={{
+                  color: isPrimary
+                    ? "var(--color-accent)"
+                    : "var(--color-text-muted)",
+                }}
+                size={20}
+              />
+              <div
+                className="mt-2 text-sm font-semibold group-hover:opacity-90"
+                style={{
+                  color: isPrimary
+                    ? "var(--color-accent)"
+                    : "var(--color-text-secondary)",
+                }}
+              >
+                {card.title}
+              </div>
+              <div className="mt-0.5 text-meta">{card.desc}</div>
+            </Link>
+          );
+        })}
       </div>
 
       {/* Compact sample-files row */}
@@ -145,11 +179,7 @@ export default function DashboardPage() {
         <div className="flex shrink-0 flex-wrap gap-2">
           <a
             href="/samples/purchase-register.csv"
-            className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border px-3 py-1.5 text-sm font-medium hover:bg-[var(--color-accent-soft)]"
-            style={{
-              borderColor: "var(--color-border)",
-              color: "var(--color-accent)",
-            }}
+            className="btn-ghost inline-flex items-center gap-1.5 px-3 py-1.5 text-sm"
             download
           >
             <FileSpreadsheet size={14} />
@@ -157,11 +187,7 @@ export default function DashboardPage() {
           </a>
           <a
             href="/samples/gstr-2b.csv"
-            className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border px-3 py-1.5 text-sm font-medium hover:bg-[var(--color-accent-soft)]"
-            style={{
-              borderColor: "var(--color-border)",
-              color: "var(--color-accent)",
-            }}
+            className="btn-ghost inline-flex items-center gap-1.5 px-3 py-1.5 text-sm"
             download
           >
             <FileSpreadsheet size={14} />

@@ -50,7 +50,7 @@ export default function LandingPage() {
 
       {/* Hero — no decorative gradients; high-contrast H1 + filled accent CTA */}
       <section
-        className="relative overflow-hidden border-b"
+        className="relative border-b"
         style={{
           backgroundColor: "var(--color-bg)",
           borderColor: "var(--color-border)",
@@ -85,7 +85,17 @@ export default function LandingPage() {
               drafts WhatsApp chases in English &amp; Hindi, and tracks who fixed it —
               built for Indian MSMEs (₹50L–₹5cr).
             </p>
-            {/* CTA strip — one filled teal primary above the fold */}
+            <p
+              className="mt-4 text-sm"
+              style={{ color: "var(--color-text-secondary)" }}
+            >
+              <span className="font-semibold" style={{ color: "var(--color-text)" }}>
+                Waitlist open
+              </span>
+              <span aria-hidden> · </span>
+              Free trial: 1 reconciliation or 50 invoices · No government API needed
+            </p>
+            {/* CTA strip — last in sticky containing block so mobile sticky never overlaps siblings */}
             <div
               className="hero-cta-sticky mt-7 flex w-full max-w-xl flex-col items-stretch justify-center gap-3 sm:mx-auto sm:flex-row sm:items-center sm:justify-center"
               role="group"
@@ -104,16 +114,6 @@ export default function LandingPage() {
                 Log in · try demo samples
               </Link>
             </div>
-            <p
-              className="mt-4 text-sm"
-              style={{ color: "var(--color-text-secondary)" }}
-            >
-              <span className="font-semibold" style={{ color: "var(--color-text)" }}>
-                Waitlist open
-              </span>
-              <span aria-hidden> · </span>
-              Free trial: 1 reconciliation or 50 invoices · No government API needed
-            </p>
           </div>
 
           {/* Preview card — KPI strip uses status token map */}
