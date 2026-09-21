@@ -39,10 +39,17 @@ export async function POST(req: NextRequest) {
     if (!password) {
       return NextResponse.json({ error: "Password required" }, { status: 400 });
     }
+    if (isSignup && password.length < 6) {
+      return NextResponse.json(
+        { error: "Password must be at least 6 characters" },
+        { status: 400 }
+      );
+    }
 
     let user: UserSession;
 
     if (hasDatabase()) {
+      // Never mint a cookie without a real DB user + password_hash
       const dbUser = isSignup
         ? await registerUser({
             email,
@@ -54,7 +61,6 @@ export async function POST(req: NextRequest) {
         : await authenticateUser({ email, password });
       user = toSession(dbUser);
     } else {
-      // Local-only fallback without DATABASE_URL
       user = {
         email,
         name,
@@ -81,7 +87,9 @@ export async function POST(req: NextRequest) {
     return res;
   } catch (e) {
     const message = e instanceof Error ? e.message : "Login failed";
-    const status = message.includes("Invalid") || message.includes("exists") ? 401 : 500;
-    return NextResponse.json({ error: message }, { status: status === 401 && message.includes("exists") ? 409 : status });
+    const isExists = message.toLowerCase().includes("already exists");
+    const isInvalid = message.toLowerCase().includes("invalid");
+    const status = isExists ? 409 : isInvalid ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

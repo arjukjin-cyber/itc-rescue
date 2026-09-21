@@ -15,7 +15,8 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { Logo } from "./Logo";
-import { clearLocalUser, getLocalUser, getSettings, getTrialUsage } from "@/lib/storage";
+import { clearLocalUser, getLocalUser, getSettings, getTrialUsage, setLocalUser, setTrialFromServer } from "@/lib/storage";
+import type { UserSession } from "@/lib/types";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -34,18 +35,58 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [trialHint, setTrialHint] = useState("");
 
   useEffect(() => {
-    const u = getLocalUser();
-    if (!u) {
-      router.replace("/login");
-      return;
-    }
-    setEmail(u.email);
-    const s = getSettings();
-    setPlan(s.plan);
-    const t = getTrialUsage();
-    if (s.plan === "trial") {
-      setTrialHint(`${t.reconCount}/1 recon used · free trial`);
-    }
+    let cancelled = false;
+    (async () => {
+      const local = getLocalUser();
+      if (!local) {
+        router.replace("/login");
+        return;
+      }
+      setEmail(local.email);
+      try {
+        const res = await fetch("/api/auth/me", { credentials: "include" });
+        if (cancelled) return;
+        if (res.status === 401) {
+          clearLocalUser();
+          router.replace("/login");
+          return;
+        }
+        if (res.ok) {
+          const data = await res.json();
+          const user = data.user as UserSession | null;
+          if (user) {
+            setLocalUser(user);
+            setEmail(user.email);
+            setPlan(user.plan);
+            if (data.persistence === "postgres") {
+              setTrialFromServer(user.reconCount ?? 0);
+            }
+            if (user.plan === "trial") {
+              const count =
+                data.persistence === "postgres"
+                  ? user.reconCount ?? 0
+                  : getTrialUsage().reconCount;
+              setTrialHint(`${count}/1 recon used · free trial`);
+            } else {
+              setTrialHint("");
+            }
+            return;
+          }
+        }
+      } catch {
+        // Fall through; API calls surface auth errors
+      }
+      if (cancelled) return;
+      const s = getSettings();
+      setPlan(s.plan);
+      const t = getTrialUsage();
+      if (s.plan === "trial") {
+        setTrialHint(`${t.reconCount}/1 recon used · free trial`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [pathname, router]);
 
   async function logout() {

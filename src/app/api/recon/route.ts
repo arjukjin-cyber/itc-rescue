@@ -27,26 +27,38 @@ export async function POST(req: NextRequest) {
   if (!hasDatabase()) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
-  const user = await requireDbUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const user = await requireDbUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const gate = await canUserRunRecon(user.id);
-  if (!gate.ok) {
-    return NextResponse.json({ error: gate.reason || "Upgrade required" }, { status: 402 });
+    const gate = await canUserRunRecon(user.id);
+    if (!gate.ok) {
+      return NextResponse.json(
+        {
+          error: gate.reason || "Free trial used — upgrade to continue",
+          code: "trial_exhausted",
+        },
+        { status: 402 }
+      );
+    }
+
+    const body = await req.json();
+    const results = (body.results || []) as MatchResult[];
+    const summary = body.summary as ReconSummary;
+    if (!summary || !Array.isArray(results)) {
+      return NextResponse.json({ error: "results and summary required" }, { status: 400 });
+    }
+
+    const saved = await saveReconForUser(user.id, results, summary);
+    return NextResponse.json({
+      persistence: "postgres",
+      reconId: saved.reconId,
+      chase: saved.chase,
+      trial: { reconCount: user.reconCount + 1, canRun: false },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Save failed";
+    console.error("[POST /api/recon]", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  const body = await req.json();
-  const results = (body.results || []) as MatchResult[];
-  const summary = body.summary as ReconSummary;
-  if (!summary || !Array.isArray(results)) {
-    return NextResponse.json({ error: "results and summary required" }, { status: 400 });
-  }
-
-  const saved = await saveReconForUser(user.id, results, summary);
-  return NextResponse.json({
-    persistence: "postgres",
-    reconId: saved.reconId,
-    chase: saved.chase,
-    trial: { reconCount: user.reconCount + 1 },
-  });
 }

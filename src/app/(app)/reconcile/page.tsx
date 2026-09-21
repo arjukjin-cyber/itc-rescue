@@ -6,7 +6,8 @@ import { Upload, Play, Loader2, Lock } from "lucide-react";
 import * as XLSX from "xlsx";
 import { CategoryBadge } from "@/components/Badge";
 import { StatCard } from "@/components/StatCard";
-import { isPaywalled } from "@/lib/storage";
+import { isPaywalled, setTrialFromServer } from "@/lib/storage";
+import { useRouter } from "next/navigation";
 import { fetchReconState, persistRecon } from "@/lib/api-data";
 import { parseInvoiceFile, fetchSampleAsFile } from "@/lib/parseFile";
 import { formatINR, formatINRPrecise, reconcile } from "@/lib/reconcile";
@@ -21,6 +22,7 @@ const FILTERS: { key: MatchCategory | "all"; label: string }[] = [
 ];
 
 export default function ReconcilePage() {
+  const router = useRouter();
   const [booksFile, setBooksFile] = useState<File | null>(null);
   const [gstrFile, setGstrFile] = useState<File | null>(null);
   const [results, setResults] = useState<MatchResult[]>([]);
@@ -36,6 +38,11 @@ export default function ReconcilePage() {
     (async () => {
       const state = await fetchReconState();
       if (cancelled) return;
+      if (state.authError) {
+        setError(state.authError);
+        router.replace("/login");
+        return;
+      }
       if (state.results.length) {
         setResults(state.results);
         setSummary(state.summary);
@@ -50,7 +57,7 @@ export default function ReconcilePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [router]);
 
   const filtered = useMemo(() => {
     if (filter === "all") return results;
@@ -81,9 +88,22 @@ export default function ReconcilePage() {
       const { results: matched, summary: sum } = reconcile(booksInv, gstrInv);
       const saved = await persistRecon(matched, sum);
       if (!saved.ok) {
-        setPaywall(saved.error || "Upgrade required");
-        setTrialUsed(true);
+        if (saved.authError) {
+          setError(saved.authError);
+          router.replace("/login");
+          return;
+        }
+        if (saved.paywall) {
+          setPaywall(saved.error || "Upgrade required");
+          setTrialUsed(true);
+          return;
+        }
+        // Surface 500 / other server failures (do not silently pretend success)
+        setError(saved.error || "Failed to save reconciliation");
         return;
+      }
+      if (saved.persistence === "postgres" && typeof saved.reconCount === "number") {
+        setTrialFromServer(saved.reconCount);
       }
       setResults(matched);
       setSummary(sum);
@@ -127,9 +147,22 @@ export default function ReconcilePage() {
       const { results: matched, summary: sum } = reconcile(booksInv, gstrInv);
       const saved = await persistRecon(matched, sum);
       if (!saved.ok) {
-        setPaywall(saved.error || "Upgrade required");
-        setTrialUsed(true);
+        if (saved.authError) {
+          setError(saved.authError);
+          router.replace("/login");
+          return;
+        }
+        if (saved.paywall) {
+          setPaywall(saved.error || "Upgrade required");
+          setTrialUsed(true);
+          return;
+        }
+        // Surface 500 / other server failures (do not silently pretend success)
+        setError(saved.error || "Failed to save reconciliation");
         return;
+      }
+      if (saved.persistence === "postgres" && typeof saved.reconCount === "number") {
+        setTrialFromServer(saved.reconCount);
       }
       setResults(matched);
       setSummary(sum);
@@ -156,29 +189,22 @@ export default function ReconcilePage() {
           className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
           style={{
             borderRadius: "var(--radius-lg)",
-            border: "1.5px solid var(--color-accent-ring)",
-            backgroundColor: "var(--color-accent-soft)",
+            border: "1.5px solid var(--color-status-risk-fg)",
+            backgroundColor: "var(--color-status-risk-bg)",
           }}
         >
-          <div
-            className="flex items-start gap-2 text-sm"
-            style={{ color: "var(--color-text)" }}
-          >
+          <div className="flex items-start gap-2 text-sm">
             <Lock
               size={18}
               className="mt-0.5 shrink-0"
-              style={{ color: "var(--color-accent)" }}
+              style={{ color: "var(--color-status-risk-fg)" }}
             />
             <div>
-              <p className="font-semibold" style={{ color: "var(--color-accent)" }}>
-                Free trial used — upgrade to keep reconciling
+              <p className="font-semibold" style={{ color: "var(--color-status-risk-fg)" }}>
+                Free trial used — upgrade to continue
               </p>
               <p className="mt-0.5" style={{ color: "var(--color-text-secondary)" }}>
                 {paywall}
-              </p>
-              <p className="mt-1 text-xs" style={{ color: "var(--color-text-muted)" }}>
-                Your chase board stays available. New reconciliations need Starter (₹999/mo) or Growth
-                (₹2,499/mo).
               </p>
             </div>
           </div>
@@ -186,7 +212,7 @@ export default function ReconcilePage() {
             href="/settings"
             className="btn-accent shrink-0 px-4 py-2.5 text-center text-sm font-semibold"
           >
-            View plans
+            Upgrade in Settings
           </Link>
         </div>
       )}
