@@ -87,16 +87,60 @@ export default function SettingsPage() {
           <CreditCard size={18} className="text-teal-700" />
           <h2 className="font-semibold text-slate-900">Plan</h2>
         </div>
-        <p className="mt-2 text-sm text-slate-600">
+        <p className="mt-2 text-sm" style={{ color: "var(--color-text-secondary)" }}>
           Current plan:{" "}
-          <span className="font-semibold capitalize text-teal-800">{form.plan}</span>
-          {form.plan === "trial" && (
-            <span className="text-slate-500">
-              {" "}
-              · {trial.reconCount}/1 recon used · {trial.invoiceCount} invoices processed
-            </span>
-          )}
+          <span className="font-semibold capitalize" style={{ color: "var(--color-accent)" }}>
+            {form.plan}
+          </span>
         </p>
+
+        {form.plan === "trial" && (
+          <div
+            className="trial-meter mt-3"
+            data-risk={trial.reconCount >= 1 ? "true" : "false"}
+          >
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-xs font-semibold" style={{ color: "var(--color-text)" }}>
+                Trial usage
+              </span>
+              <span
+                className="text-xs font-bold tabular-nums"
+                style={{
+                  color:
+                    trial.reconCount >= 1
+                      ? "var(--color-status-risk-fg)"
+                      : "var(--color-text-secondary)",
+                }}
+              >
+                {trial.reconCount}/1 recon
+              </span>
+            </div>
+            <div
+              className="mt-1.5 h-1.5 overflow-hidden rounded-full"
+              style={{ backgroundColor: "var(--color-bg-subtle)" }}
+              role="progressbar"
+              aria-valuenow={Math.min(trial.reconCount, 1)}
+              aria-valuemin={0}
+              aria-valuemax={1}
+              aria-label="Trial reconciliations used"
+            >
+              <div
+                className="h-full rounded-full transition-[width]"
+                style={{
+                  width: `${Math.min(trial.reconCount, 1) * 100}%`,
+                  backgroundColor:
+                    trial.reconCount >= 1
+                      ? "var(--color-status-risk-fg)"
+                      : "var(--color-accent)",
+                }}
+              />
+            </div>
+            <p className="mt-1 text-meta">
+              {trial.invoiceCount}/50 invoices processed
+              {trial.reconCount >= 1 ? " · trial exhausted" : ""}
+            </p>
+          </div>
+        )}
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <div

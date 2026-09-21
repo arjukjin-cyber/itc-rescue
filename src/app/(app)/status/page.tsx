@@ -12,6 +12,7 @@ const COLUMNS: {
   label: string;
   laneStyle: CSSProperties;
   headerFg: string;
+  chipBd: string;
   emptyHint: string;
 }[] = [
   {
@@ -22,6 +23,7 @@ const COLUMNS: {
       backgroundColor: "var(--color-status-warn-bg)",
     },
     headerFg: "var(--color-status-warn-fg)",
+    chipBd: "var(--color-status-warn-bd)",
     emptyHint: "Move an invoice here while you wait on the vendor",
   },
   {
@@ -32,6 +34,7 @@ const COLUMNS: {
       backgroundColor: "var(--color-status-ok-bg)",
     },
     headerFg: "var(--color-status-ok-fg)",
+    chipBd: "var(--color-status-ok-bd)",
     emptyHint: "Move here when the vendor files GSTR-1",
   },
   {
@@ -42,6 +45,7 @@ const COLUMNS: {
       backgroundColor: "var(--color-status-risk-bg)",
     },
     headerFg: "var(--color-status-risk-fg)",
+    chipBd: "var(--color-status-risk-bd)",
     emptyHint: "Park stuck invoices here for follow-up",
   },
 ];
@@ -107,16 +111,19 @@ export default function StatusPage() {
               className="flex min-h-[14rem] flex-col rounded-[var(--radius-md)] border p-2"
               style={col.laneStyle}
             >
-              <div className="mb-2 flex items-center justify-between px-1">
-                <h2 className="text-sm font-bold" style={{ color: col.headerFg }}>
+              <div className="mb-2 flex items-center justify-between gap-2 px-1 py-0.5">
+                <h2
+                  className="text-[0.8125rem] font-bold uppercase tracking-wide"
+                  style={{ color: col.headerFg, fontWeight: 700 }}
+                >
                   {col.label}
                 </h2>
                 <span
-                  className="rounded-full px-2 py-0.5 text-xs font-semibold"
+                  className="inline-flex min-w-[1.625rem] items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums leading-none"
                   style={{
                     backgroundColor: "var(--color-bg)",
-                    color: "var(--color-text-secondary)",
-                    border: "1px solid var(--color-border)",
+                    color: col.headerFg,
+                    border: `1.5px solid ${col.chipBd}`,
                   }}
                 >
                   {colItems.length}

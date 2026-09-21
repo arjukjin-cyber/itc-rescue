@@ -21,6 +21,8 @@ export default function ChasePage() {
   const [lang, setLang] = useState<"en" | "hi">("en");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [allFixed, setAllFixed] = useState(false);
+  /** Hold EmptyState until first fetch settles — kills hydrate flash */
+  const [loaded, setLoaded] = useState(false);
 
   async function reload() {
     const [{ items: all, authError: chaseAuth }, recon] = await Promise.all([
@@ -36,6 +38,7 @@ export default function ChasePage() {
     setAllFixed(open.length === 0 && all.some((c) => c.status === "fixed"));
     setResultsMap(new Map(recon.results.map((r) => [r.id, r])));
     setCompany(getSettings().companyName || "My Company");
+    setLoaded(true);
   }
 
   useEffect(() => {
@@ -62,6 +65,62 @@ export default function ChasePage() {
 
   function waLink(text: string) {
     return `https://wa.me/?text=${encodeURIComponent(text)}`;
+  }
+
+  if (!loaded) {
+    return (
+      <div
+        className="mx-auto max-w-4xl space-y-6"
+        aria-busy="true"
+        aria-label="Loading chase list"
+      >
+        <div className="space-y-2">
+          <div
+            className="h-7 w-48 animate-pulse rounded-[var(--radius-sm)]"
+            style={{ backgroundColor: "var(--color-bg-subtle)" }}
+          />
+          <div
+            className="h-4 w-72 max-w-full animate-pulse rounded-[var(--radius-sm)]"
+            style={{ backgroundColor: "var(--color-bg-subtle)" }}
+          />
+        </div>
+        <div className="space-y-3">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="overflow-hidden rounded-xl border p-4 shadow-sm"
+              style={{
+                borderColor: "var(--color-border)",
+                backgroundColor: "var(--color-bg)",
+              }}
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div
+                    className="h-4 w-40 animate-pulse rounded-[var(--radius-sm)]"
+                    style={{ backgroundColor: "var(--color-bg-subtle)" }}
+                  />
+                  <div
+                    className="h-3 w-56 max-w-full animate-pulse rounded-[var(--radius-sm)]"
+                    style={{ backgroundColor: "var(--color-bg-subtle)" }}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <div
+                    className="h-8 w-20 animate-pulse rounded-[var(--radius-md)]"
+                    style={{ backgroundColor: "var(--color-bg-subtle)" }}
+                  />
+                  <div
+                    className="h-8 w-24 animate-pulse rounded-[var(--radius-md)]"
+                    style={{ backgroundColor: "var(--color-bg-subtle)" }}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   if (!items.length) {
