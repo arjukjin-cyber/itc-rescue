@@ -72,27 +72,27 @@ export async function ensureSchema() {
   `;
   await sql`CREATE INDEX IF NOT EXISTS chase_items_user_idx ON chase_items(user_id)`;
   await sql`CREATE INDEX IF NOT EXISTS recon_runs_user_idx ON recon_runs(user_id)`;
-  // Chase ids are MatchResult ids (shared sample keys). Global PK collided across users.
-  // Migrate to composite PK (user_id, id).
-  await sql.query(`
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE table_name = 'chase_items' AND constraint_type = 'PRIMARY KEY'
-          AND constraint_name = 'chase_items_pkey'
-      ) THEN
-        ALTER TABLE chase_items DROP CONSTRAINT chase_items_pkey;
-      END IF;
-      IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE table_name = 'chase_items' AND constraint_type = 'PRIMARY KEY'
-          AND constraint_name = 'chase_items_user_id_pkey'
-      ) THEN
-        ALTER TABLE chase_items ADD CONSTRAINT chase_items_user_id_pkey PRIMARY KEY (user_id, id);
-      END IF;
-    END $$;
-  `);
+  // Sample MatchResult ids collide across users if chase PK is global `id`.
+  // Prefer composite PK (user_id, id). Best-effort migrate; ignore if already done.
+  try {
+    await sql.query(`ALTER TABLE chase_items DROP CONSTRAINT IF EXISTS chase_items_pkey`);
+  } catch {
+    /* ignore */
+  }
+  try {
+    await sql.query(
+      `ALTER TABLE chase_items ADD CONSTRAINT chase_items_user_id_pkey PRIMARY KEY (user_id, id)`
+    );
+  } catch {
+    /* already composite or duplicates — unique index fallback below */
+  }
+  try {
+    await sql.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS chase_items_user_id_uidx ON chase_items (user_id, id)`
+    );
+  } catch {
+    /* ignore */
+  }
   _schemaReady = true;
 }
 
@@ -263,7 +263,6 @@ export async function saveReconForUser(
   const reconId = id("recon");
   const lastUpdated = new Date().toISOString();
 
-  // Preserve chase statuses across re-runs (read before txn)
   const existing = await sql`
     SELECT id, status FROM chase_items WHERE user_id = ${userId}
   `;
@@ -271,7 +270,6 @@ export async function saveReconForUser(
     (existing as Record<string, unknown>[]).map((r) => [r.id as string, r.status as string])
   );
 
-  // Dedupe by MatchResult id — sample files can emit duplicate keys
   const chaseById = new Map<string, ChaseItem>();
   for (const r of results) {
     if (r.category !== "itc_at_risk" && r.category !== "value_mismatch") continue;
@@ -293,67 +291,71 @@ export async function saveReconForUser(
   }
   const chase = Array.from(chaseById.values());
 
-  // Atomic: recon + chase + trial counter.
-  // Composite PK (user_id, id) + ON CONFLICT: sample invoice keys are global across users.
+  const atRisk = results.filter(
+    (r) => r.category === "itc_at_risk" || r.category === "value_mismatch"
+  ).length;
+  if (atRisk > 0 && chase.length === 0) {
+    throw new Error("Chase build produced 0 rows from at-risk results");
+  }
+
   const summaryJson = JSON.stringify(summary);
   const resultsJson = JSON.stringify(results);
 
-  const queries = [
-    sql.query(
-      `INSERT INTO recon_runs (id, user_id, summary, results)
-       VALUES ($1, $2, $3::jsonb, $4::jsonb)`,
-      [reconId, userId, summaryJson, resultsJson]
-    ),
-    sql`DELETE FROM chase_items WHERE user_id = ${userId}`,
-  ];
+  // Sequential writes (neon HTTP). Avoid fragile multi-style transaction batches.
+  await sql.query(
+    `INSERT INTO recon_runs (id, user_id, summary, results)
+     VALUES ($1, $2, $3::jsonb, $4::jsonb)`,
+    [reconId, userId, summaryJson, resultsJson]
+  );
+
+  await sql`DELETE FROM chase_items WHERE user_id = ${userId}`;
 
   for (const c of chase) {
-    queries.push(
-      sql.query(
-        `INSERT INTO chase_items (
-          id, user_id, recon_id, gstin, vendor_name, invoice_number, invoice_date,
-          amount, category, status, last_updated
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW()
-        )
-        ON CONFLICT (user_id, id) DO UPDATE SET
-          recon_id = EXCLUDED.recon_id,
-          gstin = EXCLUDED.gstin,
-          vendor_name = EXCLUDED.vendor_name,
-          invoice_number = EXCLUDED.invoice_number,
-          invoice_date = EXCLUDED.invoice_date,
-          amount = EXCLUDED.amount,
-          category = EXCLUDED.category,
-          status = EXCLUDED.status,
-          last_updated = NOW()`,
-        [
-          c.id,
-          userId,
-          reconId,
-          c.gstin,
-          c.vendorName,
-          c.invoiceNumber,
-          c.invoiceDate,
-          c.amount,
-          c.category,
-          c.status,
-        ]
+    await sql.query(
+      `INSERT INTO chase_items (
+        id, user_id, recon_id, gstin, vendor_name, invoice_number, invoice_date,
+        amount, category, status, last_updated
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW()
       )
+      ON CONFLICT (user_id, id) DO UPDATE SET
+        recon_id = EXCLUDED.recon_id,
+        gstin = EXCLUDED.gstin,
+        vendor_name = EXCLUDED.vendor_name,
+        invoice_number = EXCLUDED.invoice_number,
+        invoice_date = EXCLUDED.invoice_date,
+        amount = EXCLUDED.amount,
+        category = EXCLUDED.category,
+        status = EXCLUDED.status,
+        last_updated = NOW()`,
+      [
+        c.id,
+        userId,
+        reconId,
+        c.gstin,
+        c.vendorName,
+        c.invoiceNumber,
+        c.invoiceDate,
+        c.amount,
+        c.category,
+        c.status,
+      ]
     );
   }
 
-  queries.push(
-    sql`
-      UPDATE users
-      SET recon_count = recon_count + 1,
-          invoice_count = invoice_count + ${results.length}
-      WHERE id = ${userId}
-    `
-  );
+  await sql`
+    UPDATE users
+    SET recon_count = recon_count + 1,
+        invoice_count = invoice_count + ${results.length}
+    WHERE id = ${userId}
+  `;
 
-  await sql.transaction(queries);
+  const verified = await listChaseForUser(userId);
+  if (chase.length > 0 && verified.length === 0) {
+    throw new Error("Chase rows failed to persist after recon save");
+  }
 
-  return { reconId, chase };
+  return { reconId, chase: verified.length ? verified : chase };
 }
 
 export async function getLatestReconForUser(userId: string): Promise<{
@@ -385,17 +387,91 @@ export async function listChaseForUser(userId: string): Promise<ChaseItem[]> {
     WHERE user_id = ${userId}
     ORDER BY last_updated DESC
   `;
-  return (rows as Record<string, unknown>[]).map((r) => ({
+  let items = (rows as Record<string, unknown>[]).map((r) => ({
     id: r.id as string,
-    gstin: r.gstin as string,
-    vendorName: r.vendor_name as string,
-    invoiceNumber: r.invoice_number as string,
-    invoiceDate: r.invoice_date as string,
+    gstin: (r.gstin as string) || "",
+    vendorName: (r.vendor_name as string) || "",
+    invoiceNumber: (r.invoice_number as string) || "",
+    invoiceDate: (r.invoice_date as string) || "",
     amount: Number(r.amount || 0),
     category: r.category as ChaseItem["category"],
     status: r.status as ChaseStatus,
     lastUpdated: new Date(r.last_updated as string).toISOString(),
   }));
+
+  // Soft-launch heal: recon exists with at-risk rows but chase table empty
+  if (items.length === 0) {
+    const latest = await getLatestReconForUser(userId);
+    if (latest) {
+      const need = latest.results.filter(
+        (r) => r.category === "itc_at_risk" || r.category === "value_mismatch"
+      );
+      if (need.length) {
+        await rebuildChaseFromResults(userId, latest.results, null);
+        const again = await sql`
+          SELECT id, gstin, vendor_name, invoice_number, invoice_date, amount, category, status, last_updated
+          FROM chase_items
+          WHERE user_id = ${userId}
+          ORDER BY last_updated DESC
+        `;
+        items = (again as Record<string, unknown>[]).map((r) => ({
+          id: r.id as string,
+          gstin: (r.gstin as string) || "",
+          vendorName: (r.vendor_name as string) || "",
+          invoiceNumber: (r.invoice_number as string) || "",
+          invoiceDate: (r.invoice_date as string) || "",
+          amount: Number(r.amount || 0),
+          category: r.category as ChaseItem["category"],
+          status: r.status as ChaseStatus,
+          lastUpdated: new Date(r.last_updated as string).toISOString(),
+        }));
+      }
+    }
+  }
+
+  return items;
+}
+
+async function rebuildChaseFromResults(
+  userId: string,
+  results: MatchResult[],
+  reconId: string | null
+) {
+  const sql = getSql();
+  let rid = reconId;
+  if (!rid) {
+    const rows = await sql`
+      SELECT id FROM recon_runs WHERE user_id = ${userId} ORDER BY created_at DESC LIMIT 1
+    `;
+    rid = rows.length ? (rows[0] as { id: string }).id : null;
+  }
+  await sql`DELETE FROM chase_items WHERE user_id = ${userId}`;
+  const seen = new Set<string>();
+  for (const r of results) {
+    if (r.category !== "itc_at_risk" && r.category !== "value_mismatch") continue;
+    if (!r.id || seen.has(r.id)) continue;
+    seen.add(r.id);
+    const rawAmount = Number(r.booksTax || r.gstr2bTax || 0);
+    const amount = Number.isFinite(rawAmount) ? rawAmount : 0;
+    await sql.query(
+      `INSERT INTO chase_items (
+        id, user_id, recon_id, gstin, vendor_name, invoice_number, invoice_date,
+        amount, category, status, last_updated
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', NOW())
+      ON CONFLICT (user_id, id) DO NOTHING`,
+      [
+        r.id,
+        userId,
+        rid,
+        r.gstin || "",
+        r.vendorName || "",
+        r.invoiceNumber || "",
+        r.invoiceDate || "",
+        amount,
+        r.category,
+      ]
+    );
+  }
 }
 
 export async function updateChaseStatusForUser(
