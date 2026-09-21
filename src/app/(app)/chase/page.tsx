@@ -151,20 +151,26 @@ export default function ChasePage() {
             {items.length} invoice{items.length === 1 ? "" : "s"} need vendor action · Copy WhatsApp or open chat
           </p>
         </div>
-        <div className="flex rounded-lg border border-slate-200 bg-white p-1">
+        <div
+          className="flex flex-wrap gap-2"
+          role="group"
+          aria-label="Message language"
+        >
           <button
+            type="button"
             onClick={() => setLang("en")}
-            className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
-              lang === "en" ? "bg-teal-700 text-white" : "text-slate-600"
-            }`}
+            className="chip-filter"
+            data-active={lang === "en" ? "true" : undefined}
+            aria-pressed={lang === "en"}
           >
             English
           </button>
           <button
+            type="button"
             onClick={() => setLang("hi")}
-            className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
-              lang === "hi" ? "bg-teal-700 text-white" : "text-slate-600"
-            }`}
+            className="chip-filter"
+            data-active={lang === "hi" ? "true" : undefined}
+            aria-pressed={lang === "hi"}
           >
             हिंदी
           </button>
