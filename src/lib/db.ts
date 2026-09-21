@@ -201,7 +201,6 @@ export async function getUserByEmail(email: string): Promise<DbUser | null> {
 }
 
 
-
 export async function saveReconForUser(
   userId: string,
   results: MatchResult[],
@@ -210,40 +209,28 @@ export async function saveReconForUser(
   await ensureSchema();
   const sql = getSql();
   const reconId = id("recon");
-  await sql`
-    INSERT INTO recon_runs (id, user_id, summary, results)
-    VALUES (${reconId}, ${userId}, ${JSON.stringify(summary)}::jsonb, ${JSON.stringify(results)}::jsonb)
-  `;
-  // Replace open chase with new at-risk / mismatch set, preserve statuses for same ids
+  const lastUpdated = new Date().toISOString();
+
+  // Preserve chase statuses across re-runs (read before txn)
   const existing = await sql`
     SELECT id, status FROM chase_items WHERE user_id = ${userId}
   `;
   const statusMap = new Map(
     (existing as Record<string, unknown>[]).map((r) => [r.id as string, r.status as string])
   );
-  await sql`DELETE FROM chase_items WHERE user_id = ${userId}`;
 
   const chase: ChaseItem[] = [];
   for (const r of results) {
     if (r.category !== "itc_at_risk" && r.category !== "value_mismatch") continue;
     const status = (statusMap.get(r.id) as ChaseStatus) || "pending";
-    const amount = r.booksTax || r.gstr2bTax;
-    const lastUpdated = new Date().toISOString();
-    await sql`
-      INSERT INTO chase_items (
-        id, user_id, recon_id, gstin, vendor_name, invoice_number, invoice_date,
-        amount, category, status, last_updated
-      ) VALUES (
-        ${r.id}, ${userId}, ${reconId}, ${r.gstin}, ${r.vendorName}, ${r.invoiceNumber},
-        ${r.invoiceDate}, ${amount}, ${r.category}, ${status}, ${lastUpdated}::timestamptz
-      )
-    `;
+    const rawAmount = Number(r.booksTax || r.gstr2bTax || 0);
+    const amount = Number.isFinite(rawAmount) ? rawAmount : 0;
     chase.push({
       id: r.id,
-      gstin: r.gstin,
-      vendorName: r.vendorName,
-      invoiceNumber: r.invoiceNumber,
-      invoiceDate: r.invoiceDate,
+      gstin: r.gstin || "",
+      vendorName: r.vendorName || "",
+      invoiceNumber: r.invoiceNumber || "",
+      invoiceDate: r.invoiceDate || "",
       amount,
       category: r.category,
       status,
@@ -251,12 +238,48 @@ export async function saveReconForUser(
     });
   }
 
-  await sql`
-    UPDATE users
-    SET recon_count = recon_count + 1,
-        invoice_count = invoice_count + ${results.length}
-    WHERE id = ${userId}
-  `;
+  // Atomic: recon + chase + trial counter.
+  // Root cause (prod QA): recon INSERT committed, then chase INSERT failed on
+  // `${iso}::timestamptz` (neon HTTP param cast) → empty chase, recon_count stuck 0,
+  // second POST threw 500 instead of 402.
+  const summaryJson = JSON.stringify(summary);
+  const resultsJson = JSON.stringify(results);
+
+  const queries = [
+    // jsonb via sql.query is proven working in prod for recon_runs
+    sql.query(
+      `INSERT INTO recon_runs (id, user_id, summary, results)
+       VALUES ($1, $2, $3::jsonb, $4::jsonb)`,
+      [reconId, userId, summaryJson, resultsJson]
+    ),
+    sql`DELETE FROM chase_items WHERE user_id = ${userId}`,
+  ];
+
+  for (const c of chase) {
+    // NOW() — never pass ISO + ::timestamptz (breaks neon HTTP)
+    queries.push(
+      sql`
+        INSERT INTO chase_items (
+          id, user_id, recon_id, gstin, vendor_name, invoice_number, invoice_date,
+          amount, category, status, last_updated
+        ) VALUES (
+          ${c.id}, ${userId}, ${reconId}, ${c.gstin}, ${c.vendorName}, ${c.invoiceNumber},
+          ${c.invoiceDate}, ${c.amount}, ${c.category}, ${c.status}, NOW()
+        )
+      `
+    );
+  }
+
+  queries.push(
+    sql`
+      UPDATE users
+      SET recon_count = recon_count + 1,
+          invoice_count = invoice_count + ${results.length}
+      WHERE id = ${userId}
+    `
+  );
+
+  await sql.transaction(queries);
 
   return { reconId, chase };
 }
@@ -332,12 +355,24 @@ export async function canUserRunRecon(userId: string): Promise<{ ok: boolean; re
   const row = rows[0] as Record<string, unknown>;
   const plan = (row.plan as string) || "trial";
   if (plan !== "trial") return { ok: true };
+
+  const trialReason =
+    "Free trial allows 1 reconciliation. Upgrade to Starter (₹999/mo) or Growth (₹2,499/mo) to continue.";
+
   if (Number(row.recon_count || 0) >= 1) {
-    return {
-      ok: false,
-      reason:
-        "Free trial allows 1 reconciliation. Upgrade to Starter (₹999/mo) or Growth (₹2,499/mo) to continue.",
-    };
+    return { ok: false, reason: trialReason };
   }
+
+  // Heal mid-flight failures: recon_runs exists but recon_count never incremented
+  const prior = await sql`
+    SELECT 1 FROM recon_runs WHERE user_id = ${userId} LIMIT 1
+  `;
+  if (prior.length) {
+    await sql`
+      UPDATE users SET recon_count = GREATEST(recon_count, 1) WHERE id = ${userId}
+    `;
+    return { ok: false, reason: trialReason };
+  }
+
   return { ok: true };
 }

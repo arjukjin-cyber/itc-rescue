@@ -147,6 +147,25 @@ export function resetTrialUsage() {
   );
 }
 
+/** Sync local trial counter from authoritative server recon_count (postgres). */
+export function setTrialFromServer(reconCount: number, invoiceCount?: number) {
+  const prev = getTrialUsage();
+  lsSet(
+    KEYS.trial,
+    JSON.stringify({
+      reconCount: Math.max(0, Number(reconCount) || 0),
+      invoiceCount:
+        invoiceCount !== undefined
+          ? Math.max(0, Number(invoiceCount) || 0)
+          : prev.invoiceCount,
+    })
+  );
+  const user = getLocalUser();
+  if (user) {
+    setLocalUser({ ...user, reconCount: Math.max(0, Number(reconCount) || 0) });
+  }
+}
+
 /** Clear recon + chase so a new signup doesn't inherit prior demo state */
 export function clearReconData() {
   lsRemove(KEYS.results);

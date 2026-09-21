@@ -38,8 +38,13 @@ export default function SignupPage() {
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, isSignup: true }),
+        body: JSON.stringify({
+          ...form,
+          email: form.email.trim().toLowerCase(),
+          isSignup: true,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {

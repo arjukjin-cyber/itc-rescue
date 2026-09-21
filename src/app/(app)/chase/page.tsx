@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Copy, Check, MessageCircle } from "lucide-react";
 import { CategoryBadge } from "@/components/Badge";
 import { EmptyState } from "@/components/EmptyState";
@@ -12,6 +13,7 @@ import { whatsappEnglish, whatsappHindi, emailSubject, emailBody } from "@/lib/t
 import type { ChaseItem, MatchResult } from "@/lib/types";
 
 export default function ChasePage() {
+  const router = useRouter();
   const [items, setItems] = useState<ChaseItem[]>([]);
   const [resultsMap, setResultsMap] = useState<Map<string, MatchResult>>(new Map());
   const [company, setCompany] = useState("My Company");
@@ -21,7 +23,14 @@ export default function ChasePage() {
   const [allFixed, setAllFixed] = useState(false);
 
   async function reload() {
-    const [{ items: all }, recon] = await Promise.all([fetchChaseItems(), fetchReconState()]);
+    const [{ items: all, authError: chaseAuth }, recon] = await Promise.all([
+      fetchChaseItems(),
+      fetchReconState(),
+    ]);
+    if (chaseAuth || recon.authError) {
+      router.replace("/login");
+      return;
+    }
     const open = all.filter((c) => c.status === "pending" || c.status === "still_blocked");
     setItems(open);
     setAllFixed(open.length === 0 && all.some((c) => c.status === "fixed"));
