@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const email = String(body.email || "").trim().toLowerCase();
-    const password = String(body.password || "");
+    const password = String(body.password || "").trim();
     const name = String(body.name || email.split("@")[0] || "User");
     const companyName = String(body.companyName || "").trim();
     const gstin = String(body.gstin || "").trim().toUpperCase();
