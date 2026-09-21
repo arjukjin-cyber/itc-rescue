@@ -87,7 +87,7 @@ export default function LandingPage() {
             </p>
             {/* CTA strip — one filled teal primary above the fold */}
             <div
-              className="mt-7 flex w-full max-w-xl flex-col items-stretch justify-center gap-3 sm:mx-auto sm:flex-row sm:items-center sm:justify-center"
+              className="hero-cta-sticky mt-7 flex w-full max-w-xl flex-col items-stretch justify-center gap-3 sm:mx-auto sm:flex-row sm:items-center sm:justify-center"
               role="group"
               aria-label="Primary actions"
             >

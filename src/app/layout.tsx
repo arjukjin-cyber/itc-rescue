@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -17,6 +17,12 @@ export const metadata: Metadata = {
   description:
     "Reconcile purchase register with GSTR-2B, chase vendors on WhatsApp, and rescue blocked ITC for Indian MSMEs.",
   keywords: ["ITC", "GSTR-2B", "GSTR-3B", "GST", "MSME", "India", "reconciliation"],
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

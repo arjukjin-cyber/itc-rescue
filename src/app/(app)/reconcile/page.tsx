@@ -333,41 +333,34 @@ export default function ReconcilePage() {
             <div className="table-scroll overflow-x-auto">
               <table className="min-w-full text-left text-sm">
                 <thead
-                  className="sticky top-0 text-xs uppercase tracking-wide"
-                  style={{
-                    borderBottom: "1px solid var(--color-border)",
-                    backgroundColor: "var(--color-bg-muted)",
-                    color: "var(--color-text-muted)",
-                  }}
+                  className="text-xs uppercase tracking-wide"
+                  style={{ color: "var(--color-text-muted)" }}
                 >
                   <tr>
-                    <th className="px-4 py-3.5 font-semibold">Status</th>
-                    <th className="px-4 py-3.5 font-semibold">Vendor</th>
-                    <th className="px-4 py-3.5 font-semibold">GSTIN</th>
-                    <th className="px-4 py-3.5 font-semibold">Invoice</th>
-                    <th className="px-4 py-3.5 font-semibold">Date</th>
-                    <th className="px-4 py-3.5 font-semibold text-right">Books tax</th>
-                    <th className="px-4 py-3.5 font-semibold text-right">2B tax</th>
-                    <th className="px-4 py-3.5 font-semibold">Notes</th>
+                    <th className="px-4 py-3 font-semibold">Status</th>
+                    <th className="px-4 py-3 font-semibold">Vendor</th>
+                    <th className="px-4 py-3 font-semibold">GSTIN</th>
+                    <th className="px-4 py-3 font-semibold">Invoice</th>
+                    <th className="px-4 py-3 font-semibold">Date</th>
+                    <th className="px-4 py-3 font-semibold text-right">Books tax</th>
+                    <th className="px-4 py-3 font-semibold text-right">2B tax</th>
+                    <th className="px-4 py-3 font-semibold">Notes</th>
                   </tr>
                 </thead>
                 <tbody style={{ borderColor: "var(--color-border)" }} className="divide-y divide-slate-100">
                   {filtered.map((r) => (
-                    <tr
-                      key={r.id}
-                      className="hover:bg-[var(--color-bg-muted)]"
-                    >
-                      <td className="whitespace-nowrap px-4 py-3.5">
+                    <tr key={r.id} className="recon-row">
+                      <td className="whitespace-nowrap px-4 py-3">
                         <CategoryBadge category={r.category} />
                       </td>
                       <td
-                        className="max-w-[160px] truncate px-4 py-3.5 font-medium"
+                        className="max-w-[160px] truncate px-4 py-3 font-medium"
                         style={{ color: "var(--color-text)" }}
                       >
                         {r.vendorName}
                       </td>
                       <td
-                        className="whitespace-nowrap px-4 py-3.5 font-mono"
+                        className="whitespace-nowrap px-4 py-3 font-mono"
                         style={{
                           fontSize: "0.8125rem",
                           lineHeight: "1.125rem",
@@ -378,7 +371,7 @@ export default function ReconcilePage() {
                         {r.gstin}
                       </td>
                       <td
-                        className="whitespace-nowrap px-4 py-3.5 font-mono"
+                        className="whitespace-nowrap px-4 py-3 font-mono"
                         style={{
                           fontSize: "0.8125rem",
                           color: "var(--color-text)",
@@ -388,19 +381,19 @@ export default function ReconcilePage() {
                         {r.invoiceNumber}
                       </td>
                       <td
-                        className="whitespace-nowrap px-4 py-3.5"
+                        className="whitespace-nowrap px-4 py-3"
                         style={{ color: "var(--color-text-secondary)" }}
                       >
                         {r.invoiceDate}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3.5 text-right tabular-nums">
+                      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
                         {r.booksTax ? formatINRPrecise(r.booksTax) : "—"}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3.5 text-right tabular-nums">
+                      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
                         {r.gstr2bTax ? formatINRPrecise(r.gstr2bTax) : "—"}
                       </td>
                       <td
-                        className="max-w-[200px] truncate px-4 py-3.5 text-xs"
+                        className="max-w-[200px] truncate px-4 py-3 text-xs"
                         style={{ color: "var(--color-text-muted)" }}
                       >
                         {r.notes || "—"}

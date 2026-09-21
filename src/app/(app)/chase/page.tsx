@@ -58,9 +58,10 @@ export default function ChasePage() {
   }, []);
 
   function copyText(key: string, text: string) {
-    navigator.clipboard.writeText(text);
+    void navigator.clipboard.writeText(text);
     setCopied(key);
-    setTimeout(() => setCopied(null), 2000);
+    // Brief check microfeedback — not an alert
+    window.setTimeout(() => setCopied(null), 1200);
   }
 
   function waLink(text: string) {
@@ -170,6 +171,10 @@ export default function ChasePage() {
         </div>
       </div>
 
+      <p className="copy-live" role="status" aria-live="polite">
+        {copied ? "Copied" : ""}
+      </p>
+
       <div className="space-y-3">
         {items.map((item) => {
           const result = resultsMap.get(item.id);
@@ -207,24 +212,34 @@ export default function ChasePage() {
                     {isOpen ? "Hide message" : "Show message"}
                   </button>
                   <button
+                    type="button"
                     onClick={() =>
                       result &&
                       copyText(`${item.id}-en`, whatsappEnglish(result, company))
                     }
-                    className="btn-secondary inline-flex items-center gap-1 px-3 py-1.5 text-xs"
+                    className="btn-secondary copy-btn inline-flex items-center gap-1 px-3 py-1.5 text-xs"
+                    data-copied={copied === `${item.id}-en` ? "true" : undefined}
+                    aria-label={
+                      copied === `${item.id}-en` ? "Copied English message" : "Copy English WhatsApp"
+                    }
                   >
-                    {copied === `${item.id}-en` ? <Check size={14} /> : <Copy size={14} />}
-                    Copy EN
+                    {copied === `${item.id}-en` ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}
+                    {copied === `${item.id}-en` ? "Copied" : "Copy EN"}
                   </button>
                   <button
+                    type="button"
                     onClick={() =>
                       result &&
                       copyText(`${item.id}-hi`, whatsappHindi(result, company))
                     }
-                    className="btn-secondary inline-flex items-center gap-1 px-3 py-1.5 text-xs"
+                    className="btn-secondary copy-btn inline-flex items-center gap-1 px-3 py-1.5 text-xs"
+                    data-copied={copied === `${item.id}-hi` ? "true" : undefined}
+                    aria-label={
+                      copied === `${item.id}-hi` ? "Copied Hindi message" : "Copy Hindi WhatsApp"
+                    }
                   >
-                    {copied === `${item.id}-hi` ? <Check size={14} /> : <Copy size={14} />}
-                    Copy HI
+                    {copied === `${item.id}-hi` ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}
+                    {copied === `${item.id}-hi` ? "Copied" : "Copy HI"}
                   </button>
                   <a
                     href={waLink(msg)}
@@ -243,15 +258,21 @@ export default function ChasePage() {
                   </pre>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
+                      type="button"
                       onClick={() =>
                         copyText(
                           `${item.id}-em`,
                           `Subject: ${emailSubject(result)}\n\n${emailBody(result, company)}`
                         )
                       }
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      className="btn-secondary copy-btn inline-flex items-center gap-1 px-3 py-1.5 text-xs"
+                      data-copied={copied === `${item.id}-em` ? "true" : undefined}
+                      aria-label={
+                        copied === `${item.id}-em` ? "Copied email" : "Copy email"
+                      }
                     >
-                      {copied === `${item.id}-em` ? "Copied email!" : "Copy email"}
+                      {copied === `${item.id}-em` ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}
+                      {copied === `${item.id}-em` ? "Copied" : "Copy email"}
                     </button>
                   </div>
                 </div>

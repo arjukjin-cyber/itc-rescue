@@ -223,3 +223,63 @@ html {
   border-color: var(--color-status-risk-bd);
   background-color: var(--color-status-risk-bg);
 }
+
+/* Recon results table — sticky header inside scroll; denser row hover */
+.table-scroll {
+  max-height: min(28rem, 70vh);
+  overflow: auto;
+}
+.table-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background-color: var(--color-bg-muted);
+  box-shadow: inset 0 -1px 0 var(--color-border);
+}
+.recon-row {
+  transition: background-color 0.12s ease;
+}
+.recon-row:hover {
+  background-color: var(--color-accent-soft);
+}
+
+/* WhatsApp / copy microfeedback — brief check, not alert */
+.copy-btn[data-copied="true"] {
+  border-color: var(--color-status-ok-bd);
+  background-color: var(--color-status-ok-bg);
+  color: var(--color-status-ok-fg);
+}
+.copy-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Mobile landing — hero CTA sticky-safe above bottom chrome */
+.hero-cta-sticky {
+  /* desktop: flow in hero */
+}
+@media (max-width: 639px) {
+  .hero-cta-sticky {
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    margin-left: -1rem;
+    margin-right: -1rem;
+    width: calc(100% + 2rem);
+    max-width: none;
+    padding: 0.75rem 1rem;
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--color-border);
+    background-color: color-mix(in srgb, var(--color-bg) 92%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
+
