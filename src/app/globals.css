@@ -211,3 +211,15 @@ html {
   background: var(--color-border-strong);
   border-radius: 3px;
 }
+
+/* Settings trial meter — dense; risk chrome when exhausted (1/1) */
+.trial-meter {
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-muted);
+}
+.trial-meter[data-risk="true"] {
+  border-color: var(--color-status-risk-bd);
+  background-color: var(--color-status-risk-bg);
+}
