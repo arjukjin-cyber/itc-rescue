@@ -16,12 +16,16 @@
   --color-accent-ring: #99f6e4;
   --color-status-ok-bg: #ecfdf5;
   --color-status-ok-fg: #007956;
+  --color-status-ok-bd: #a4f4cf;
   --color-status-risk-bg: #fef2f2;
   --color-status-risk-fg: #9f0712;
+  --color-status-risk-bd: #ffcaca;
   --color-status-warn-bg: #fffbeb;
   --color-status-warn-fg: #b75000;
+  --color-status-warn-bd: #fee685;
   --color-status-info-bg: #f0f9ff;
   --color-status-info-fg: #0369a1;
+  --color-status-info-bd: #bae6fd;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
@@ -134,13 +138,13 @@ html {
   color: var(--color-status-risk-fg);
 }
 
-/* Dashboard welcome strip — muted band + room for next CTA */
+/* Dashboard welcome strip — muted band + room for next CTA (8px grid) */
 .welcome-strip {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1rem 1.25rem;
-  border-radius: var(--radius-lg);
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   background-color: var(--color-bg-subtle);
 }
@@ -149,7 +153,8 @@ html {
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
-    padding: 1.25rem 1.5rem;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
   }
 }
 

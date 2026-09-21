@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Upload, Play, Loader2, Lock } from "lucide-react";
+import { Upload, Play, Loader2, Lock, Filter } from "lucide-react";
+import { EmptyState } from "@/components/EmptyState";
 import * as XLSX from "xlsx";
 import { CategoryBadge } from "@/components/Badge";
 import { StatCard } from "@/components/StatCard";
@@ -421,20 +422,20 @@ export default function ReconcilePage() {
                       </td>
                     </tr>
                   ))}
-                  {!filtered.length && (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className="px-4 py-8 text-center"
-                        style={{ color: "var(--color-text-muted)" }}
-                      >
-                        No rows in this filter
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
+            {!filtered.length && (
+              <div className="border-t px-3 py-4" style={{ borderColor: "var(--color-border)" }}>
+                <EmptyState
+                  icon={Filter}
+                  title="No rows in this filter"
+                  description="Nothing matches the selected category. Switch filter or show all invoices from this recon."
+                  actionLabel="Show all rows"
+                  onAction={() => setFilter("all")}
+                />
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-3">

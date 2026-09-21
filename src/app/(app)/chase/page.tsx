@@ -66,17 +66,19 @@ export default function ChasePage() {
 
   if (!items.length) {
     return (
-      <EmptyState
-        icon={MessageCircle}
-        title={allFixed ? "Nothing left to chase" : "No vendors to chase"}
-        description={
-          allFixed
-            ? "All chase invoices are Fixed or cleared. Track them on the Status board."
-            : "Run a reconciliation first. ITC-at-risk and value-mismatch rows appear here."
-        }
-        actionLabel={allFixed ? "Open Status board" : "Go to Reconcile"}
-        actionHref={allFixed ? "/status" : "/reconcile"}
-      />
+      <div className="flex min-h-[min(28rem,70vh)] items-center justify-center px-2">
+        <EmptyState
+          icon={MessageCircle}
+          title={allFixed ? "Nothing left to chase" : "No vendors to chase"}
+          description={
+            allFixed
+              ? "All chase invoices are Fixed or cleared. Track them on the Status board."
+              : "Run a reconciliation first. ITC-at-risk and value-mismatch rows appear here."
+          }
+          actionLabel={allFixed ? "Open Status board" : "Go to Reconcile"}
+          actionHref={allFixed ? "/status" : "/reconcile"}
+        />
+      </div>
     );
   }
 

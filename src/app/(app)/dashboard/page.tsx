@@ -34,14 +34,14 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8">
+    <div className="mx-auto max-w-6xl space-y-4">
       <div className="welcome-strip">
         <div className="min-w-0 flex-1">
           <h1 className="page-title">
             Namaste, {name} 👋
           </h1>
           <p
-            className="mt-1.5 text-sm leading-relaxed sm:text-base"
+            className="mt-1 text-sm leading-relaxed"
             style={{ color: "var(--color-text-secondary)" }}
           >
             {company ? `${company} · ` : ""}
@@ -50,14 +50,14 @@ export default function DashboardPage() {
         </div>
         <Link
           href={summary ? "/chase" : "/reconcile"}
-          className="btn-accent inline-flex shrink-0 items-center justify-center px-4 py-2.5 text-sm font-semibold"
+          className="btn-accent inline-flex shrink-0 items-center justify-center px-4 py-2 text-sm font-semibold"
         >
           {summary ? "Chase vendors →" : "Start reconciling →"}
         </Link>
       </div>
 
       {summary ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Matched" value={summary.matched} tone="success" sub={formatINR(summary.matchedAmount)} />
           <StatCard
             label="ITC at risk"
@@ -78,7 +78,7 @@ export default function DashboardPage() {
         />
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-4">
         {[
           {
             href: "/reconcile",
@@ -108,29 +108,48 @@ export default function DashboardPage() {
           <Link
             key={card.title}
             href={card.href}
-            className="group rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-teal-300 hover:shadow-md"
+            className="group rounded-[var(--radius-md)] border p-3 shadow-sm transition hover:shadow-md"
+            style={{
+              borderColor: "var(--color-border)",
+              backgroundColor: "var(--color-bg)",
+            }}
           >
-            <card.icon className="text-teal-700" size={22} />
-            <div className="mt-3 font-semibold text-slate-900 group-hover:text-teal-800">
+            <card.icon style={{ color: "var(--color-accent)" }} size={20} />
+            <div
+              className="mt-2 text-sm font-semibold group-hover:opacity-90"
+              style={{ color: "var(--color-text)" }}
+            >
               {card.title}
             </div>
-            <div className="mt-1 text-meta">{card.desc}</div>
+            <div className="mt-0.5 text-meta">{card.desc}</div>
           </Link>
         ))}
       </div>
 
       {/* Compact sample-files row */}
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+      <div
+        className="flex flex-col gap-2 rounded-[var(--radius-md)] border px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+        style={{
+          borderColor: "var(--color-border)",
+          backgroundColor: "var(--color-bg)",
+        }}
+      >
         <div className="min-w-0">
-          <h3 className="font-semibold text-slate-900">Sample files (offline demo)</h3>
-          <p className="mt-0.5 text-sm text-slate-600">
+          <h3 className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>
+            Sample files (offline demo)
+          </h3>
+          <p className="mt-0.5 text-meta">
             Download, then upload on Reconcile — or use &quot;Load sample files&quot; there.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           <a
             href="/samples/purchase-register.csv"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50"
+            className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border px-3 py-1.5 text-sm font-medium hover:bg-[var(--color-accent-soft)]"
+            style={{
+              borderColor: "var(--color-border)",
+              color: "var(--color-accent)",
+            }}
             download
           >
             <FileSpreadsheet size={14} />
@@ -138,7 +157,11 @@ export default function DashboardPage() {
           </a>
           <a
             href="/samples/gstr-2b.csv"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50"
+            className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border px-3 py-1.5 text-sm font-medium hover:bg-[var(--color-accent-soft)]"
+            style={{
+              borderColor: "var(--color-border)",
+              color: "var(--color-accent)",
+            }}
             download
           >
             <FileSpreadsheet size={14} />
