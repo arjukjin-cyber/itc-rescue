@@ -242,8 +242,10 @@ export function ReconcileScreen({ view }: { view: ItcView | null }) {
         "purchase-register.csv"
       );
       const gstr = await fetchSampleAsFile("/samples/gstr-2b.csv", "gstr-2b.csv");
-      setBooksFile(books);
-      setGstrFile(gstr);
+      // #31: leave the upload zones empty so a sample file can never be mixed into a real run
+      // (the file bar still shows the sample file names from the sample-run store).
+      setBooksFile(null);
+      setGstrFile(null);
       const booksInv = await parseInvoiceFile(books, "books");
       const gstrInv = await parseInvoiceFile(gstr, "gstr2b");
       const { results: matched, summary: sum } = reconcile(booksInv, gstrInv);

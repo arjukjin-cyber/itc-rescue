@@ -127,7 +127,7 @@ export default function LandingPage() {
           </div>
           <div className="flex items-start gap-2">
             <Zap size={15} strokeWidth={1.75} className="mt-0.5 shrink-0" style={{ color: "var(--color-text-3)" }} aria-hidden />
-            Demo works offline with sample CSVs
+            Try it with sample files first. Sample runs are never saved
           </div>
         </div>
       </section>

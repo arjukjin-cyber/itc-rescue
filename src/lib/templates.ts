@@ -24,7 +24,7 @@ export function whatsappEnglish(r: MatchResult, companyName: string): string {
 export function whatsappHindi(r: MatchResult, companyName: string): string {
   const date = formatInvoiceDate(r.invoiceDate);
   if (isTaxDiff(r)) {
-    return `नमस्ते ${r.vendorName}, यह ${companyName} की ओर से है। इनवॉइस ${r.invoiceNumber} दिनांक ${date} में GSTR-2B में GST ${formatINRPrecise(r.gstr2bTax || 0)} दिख रहा है, लेकिन हमारे इनवॉइस में ${formatINRPrecise(r.booksTax || 0)} है। कृपया अपने GSTR-1 में इसे संशोधित करें। धन्यवाद।`;
+    return `नमस्ते ${r.vendorName}, यह ${companyName} की ओर से है। इनवॉइस ${r.invoiceNumber} (दिनांक ${date}) के लिए GSTR-2B में GST ${formatINRPrecise(r.gstr2bTax || 0)} दिख रहा है, लेकिन हमारे इनवॉइस में ${formatINRPrecise(r.booksTax || 0)} है। कृपया अपने GSTR-1 में इसे संशोधित करें। धन्यवाद।`;
   }
   return `नमस्ते ${r.vendorName}, यह ${companyName} की ओर से है। इनवॉइस ${r.invoiceNumber} दिनांक ${date} (GST ${formatINRPrecise(r.booksTax || r.gstr2bTax || 0)}) हमारे GSTR-2B में नहीं दिख रहा है। कृपया इसे अपने GSTR-1 में अपलोड करें ताकि हम क्रेडिट क्लेम कर सकें। धन्यवाद।`;
 }
