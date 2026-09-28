@@ -18,6 +18,8 @@ export interface InvoiceRecord {
   totalTax: number;
   source: "books" | "gstr2b";
   rawInvoiceNumber?: string;
+  /** Vendor mobile from the register, normalised "91XXXXXXXXXX" (UX-04). */
+  phone?: string;
 }
 
 export interface MatchResult {
@@ -33,6 +35,8 @@ export interface MatchResult {
   gstr2bTax: number;
   taxDiff: number;
   notes?: string;
+  /** First valid register phone for this GSTIN, "91XXXXXXXXXX" (UX-04). */
+  phone?: string;
 }
 
 export interface ReconSummary {
@@ -74,4 +78,6 @@ export interface ChaseItem {
   category: MatchCategory;
   status: ChaseStatus;
   lastUpdated: string;
+  /** Vendor WhatsApp number "91XXXXXXXXXX", from the latest recon results (UX-04). */
+  phone?: string;
 }
