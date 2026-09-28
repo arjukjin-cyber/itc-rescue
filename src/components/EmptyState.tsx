@@ -3,7 +3,8 @@ import type { LucideIcon } from "lucide-react";
 
 /**
  * Shared zero-data empty state — tokens v0.1 contract:
- * icon 40 · heading · secondary body · one teal CTA. Max width 28rem.
+ * icon 40 · one sentence · one teal CTA. Max width 28rem.
+ * `description` is optional and discouraged (action-first: one sentence + one button).
  */
 export function EmptyState({
   icon: Icon,
@@ -16,7 +17,7 @@ export function EmptyState({
 }: {
   icon: LucideIcon;
   title: string;
-  description: string;
+  description?: string;
   actionLabel?: string;
   actionHref?: string;
   onAction?: () => void;
@@ -50,12 +51,14 @@ export function EmptyState({
       >
         {title}
       </h2>
-      <p
-        className="mx-auto mt-2 max-w-sm text-sm leading-relaxed"
-        style={{ color: "var(--color-text-secondary)" }}
-      >
-        {description}
-      </p>
+      {description && (
+        <p
+          className="mx-auto mt-2 max-w-sm text-sm leading-relaxed"
+          style={{ color: "var(--color-text-secondary)" }}
+        >
+          {description}
+        </p>
+      )}
       {showAction && actionHref && !onAction && (
         <Link
           href={actionHref}

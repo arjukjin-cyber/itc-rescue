@@ -30,3 +30,8 @@ export function emailSubject(r: MatchResult): string {
 export function emailBody(r: MatchResult, companyName: string): string {
   return whatsappEnglish(r, companyName);
 }
+
+/** WhatsApp deep link used by /chase and the inline "Chase on WhatsApp" row action. */
+export function waLink(text: string): string {
+  return `https://wa.me/?text=${encodeURIComponent(text)}`;
+}
