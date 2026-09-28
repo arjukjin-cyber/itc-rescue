@@ -64,13 +64,13 @@ export default function SettingsPage() {
               type={f.type}
               value={form[f.key] || ""}
               onChange={(e) => set(f.key, e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-ring"
             />
           </div>
         ))}
         <button
           type="submit"
-          className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800"
+          className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:bg-accent-hover"
         >
           {saved ? (
             <>
@@ -84,7 +84,7 @@ export default function SettingsPage() {
 
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-2">
-          <CreditCard size={18} className="text-teal-700" />
+          <CreditCard size={18} className="text-accent" />
           <h2 className="font-semibold text-slate-900">Plan</h2>
         </div>
         <p className="mt-2 text-sm" style={{ color: "var(--color-text-secondary)" }}>
