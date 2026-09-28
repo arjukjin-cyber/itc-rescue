@@ -730,10 +730,12 @@ async function main() {
     const { results } = reconcile([a, b, c], []);
     assert.equal(results.length, 1);
     assert.equal(results[0].phone, "919876543210");
-    // unregistered supplier: no GSTIN lookup, phone comes from the merged books row
+    // unregistered supplier (no GSTIN): #32 leaves these rows out of the recon and counts them
     const u1 = { ...inv("books", "B-1", "2025-04-08", 100, 9, 9), gstin: "UNKNOWN", vendorName: "Local Shop" };
     const u2 = { ...u1, phone: "919812345678" };
-    assert.equal(reconcile([u1, u2], []).results[0].phone, "919812345678");
+    const out = reconcile([u1, u2, a], []);
+    assert.equal(out.results.length, 1);
+    assert.equal(out.summary.unregisteredSkipped, 2);
   });
 
   console.log("UX-01: portal GSTR-2B JSON + file-specific errors");

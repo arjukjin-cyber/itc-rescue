@@ -98,6 +98,13 @@ export default function ReconcilePage() {
       }
 
       const { results: matched, summary: sum } = reconcile(booksInv, gstrInv);
+      if (sum.unregisteredSkipped) {
+        const n = sum.unregisteredSkipped;
+        const skipNote = `${n} unregistered purchase${n === 1 ? "" : "s"} skipped (no GSTIN, so no ITC).`;
+        // keep both files' detected-source notes (books + GSTR-2B) in front of the skip note
+        const base = notes.length ? notes.join(" · ") : null;
+        setBooksNote(base ? `${base} · ${skipNote}` : skipNote);
+      }
       const saved = await persistRecon(matched, sum);
       if (!saved.ok) {
         if (saved.authError) {
