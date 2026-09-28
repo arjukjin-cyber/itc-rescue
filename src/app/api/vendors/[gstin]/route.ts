@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { hasDatabase, upsertVendorPhone } from "@/lib/db";
 import { requireDbUser } from "@/lib/session-user";
 import { VendorValidationError } from "@/lib/vendors";
+import {
+  QA_FAIL_VENDORS_COOKIE,
+  QA_FAIL_VENDORS_MESSAGE,
+  shouldForceVendorsFail,
+} from "@/lib/qa-flags";
 
 /** PATCH /api/vendors/:gstin  body: { phone: string | null, name?: string | null } */
 export async function PATCH(
@@ -29,6 +34,11 @@ export async function PATCH(
   }
 
   try {
+    // PREVIEW-ONLY QA switch; ignored in production. qa_fail_vendors=1 cookie →
+    // 500 before touching the DB, to exercise the UI's error path.
+    if (shouldForceVendorsFail(req.cookies.get(QA_FAIL_VENDORS_COOKIE)?.value)) {
+      throw new Error(QA_FAIL_VENDORS_MESSAGE);
+    }
     const { vendor, vendors } = await upsertVendorPhone(
       user.id,
       gstin,

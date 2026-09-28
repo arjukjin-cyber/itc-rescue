@@ -222,3 +222,45 @@ export function buildVendorSummaries(input: {
   );
   return out;
 }
+
+export type OffenseBumpOutcome = { ok: true } | { ok: false; error: string };
+
+/**
+ * Run the offender bump as a best-effort side step. Never throws: on failure it
+ * logs `[vendors] offender bump failed ... user=… run=… error=…` and resolves
+ * `{ ok: false }`. Handles both sync throws and rejected promises.
+ */
+export async function runBestEffortOffenseBump(
+  ctx: { userId: string; runId: string },
+  bump: () => unknown,
+  log: (...args: unknown[]) => void = console.error
+): Promise<OffenseBumpOutcome> {
+  try {
+    await bump();
+    return { ok: true };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    try {
+      log(
+        `[vendors] offender bump failed (best-effort; recon + chase already saved) user=${ctx.userId} run=${ctx.runId} error=${error}`
+      );
+    } catch {
+      /* logging must never break the recon save */
+    }
+    return { ok: false, error };
+  }
+}
+
+/**
+ * Used at the end of saveReconForUser: runs the bump best-effort, then returns
+ * the already-computed recon/chase result unchanged regardless of the outcome.
+ */
+export async function withBestEffortOffenseBump<T>(
+  saved: T,
+  ctx: { userId: string; runId: string },
+  bump: () => unknown,
+  log?: (...args: unknown[]) => void
+): Promise<T> {
+  await runBestEffortOffenseBump(ctx, bump, log);
+  return saved;
+}

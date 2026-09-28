@@ -6,6 +6,11 @@ import {
   saveReconForUser,
 } from "@/lib/db";
 import { requireDbUser } from "@/lib/session-user";
+import {
+  QA_FAIL_VENDORS_COOKIE,
+  shouldBypassTrial,
+  shouldForceVendorsFail,
+} from "@/lib/qa-flags";
 import type { MatchResult, ReconSummary } from "@/lib/types";
 
 export async function GET() {
@@ -15,7 +20,8 @@ export async function GET() {
   const user = await requireDbUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const latest = await getLatestReconForUser(user.id);
-  const gate = await canUserRunRecon(user.id);
+  // PREVIEW-ONLY QA switch; ignored in production (qa. trial bypass).
+  const gate = await canUserRunRecon(user.id, { bypassTrial: shouldBypassTrial(user.email) });
   return NextResponse.json({
     persistence: "postgres",
     recon: latest,
@@ -31,7 +37,9 @@ export async function POST(req: NextRequest) {
     const user = await requireDbUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const gate = await canUserRunRecon(user.id);
+    // PREVIEW-ONLY QA switch; ignored in production (qa. trial bypass).
+    const bypassTrial = shouldBypassTrial(user.email);
+    const gate = await canUserRunRecon(user.id, { bypassTrial });
     if (!gate.ok) {
       return NextResponse.json(
         {
@@ -49,12 +57,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "results and summary required" }, { status: 400 });
     }
 
-    const saved = await saveReconForUser(user.id, results, summary);
+    // PREVIEW-ONLY QA switch; ignored in production (qa_fail_vendors=1 cookie
+    // forces the best-effort vendors bump to fail; recon/chase still save).
+    const forceVendorsFail = shouldForceVendorsFail(req.cookies.get(QA_FAIL_VENDORS_COOKIE)?.value);
+    const saved = await saveReconForUser(user.id, results, summary, { forceVendorsFail });
     return NextResponse.json({
       persistence: "postgres",
       reconId: saved.reconId,
       chase: saved.chase,
-      trial: { reconCount: user.reconCount + 1, canRun: false },
+      // canRun stays false in production; only a preview QA bypass keeps it true.
+      trial: { reconCount: user.reconCount + 1, canRun: bypassTrial },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Save failed";

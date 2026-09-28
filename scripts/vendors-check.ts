@@ -8,8 +8,16 @@ import { join } from "node:path";
 import { reconcile, rowToInvoice } from "../src/lib/reconcile";
 import type { InvoiceRecord, MatchResult } from "../src/lib/types";
 import {
+  QA_FAIL_VENDORS_MESSAGE,
+  isPreviewQa,
+  shouldBypassTrial,
+  shouldForceVendorsFail,
+} from "../src/lib/qa-flags";
+import {
   VendorValidationError,
   applyOffenseBump,
+  runBestEffortOffenseBump,
+  withBestEffortOffenseBump,
   buildVendorSummaries,
   isRepeatOffender,
   normalizeIndianMobile,
@@ -19,10 +27,9 @@ import {
 } from "../src/lib/vendors";
 
 let passed = 0;
-function test(name: string, fn: () => void) {
-  fn();
-  passed++;
-  console.log(`ok - ${name}`);
+const pending: { name: string; fn: () => void | Promise<void> }[] = [];
+function test(name: string, fn: () => void | Promise<void>) {
+  pending.push({ name, fn });
 }
 
 // ---------- phone normalisation ----------
@@ -195,4 +202,137 @@ test("stored vendor not in latest recon is still listed (phone saved)", () => {
   assert.equal(v.name, "");
 });
 
-console.log(`\n${passed} checks passed`);
+// ---------- guard: same run id vs new run id (explicit) ----------
+test("re-saving the same run id does not change offender_count", () => {
+  const s0 = new Map<string, OffenseState>([
+    ["G1", { offenderCount: 1, lastOffenseRunId: "recon_1" }],
+  ]);
+  let s = s0;
+  for (let i = 0; i < 5; i++) s = applyOffenseBump(s, "recon_1", ["G1"]);
+  assert.deepEqual(s.get("G1"), { offenderCount: 1, lastOffenseRunId: "recon_1" });
+});
+
+test("a new run id bumps offender_count exactly once", () => {
+  const s0 = new Map<string, OffenseState>([
+    ["G1", { offenderCount: 1, lastOffenseRunId: "recon_1" }],
+  ]);
+  const s1 = applyOffenseBump(s0, "recon_2", ["G1", "G1"]);
+  assert.deepEqual(s1.get("G1"), { offenderCount: 2, lastOffenseRunId: "recon_2" });
+  const s2 = applyOffenseBump(s1, "recon_2", ["G1"]);
+  assert.equal(s2.get("G1")!.offenderCount, 2);
+});
+
+// ---------- best-effort wrapper ----------
+test("best-effort bump swallows a thrown error; recon result is returned unchanged", async () => {
+  const saved = { reconId: "recon_abc", chase: [{ id: "r|G|1|2026-03-01" }] };
+  const logs: string[] = [];
+  const log = (...a: unknown[]) => logs.push(a.map(String).join(" "));
+
+  // sync throw (the QA forced failure throws before any DB access)
+  const r1 = await withBestEffortOffenseBump(saved, { userId: "usr_1", runId: "recon_abc" }, () => {
+    throw new Error(QA_FAIL_VENDORS_MESSAGE);
+  }, log);
+  assert.equal(r1, saved, "same object back");
+  assert.deepEqual(r1, { reconId: "recon_abc", chase: [{ id: "r|G|1|2026-03-01" }] });
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /offender bump failed/);
+  assert.match(logs[0], /user=usr_1/);
+  assert.match(logs[0], /run=recon_abc/);
+  assert.match(logs[0], /qa_fail_vendors: forced failure/);
+
+  // async rejection (e.g. relation "vendors" does not exist)
+  const r2 = await withBestEffortOffenseBump(saved, { userId: "usr_1", runId: "recon_abc" },
+    async () => { throw new Error('relation "vendors" does not exist'); }, log);
+  assert.equal(r2, saved);
+  assert.match(logs[1], /relation "vendors" does not exist/);
+
+  // even a throwing logger can't break the save
+  const r3 = await withBestEffortOffenseBump(saved, { userId: "u", runId: "r" },
+    () => { throw new Error("x"); }, () => { throw new Error("logger down"); });
+  assert.equal(r3, saved);
+
+  const out = await runBestEffortOffenseBump({ userId: "u", runId: "r" }, () => { throw "str"; }, () => {});
+  assert.deepEqual(out, { ok: false, error: "str" });
+  const ok = await runBestEffortOffenseBump({ userId: "u", runId: "r" }, async () => 4, log);
+  assert.deepEqual(ok, { ok: true });
+  assert.equal(logs.length, 2, "success does not log");
+});
+
+// ---------- PREVIEW-ONLY QA switches ----------
+type Env = Record<string, string | undefined>;
+const OFF_ENVS: [string, Env][] = [
+  ["production + QA_HOOKS=1", { VERCEL_ENV: "production", QA_HOOKS: "1" }],
+  ["production, no QA_HOOKS", { VERCEL_ENV: "production" }],
+  ["VERCEL_ENV undefined + QA_HOOKS=1 (local dev)", { QA_HOOKS: "1" }],
+  ["VERCEL_ENV undefined, no QA_HOOKS", {}],
+  ["development + QA_HOOKS=1", { VERCEL_ENV: "development", QA_HOOKS: "1" }],
+  ["preview without QA_HOOKS", { VERCEL_ENV: "preview" }],
+  ["preview + QA_HOOKS=0", { VERCEL_ENV: "preview", QA_HOOKS: "0" }],
+  ["preview + QA_HOOKS=true", { VERCEL_ENV: "preview", QA_HOOKS: "true" }],
+  ["Preview (wrong case) + QA_HOOKS=1", { VERCEL_ENV: "Preview", QA_HOOKS: "1" }],
+];
+const ON_ENV: Env = { VERCEL_ENV: "preview", QA_HOOKS: "1" };
+
+test("isPreviewQa: true only for VERCEL_ENV=preview AND QA_HOOKS=1", () => {
+  for (const [label, env] of OFF_ENVS) assert.equal(isPreviewQa(env), false, label);
+  assert.equal(isPreviewQa(ON_ENV), true);
+});
+
+test("isPreviewQa reads process.env by default", () => {
+  const saved = { VERCEL_ENV: process.env.VERCEL_ENV, QA_HOOKS: process.env.QA_HOOKS };
+  try {
+    process.env.QA_HOOKS = "1";
+    process.env.VERCEL_ENV = "production";
+    assert.equal(isPreviewQa(), false);
+    assert.equal(shouldBypassTrial("qa.tester@itcrescue.in"), false);
+    assert.equal(shouldForceVendorsFail("1"), false);
+    delete process.env.VERCEL_ENV;
+    assert.equal(isPreviewQa(), false);
+    process.env.VERCEL_ENV = "preview";
+    delete process.env.QA_HOOKS;
+    assert.equal(isPreviewQa(), false);
+    process.env.QA_HOOKS = "1";
+    assert.equal(isPreviewQa(), true);
+    assert.equal(shouldBypassTrial("qa.tester@itcrescue.in"), true);
+    assert.equal(shouldForceVendorsFail("1"), true);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
+
+test("shouldBypassTrial (qa. trial gate): OFF outside preview+QA_HOOKS, even for qa. emails", () => {
+  for (const [label, env] of OFF_ENVS) {
+    assert.equal(shouldBypassTrial("qa.tester@itcrescue.in", env), false, label);
+    assert.equal(shouldBypassTrial("QA.Tester@itcrescue.in", env), false, label);
+  }
+  assert.equal(shouldBypassTrial("qa.tester@itcrescue.in", ON_ENV), true);
+  assert.equal(shouldBypassTrial("  QA.Tester@ItcRescue.in ", ON_ENV), true);
+  for (const e of ["tester@itcrescue.in", "aqa.x@y.in", "qa@itcrescue.in", "qatester@x.in", "", null, undefined]) {
+    assert.equal(shouldBypassTrial(e, ON_ENV), false, String(e));
+  }
+});
+
+test("shouldForceVendorsFail (qa_fail_vendors cookie): OFF outside preview+QA_HOOKS", () => {
+  for (const [label, env] of OFF_ENVS) {
+    assert.equal(shouldForceVendorsFail("1", env), false, label);
+  }
+  assert.equal(shouldForceVendorsFail("1", ON_ENV), true);
+  for (const v of ["0", "", "true", "yes", " 1", undefined, null]) {
+    assert.equal(shouldForceVendorsFail(v, ON_ENV), false, String(v));
+  }
+});
+
+(async () => {
+  for (const t of pending) {
+    await t.fn();
+    passed++;
+    console.log(`ok - ${t.name}`);
+  }
+  console.log(`\n${passed} checks passed`);
+})().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

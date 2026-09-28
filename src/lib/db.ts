@@ -7,12 +7,15 @@ import {
   normalizeIndianMobile,
   normalizeVendorGstin,
   offenderGstinsForRun,
+  withBestEffortOffenseBump,
   type StoredVendor,
   type VendorSummary,
 } from "./vendors";
+import { QA_FAIL_VENDORS_MESSAGE } from "./qa-flags";
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 let _schemaReady = false;
+let _vendorsSchemaReady = false;
 
 export function hasDatabase(): boolean {
   return Boolean(process.env.DATABASE_URL);
@@ -102,9 +105,22 @@ export async function ensureSchema() {
   } catch {
     /* ignore */
   }
-  // Vendor view (#2). Only user-owned fields (name override, phone) and the
-  // idempotent repeat-offender counter are stored. At-risk ₹ / mismatch are
-  // computed from the latest recon at read time (see listVendorsForUser).
+  _schemaReady = true;
+}
+
+/**
+ * Vendor view (#2) schema, bootstrapped separately from ensureSchema() so a
+ * vendors DDL problem can never block auth / recon / chase. Only called from
+ * vendor helpers and the best-effort offender bump.
+ *
+ * Stored: user-owned fields (name override, phone) + the idempotent
+ * repeat-offender counter. At-risk ₹ / mismatch are computed from the latest
+ * recon at read time (see listVendorsForUser).
+ */
+export async function ensureVendorsSchema() {
+  if (_vendorsSchemaReady) return;
+  await ensureSchema(); // users + recon_runs must exist for the FKs
+  const sql = getSql();
   await sql`
     CREATE TABLE IF NOT EXISTS vendors (
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -115,10 +131,38 @@ export async function ensureSchema() {
       last_offense_run_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (user_id, gstin)
+      PRIMARY KEY (user_id, gstin),
+      CONSTRAINT vendors_last_offense_run_id_fkey FOREIGN KEY (last_offense_run_id)
+        REFERENCES recon_runs(id) ON DELETE SET NULL
     )
   `;
-  _schemaReady = true;
+  // A vendors table created by an earlier preview build (before the FK) is not
+  // altered by CREATE TABLE IF NOT EXISTS, so add the FK idempotently. Orphaned
+  // run ids are nulled first (the guard only compares against real runs).
+  try {
+    await sql.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'vendors_last_offense_run_id_fkey'
+            AND conrelid = 'vendors'::regclass
+        ) THEN
+          UPDATE vendors v SET last_offense_run_id = NULL
+          WHERE v.last_offense_run_id IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM recon_runs r WHERE r.id = v.last_offense_run_id);
+          ALTER TABLE vendors
+            ADD CONSTRAINT vendors_last_offense_run_id_fkey
+            FOREIGN KEY (last_offense_run_id) REFERENCES recon_runs(id) ON DELETE SET NULL;
+        END IF;
+      END $$`);
+  } catch (err) {
+    console.error(
+      "[vendors] could not ensure vendors_last_offense_run_id_fkey:",
+      err instanceof Error ? err.message : err
+    );
+  }
+  _vendorsSchemaReady = true;
 }
 
 function id(prefix: string) {
@@ -281,7 +325,8 @@ export async function getUserByEmail(email: string): Promise<DbUser | null> {
 export async function saveReconForUser(
   userId: string,
   results: MatchResult[],
-  summary: ReconSummary
+  summary: ReconSummary,
+  opts: { forceVendorsFail?: boolean } = {}
 ): Promise<{ reconId: string; chase: ChaseItem[] }> {
   await ensureSchema();
   const sql = getSql();
@@ -326,23 +371,12 @@ export async function saveReconForUser(
   const summaryJson = JSON.stringify(summary);
   const resultsJson = JSON.stringify(results);
 
-  // recon_runs insert + vendor offense bump in ONE non-interactive transaction
-  // (both via sql.query, same style) so a run is never saved without its bump
-  // or vice versa. Remaining writes stay sequential (neon HTTP).
-  const offenders = offenderGstinsForRun(results);
-  const runInsert = sql.query(
+  // Sequential writes (neon HTTP). Avoid fragile multi-style transaction batches.
+  await sql.query(
     `INSERT INTO recon_runs (id, user_id, summary, results)
      VALUES ($1, $2, $3::jsonb, $4::jsonb)`,
     [reconId, userId, summaryJson, resultsJson]
   );
-  if (offenders.length) {
-    await sql.transaction([
-      runInsert,
-      sql.query(VENDOR_OFFENSE_BUMP_SQL, [userId, reconId, JSON.stringify(offenders)]),
-    ]);
-  } else {
-    await runInsert;
-  }
 
   await sql`DELETE FROM chase_items WHERE user_id = ${userId}`;
 
@@ -391,7 +425,17 @@ export async function saveReconForUser(
     throw new Error("Chase rows failed to persist after recon save");
   }
 
-  return { reconId, chase: verified.length ? verified : chase };
+  const saved = { reconId, chase: verified.length ? verified : chase };
+
+  // Vendor repeat-offender bump: best-effort, AFTER recon + chase writes have
+  // succeeded, outside any transaction. A failure (vendors table missing, DB
+  // error, QA forced failure) is logged and swallowed; `saved` is returned
+  // unchanged so the recon/chase result and HTTP response are unaffected.
+  return withBestEffortOffenseBump(saved, { userId, runId: reconId }, () =>
+    recordVendorOffensesForRun(userId, reconId, results, {
+      forceFail: opts.forceVendorsFail,
+    })
+  );
 }
 
 /**
@@ -413,16 +457,21 @@ ON CONFLICT (user_id, gstin) DO UPDATE SET
 WHERE vendors.last_offense_run_id IS DISTINCT FROM EXCLUDED.last_offense_run_id`;
 
 /**
- * Standalone (re-)application of the offense bump for an already-saved run.
- * Safe to call repeatedly for the same runId. saveReconForUser does this
- * inline, in the same transaction as the recon_runs insert.
+ * Apply the offense bump for an already-saved run (single upsert statement, no
+ * transaction). Safe to call repeatedly for the same runId. Throws on failure;
+ * saveReconForUser wraps it with withBestEffortOffenseBump.
  */
 export async function recordVendorOffensesForRun(
   userId: string,
   runId: string,
-  results: MatchResult[]
+  results: MatchResult[],
+  opts: { forceFail?: boolean } = {}
 ): Promise<number> {
-  await ensureSchema();
+  // PREVIEW-ONLY QA switch; ignored in production. The route only sets
+  // forceFail when shouldForceVendorsFail() (VERCEL_ENV=preview && QA_HOOKS=1).
+  // Throws before touching the DB.
+  if (opts.forceFail) throw new Error(QA_FAIL_VENDORS_MESSAGE);
+  await ensureVendorsSchema();
   const offenders = offenderGstinsForRun(results);
   if (!offenders.length) return 0;
   const sql = getSql();
@@ -561,7 +610,10 @@ export async function updateChaseStatusForUser(
   return listChaseForUser(userId);
 }
 
-export async function canUserRunRecon(userId: string): Promise<{ ok: boolean; reason?: string }> {
+export async function canUserRunRecon(
+  userId: string,
+  opts: { bypassTrial?: boolean } = {}
+): Promise<{ ok: boolean; reason?: string }> {
   await ensureSchema();
   const sql = getSql();
   const rows = await sql`
@@ -575,6 +627,9 @@ export async function canUserRunRecon(userId: string): Promise<{ ok: boolean; re
   const row = rows[0] as Record<string, unknown>;
   const plan = (row.plan as string) || "trial";
   if (plan !== "trial") return { ok: true };
+  // PREVIEW-ONLY QA switch; ignored in production. Routes only set bypassTrial
+  // when shouldBypassTrial(email) (VERCEL_ENV=preview && QA_HOOKS=1 && "qa." email).
+  if (opts.bypassTrial) return { ok: true };
 
   const trialReason =
     "Free trial allows 1 reconciliation. Upgrade to Starter (₹999/mo) or Growth (₹2,499/mo) to continue.";
@@ -605,7 +660,7 @@ export async function canUserRunRecon(userId: string): Promise<{ ok: boolean; re
  * Read-only: does not trigger the chase self-heal in listChaseForUser.
  */
 export async function listVendorsForUser(userId: string): Promise<VendorSummary[]> {
-  await ensureSchema();
+  await ensureVendorsSchema();
   const sql = getSql();
   const latest = await getLatestReconForUser(userId);
   const vendorRows = await sql`
@@ -654,7 +709,7 @@ export async function upsertVendorPhone(
     normalizedName = trimmed || null;
   }
 
-  await ensureSchema();
+  await ensureVendorsSchema();
   const sql = getSql();
   await sql.query(
     `INSERT INTO vendors (user_id, gstin, name, phone)
