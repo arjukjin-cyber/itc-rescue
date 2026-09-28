@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, X } from "lucide-react";
+import { X } from "lucide-react";
 
 export interface ToastMsg {
   text: string;
@@ -37,19 +37,20 @@ export function useToast(timeoutMs = 5000) {
   return { toast, show, dismiss };
 }
 
+/** v1 toast: bottom-right, ink bg; errors carry a risk dot (no red fill). */
 export function Toast({ toast, onDismiss }: { toast: ToastMsg | null; onDismiss: () => void }) {
   if (!toast) return null;
   return (
     <div className="toast-float" role="alert" aria-live="assertive">
-      <AlertCircle size={16} className="shrink-0" aria-hidden />
+      <span className="dot dot-risk" aria-hidden />
       <span className="min-w-0">{toast.text}</span>
       {toast.action && (
-        <Link href={toast.action.href} className="link-accent shrink-0">
+        <Link href={toast.action.href} className="shrink-0">
           {toast.action.label}
         </Link>
       )}
-      <button type="button" onClick={onDismiss} aria-label="Dismiss" className="shrink-0 opacity-80 hover:opacity-100">
-        <X size={16} aria-hidden />
+      <button type="button" onClick={onDismiss} aria-label="Dismiss" className="shrink-0 opacity-70 hover:opacity-100">
+        <X size={14} aria-hidden />
       </button>
     </div>
   );

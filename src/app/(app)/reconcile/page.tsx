@@ -2,36 +2,26 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Upload, Play, Loader2, Lock, Filter, Check, Download, MessageCircle, ListChecks } from "lucide-react";
+import { Upload, Play, Loader2, Lock, Inbox, CircleCheck, Send } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import * as XLSX from "xlsx";
 import { reconCsv, atRiskCsv, atRiskResults, downloadCsv, istDate } from "@/lib/csv-export";
 import { HelpTip } from "@/components/HelpTip";
-import { RiskTable, atRiskTotal, sortForAction, useChaseRows } from "@/components/RiskTable";
+import { ActionTable, ResultTabs, filterByTab, useChaseRows, type TabKey } from "@/components/RiskTable";
+import { KpiStrip } from "@/components/KpiStrip";
+import { emitTrialChanged, setLastReconAt } from "@/lib/ui-events";
 import { Toast, useToast } from "@/components/Toast";
 import { getSettings, setTrialFromServer } from "@/lib/storage";
 import { useRouter } from "next/navigation";
 import { fetchChaseItems, fetchReconState, persistRecon } from "@/lib/api-data";
 import { parseInvoiceFile, fetchSampleAsFile } from "@/lib/parseFile";
-import { formatINR, reconcile } from "@/lib/reconcile";
-import type { MatchCategory, MatchResult, ReconSummary } from "@/lib/types";
+import { reconcile } from "@/lib/reconcile";
+import type { MatchResult, ReconSummary } from "@/lib/types";
 
 const MATCH_RULE = "Matched on GSTIN + invoice number + invoice date (±1 day).";
 
-type FilterKey = MatchCategory | "all";
-
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: "itc_at_risk", label: "At risk" },
-  { key: "value_mismatch", label: "Mismatch" },
-  { key: "matched", label: "Matched" },
-  { key: "unclaimed", label: "Unclaimed" },
-  { key: "all", label: "All" },
-];
-
-function defaultFilter(results: MatchResult[]): FilterKey {
-  if (results.some((r) => r.category === "itc_at_risk")) return "itc_at_risk";
-  if (results.some((r) => r.category === "value_mismatch")) return "value_mismatch";
-  return "all";
+function defaultFilter(results: MatchResult[]): TabKey {
+  return results.some((r) => r.category === "itc_at_risk" || r.category === "value_mismatch") ? "action" : "all";
 }
 
 export default function ReconcilePage() {
@@ -41,7 +31,7 @@ export default function ReconcilePage() {
   const [gstrFile, setGstrFile] = useState<File | null>(null);
   const [results, setResults] = useState<MatchResult[]>([]);
   const [summary, setSummary] = useState<ReconSummary | null>(null);
-  const [filter, setFilter] = useState<FilterKey>("itc_at_risk");
+  const [filter, setFilter] = useState<TabKey>("action");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   /** 402 toast — set only by a real run attempt (server still enforces the gate). */
@@ -51,7 +41,7 @@ export default function ReconcilePage() {
   const [showUpload, setShowUpload] = useState(false);
   const [company, setCompany] = useState("My Company");
   const { toast, show, dismiss } = useToast();
-  const { setChase, statusById, pendingCount, resolve, busy } = useChaseRows(show);
+  const { setChase, statusById, pendingCount, resolve, resolveMany, busy } = useChaseRows(show);
   const autoSampleDone = useRef(false);
 
   useEffect(() => {
@@ -88,18 +78,7 @@ export default function ReconcilePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router, setChase]);
 
-  const counts = useMemo(() => {
-    const c: Record<MatchCategory, number> = { matched: 0, itc_at_risk: 0, unclaimed: 0, value_mismatch: 0 };
-    for (const r of results) c[r.category] += 1;
-    return c;
-  }, [results]);
-
-  const filtered = useMemo(
-    () => sortForAction(filter === "all" ? results : results.filter((r) => r.category === filter)),
-    [results, filter]
-  );
-
-  const riskAmount = useMemo(() => atRiskTotal(results), [results]);
+  const filtered = useMemo(() => filterByTab(results, filter), [results, filter]);
 
   async function afterSaved(
     matched: MatchResult[],
@@ -109,6 +88,8 @@ export default function ReconcilePage() {
     if (saved.persistence === "postgres" && typeof saved.reconCount === "number") {
       setTrialFromServer(saved.reconCount);
     }
+    setLastReconAt();
+    emitTrialChanged();
     setResults(matched);
     setSummary(sum);
     setFilter(defaultFilter(matched));
@@ -222,11 +203,11 @@ export default function ReconcilePage() {
 
   if (!loaded) {
     return (
-      <div className="mx-auto max-w-5xl space-y-4" aria-busy="true" aria-label="Loading reconciliation">
-        <div className="h-8 w-40 animate-pulse rounded-[var(--radius-sm)]" style={{ backgroundColor: "var(--color-bg-subtle)" }} />
-        <div className="grid gap-4 md:grid-cols-2">
+      <div className="space-y-4" aria-busy="true" aria-label="Loading reconciliation">
+        <div className="h-6 w-32 animate-pulse rounded" style={{ backgroundColor: "var(--color-line-2)" }} />
+        <div className="grid gap-3 md:grid-cols-2">
           {[0, 1].map((i) => (
-            <div key={i} className="card h-32 animate-pulse" style={{ backgroundColor: "var(--color-bg-subtle)" }} />
+            <div key={i} className="h-32 animate-pulse rounded-lg" style={{ backgroundColor: "var(--color-line-2)" }} />
           ))}
         </div>
       </div>
@@ -234,10 +215,9 @@ export default function ReconcilePage() {
   }
 
   const bothFiles = Boolean(booksFile && gstrFile);
-  const chaseLabel = `Chase ${pendingCount} vendor${pendingCount === 1 ? "" : "s"}`;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
+    <div className="space-y-3">
       <div>
         <h1 className="page-title">Reconcile</h1>
         <div className="helper-line">
@@ -266,7 +246,7 @@ export default function ReconcilePage() {
 
       {(!summary || showUpload) && (
         <>
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-3 pt-1 md:grid-cols-2">
             <FileDrop
               label="Purchase register"
               hint="Tally, Zoho or Excel · .csv / .xlsx"
@@ -282,7 +262,7 @@ export default function ReconcilePage() {
           </div>
           <div className="flex flex-wrap items-center gap-4">
             {locked ? (
-              <LockedRun large label={summary ? "Run again · Upgrade" : "Run recon · Upgrade"} />
+              <LockedRun label={summary ? "Run again · Upgrade" : "Run recon · Upgrade"} />
             ) : (
               <>
                 <button
@@ -291,21 +271,21 @@ export default function ReconcilePage() {
                   disabled={loading || !bothFiles}
                   className="btn btn-pri btn-lg"
                 >
-                  {loading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+                  {loading ? <Loader2 className="animate-spin" aria-hidden /> : <Play aria-hidden />}
                   Run recon
                 </button>
                 <button
                   type="button"
                   onClick={loadSamples}
                   disabled={loading}
-                  className="link-accent text-sm disabled:opacity-50"
+                  className="link-accent text-[13px] disabled:opacity-45"
                 >
                   Try with sample files
                 </button>
               </>
             )}
             {summary && (
-              <button type="button" className="btn btn-sm btn-quiet" onClick={() => setShowUpload(false)}>
+              <button type="button" className="btn btn-quiet" onClick={() => setShowUpload(false)}>
                 Cancel
               </button>
             )}
@@ -314,7 +294,8 @@ export default function ReconcilePage() {
       )}
 
       {error && (
-        <p className="text-sm" style={{ color: "var(--color-status-risk-fg)" }}>
+        <p className="status" style={{ color: "var(--color-text-2)" }}>
+          <span className="dot dot-risk" aria-hidden />
           {error}
         </p>
       )}
@@ -322,22 +303,18 @@ export default function ReconcilePage() {
       {summary && (
         <>
           {!showUpload && (
-            <div className="card flex flex-wrap items-center gap-4 px-4 py-3">
-              <FilePill name={booksFile?.name} fallback="Purchase register" />
-              <FilePill name={gstrFile?.name} fallback="GSTR-2B" />
-              <span className="text-[0.8125rem]" style={{ color: "var(--color-text-secondary)" }}>
+            <div className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2">
+              <FileName name={booksFile?.name} fallback="Purchase register" />
+              <FileName name={gstrFile?.name} fallback="GSTR-2B" />
+              <span className="muted">
                 {summary.totalBooks} books · {summary.totalGstr2b} in 2B
               </span>
               <div className="ml-auto flex items-center gap-2">
                 {locked ? (
-                  <LockedRun label="Run again · Upgrade" />
+                  <LockedRun label="Run again · Upgrade" small />
                 ) : (
                   <>
-                    <button
-                      type="button"
-                      className="link-accent text-[0.8125rem]"
-                      onClick={() => setShowUpload(true)}
-                    >
+                    <button type="button" className="link-accent text-[13px]" onClick={() => setShowUpload(true)}>
                       Replace files
                     </button>
                     <button
@@ -346,7 +323,7 @@ export default function ReconcilePage() {
                       disabled={loading}
                       onClick={() => (bothFiles ? void onRun() : setShowUpload(true))}
                     >
-                      {loading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                      {loading ? <Loader2 className="animate-spin" aria-hidden /> : <Play aria-hidden />}
                       Run again
                     </button>
                   </>
@@ -355,74 +332,37 @@ export default function ReconcilePage() {
             </div>
           )}
 
-          {/* Hero: ₹ = ITC-at-risk rows only (matches the at-risk CSV total) */}
-          <section className="card flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <div className="hero-label">ITC at risk</div>
-              <div className="hero-amount mt-1">{formatINR(riskAmount)}</div>
-              <div className="mt-1 text-sm" style={{ color: "var(--color-text-muted)" }}>
-                {counts.itc_at_risk} invoice{counts.itc_at_risk === 1 ? "" : "s"} missing from GSTR-2B ·{" "}
-                {counts.value_mismatch} value mismatch{counts.value_mismatch === 1 ? "" : "es"}
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="btn btn-lg"
-                disabled={counts.itc_at_risk === 0}
-                onClick={() => downloadCsv(`itc-at-risk-${istDate()}.csv`, atRiskCsv(results))}
-              >
-                <Download size={16} aria-hidden /> At-risk CSV ({counts.itc_at_risk})
-              </button>
-              {pendingCount > 0 ? (
-                <Link href="/chase" className="btn btn-pri btn-lg">
-                  <MessageCircle size={16} aria-hidden /> {chaseLabel}
-                </Link>
-              ) : (
-                <Link href="/status" className="btn btn-lg">
-                  <ListChecks size={16} aria-hidden /> Open status board
-                </Link>
-              )}
-            </div>
-          </section>
+          <KpiStrip results={results} summary={summary} />
 
-          <div className="flex flex-wrap gap-2 pt-2" role="tablist" aria-label="Filter results">
-            {FILTERS.map((f) => {
-              const n = f.key === "all" ? results.length : counts[f.key];
-              return (
-                <button
-                  key={f.key}
-                  type="button"
-                  role="tab"
-                  aria-selected={filter === f.key}
-                  data-active={filter === f.key ? "true" : undefined}
-                  onClick={() => setFilter(f.key)}
-                  className="tab-pill"
-                >
-                  {f.label} · {n}
-                  {f.key === "matched" && summary.matchedAmount > 0 && (
-                    <span style={{ opacity: 0.7 }}>{formatINR(summary.matchedAmount)}</span>
-                  )}
-                </button>
-              );
-            })}
+          <div className="pt-2">
+            <ResultTabs
+              results={results}
+              tab={filter}
+              onTab={setFilter}
+              right={
+                pendingCount > 0 ? (
+                  <Link href="/chase" className="btn btn-pri">
+                    <Send aria-hidden /> Chase {pendingCount} vendor{pendingCount === 1 ? "" : "s"}
+                  </Link>
+                ) : null
+              }
+            />
           </div>
 
           {filtered.length ? (
-            <RiskTable
+            <ActionTable
               rows={filtered}
               statusById={statusById}
               busy={busy}
               company={company}
-              showDate
-              showAllPills={filter === "all"}
-              onResolve={resolve}
+              onResolve={(id) => void resolve(id)}
+              onResolveMany={resolveMany}
             />
           ) : (
             <EmptyState
-              icon={Filter}
-              title="No rows in this filter."
-              actionLabel="Show all rows"
+              icon={Inbox}
+              title="No invoices in this view."
+              actionLabel="Show all invoices"
               onAction={() => setFilter("all")}
             />
           )}
@@ -456,23 +396,23 @@ export default function ReconcilePage() {
   );
 }
 
-/** Trial gate: locked button + sidebar meter replace the old red banner. */
-function LockedRun({ label, large = false }: { label: string; large?: boolean }) {
+/** Trial gate: locked secondary button + sidebar meter replace the old red banner. */
+function LockedRun({ label, small = false }: { label: string; small?: boolean }) {
   return (
     <Link
       href="/settings"
-      className={`btn ${large ? "btn-lg" : "btn-sm"}`}
+      className={`btn ${small ? "btn-sm" : "btn-lg"}`}
       title="Free trial used. Upgrade to run another reconciliation."
     >
-      <Lock size={14} aria-hidden /> {label}
+      <Lock aria-hidden /> {label}
     </Link>
   );
 }
 
-function FilePill({ name, fallback }: { name?: string; fallback: string }) {
+function FileName({ name, fallback }: { name?: string; fallback: string }) {
   return (
-    <span className="pill pill-ok">
-      <Check size={12} aria-hidden />
+    <span className="inline-flex items-center gap-1.5" style={{ color: "var(--color-text-2)" }}>
+      <CircleCheck size={14} strokeWidth={1.75} style={{ color: "var(--color-ok)" }} aria-hidden />
       <span className={name ? "mono-sm" : undefined}>{name || fallback}</span>
     </span>
   );
@@ -492,12 +432,8 @@ function FileDrop({
   const [over, setOver] = useState(false);
   return (
     <label
-      className="flex cursor-pointer flex-col items-center justify-center px-4 py-8 text-center transition"
-      style={{
-        borderRadius: "var(--radius-lg)",
-        border: `1.5px dashed ${over ? "var(--color-accent)" : "var(--color-border-strong)"}`,
-        backgroundColor: over ? "var(--color-accent-soft)" : "var(--color-bg)",
-      }}
+      className="dropzone"
+      data-over={over ? "true" : undefined}
       onDragOver={(e) => {
         e.preventDefault();
         setOver(true);
@@ -510,25 +446,18 @@ function FileDrop({
         if (f) onFile(f);
       }}
     >
-      <span
-        className="grid h-10 w-10 place-items-center"
-        style={{
-          borderRadius: "var(--radius-md)",
-          backgroundColor: "var(--color-accent-soft)",
-          color: "var(--color-accent)",
-        }}
-      >
-        <Upload size={20} aria-hidden />
+      <span className="icon-tile">
+        <Upload size={16} strokeWidth={1.75} aria-hidden />
       </span>
-      <span className="mt-3 text-sm font-semibold" style={{ color: "var(--color-text)" }}>
+      <span className="mt-3 text-[13px] font-medium" style={{ color: "var(--color-ink)" }}>
         {label}
       </span>
-      <span className="mt-0.5 text-[0.8125rem]" style={{ color: "var(--color-text-muted)" }}>
+      <span className="mt-0.5 text-[12px]" style={{ color: "var(--color-text-3)" }}>
         {hint}
       </span>
       {file && (
-        <span className="pill pill-ok mt-3">
-          <Check size={12} aria-hidden />
+        <span className="mt-3 inline-flex items-center gap-1.5" style={{ color: "var(--color-text-2)" }}>
+          <CircleCheck size={14} strokeWidth={1.75} style={{ color: "var(--color-ok)" }} aria-hidden />
           <span className="mono-sm">{file.name}</span>
         </span>
       )}
