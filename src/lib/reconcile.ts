@@ -4,6 +4,7 @@ import type {
   MatchResult,
   ReconSummary,
 } from "./types";
+import { PHONE_ALIASES, firstPhoneByGstin, normalizeIndianMobile } from "./phone";
 
 /** Normalize invoice numbers: strip spaces, dashes, slashes, dots, underscores, #; uppercase */
 export function normalizeInvoiceNumber(raw: string): string {
@@ -120,6 +121,16 @@ export function rowToInvoice(
     pick(row, ["taxable_value", "taxable", "taxable_amount", "net_amount", "amount"])
   );
 
+  // UX-04: first valid vendor mobile among the phone aliases, "91XXXXXXXXXX"
+  let phone: string | undefined;
+  for (const key of PHONE_ALIASES) {
+    const p = normalizeIndianMobile(pick(row, [key]));
+    if (p) {
+      phone = p;
+      break;
+    }
+  }
+
   return {
     gstin: gstin || "UNKNOWN",
     vendorName: String(
@@ -143,6 +154,7 @@ export function rowToInvoice(
     sgst,
     totalTax,
     source,
+    ...(phone ? { phone } : {}),
   };
 }
 
@@ -198,7 +210,8 @@ function round2(n: number): number {
 /**
  * Merge rows that belong to one invoice (e.g. one row per tax rate) into a single
  * record: taxable value, IGST, CGST, SGST and total tax are summed; the FIRST row's
- * raw invoice number, date and vendor are kept for display.
+ * raw invoice number, date and vendor are kept for display, plus the first valid
+ * vendor phone among the rows.
  *
  * `possibleDuplicates` holds merged records where 2+ source rows had the same
  * effective rate AND identical taxable/tax amounts (they are still summed).
@@ -235,6 +248,11 @@ export function mergeInvoiceRows(rows: InvoiceRecord[]): {
     m.totalTax = round2(m.totalTax + row.totalTax);
     if (m.itcAvailable !== undefined || row.itcAvailable !== undefined) {
       m.itcAvailable = (m.itcAvailable ?? true) && (row.itcAvailable ?? true);
+    }
+    // UX-04: keep the first valid vendor phone among the merged rows
+    if (!normalizeIndianMobile(m.phone)) {
+      const p = normalizeIndianMobile(row.phone);
+      if (p) m.phone = p;
     }
   }
 
@@ -356,6 +374,16 @@ export function reconcile(
       taxDiff: g.totalTax,
       notes: "In GSTR-2B but not in books — possible missed ITC",
     });
+  }
+
+  // UX-04: carry the vendor phone onto every result for that GSTIN (first valid
+  // phone across register rows), so at-risk rows get it even if only another
+  // invoice of the same vendor had the number.
+  // Built from the raw register rows (before the per-invoice merge), in file order.
+  const phoneByGstin = firstPhoneByGstin(booksRows);
+  for (const r of results) {
+    const phone = phoneByGstin.get(r.gstin) ?? normalizeIndianMobile(r.books?.phone);
+    if (phone) r.phone = phone;
   }
 
   const summary: ReconSummary = {

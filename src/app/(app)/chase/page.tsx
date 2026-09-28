@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { getSettings } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
 import { formatINRPrecise } from "@/lib/reconcile";
+import { formatIndianMobile, waLink } from "@/lib/phone";
 import { whatsappEnglish, whatsappHindi, emailSubject, emailBody } from "@/lib/templates";
 import type { ChaseItem, MatchResult } from "@/lib/types";
 
@@ -62,10 +63,6 @@ export default function ChasePage() {
     setCopied(key);
     // Brief check microfeedback — not an alert
     window.setTimeout(() => setCopied(null), 1200);
-  }
-
-  function waLink(text: string) {
-    return `https://wa.me/?text=${encodeURIComponent(text)}`;
   }
 
   if (!loaded) {
@@ -190,6 +187,7 @@ export default function ChasePage() {
               : whatsappEnglish(result, company)
             : "";
           const isOpen = expanded === item.id;
+          const phone = item.phone ?? result?.phone; // UX-04: register phone → wa.me/91…
 
           return (
             <div
@@ -208,6 +206,7 @@ export default function ChasePage() {
                   <div className="mt-1 text-xs text-slate-500">
                     {item.invoiceNumber} · {item.invoiceDate} · {item.gstin} ·{" "}
                     {formatINRPrecise(item.amount)}
+                    {phone ? ` · ${formatIndianMobile(phone)}` : ""}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -248,7 +247,7 @@ export default function ChasePage() {
                     {copied === `${item.id}-hi` ? "Copied" : "Copy HI"}
                   </button>
                   <a
-                    href={waLink(msg)}
+                    href={waLink(msg, phone)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn-accent inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold"
