@@ -6,7 +6,8 @@ import { markResultResolved } from "@/lib/api-data";
 import { downloadCsv, istDate, reconCsv } from "@/lib/csv-export";
 import { formatDay, inr } from "@/lib/format";
 import { getLocalUser } from "@/lib/storage";
-import { waLink, whatsappEnglish } from "@/lib/templates";
+import { whatsappEnglish } from "@/lib/templates";
+import { waLink } from "@/lib/phone";
 import { emitChaseCount } from "@/lib/ui-events";
 import type { ChaseItem, ChaseStatus, MatchCategory, MatchResult } from "@/lib/types";
 import type { ToastMsg } from "./Toast";
@@ -437,7 +438,7 @@ export function ActionTable({
                         {trackable && !resolved && (
                           <>
                             <a
-                              href={waLink(whatsappEnglish(r, company))}
+                              href={waLink(whatsappEnglish(r, company), r.phone)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="btn btn-sm"

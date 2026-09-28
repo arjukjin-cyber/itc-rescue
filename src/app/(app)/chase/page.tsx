@@ -9,7 +9,8 @@ import { formatDay, inr } from "@/lib/format";
 import { emitChaseCount } from "@/lib/ui-events";
 import { getSettings } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
-import { whatsappEnglish, whatsappHindi, emailSubject, emailBody, waLink } from "@/lib/templates";
+import { formatIndianMobile, waLink } from "@/lib/phone";
+import { whatsappEnglish, whatsappHindi, emailSubject, emailBody } from "@/lib/templates";
 import type { ChaseItem, MatchResult } from "@/lib/types";
 
 export default function ChasePage() {
@@ -151,6 +152,7 @@ export default function ChasePage() {
                   : whatsappEnglish(result, company)
                 : "";
               const isOpen = expanded === item.id;
+              const phone = item.phone ?? result?.phone; // UX-04 (#30): register phone → wa.me/91…
               const amount =
                 item.category === "value_mismatch" && result ? Math.abs(result.taxDiff || 0) : item.amount;
               const copyBtn = (k: "en" | "hi", label: string, text: () => string) => {
@@ -175,7 +177,10 @@ export default function ChasePage() {
                   <tr>
                     <td>
                       <div className="vn">{item.vendorName}</div>
-                      <div className="mono-sm muted">{item.gstin}</div>
+                      <div className="mono-sm muted">
+                        {item.gstin}
+                        {phone ? ` · ${formatIndianMobile(phone)}` : ""}
+                      </div>
                     </td>
                     <td>
                       <div className="mono-sm">{item.invoiceNumber}</div>
@@ -199,7 +204,7 @@ export default function ChasePage() {
                         {result && copyBtn("en", "English", () => whatsappEnglish(result, company))}
                         {result && copyBtn("hi", "Hindi", () => whatsappHindi(result, company))}
                         <a
-                          href={waLink(msg)}
+                          href={waLink(msg, phone)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="btn btn-sm"
