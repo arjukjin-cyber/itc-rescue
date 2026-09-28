@@ -72,7 +72,7 @@ export default function DashboardPage() {
         <EmptyState
           icon={FileSpreadsheet}
           title="No reconciliation yet"
-          description="Upload purchase register + GSTR-2B, or load our sample files for a 30-second demo."
+          description="Upload your purchase register and GSTR-2B to find ITC at risk."
           actionLabel="Start reconciling"
           actionHref="/reconcile"
         />
