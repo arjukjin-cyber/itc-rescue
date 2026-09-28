@@ -227,9 +227,9 @@ function chaseFrom(results: MatchResult[]): ChaseItem[] {
     assert.equal(byInv.A3, "919888800001");
     assert.equal(byInv.A4, "919888800001");
     assert.equal(byInv.B1, "919666600003");
-    // UNKNOWN GSTIN rows are never pooled: each keeps its own row phone
-    assert.equal(byInv.U1, "919555500004");
-    assert.equal(byInv.U2, "919444400005");
+    // UNKNOWN GSTIN rows (unregistered dealers) are left out of the recon entirely
+    assert.equal("U1" in byInv, false);
+    assert.equal("U2" in byInv, false);
     const map = firstPhoneByGstin(books);
     assert.equal(map.get("33EEEEE5555E1ZF"), "919888800001");
     assert.equal(map.has("UNKNOWN"), false);
