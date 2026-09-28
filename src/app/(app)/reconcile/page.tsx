@@ -95,6 +95,12 @@ export default function ReconcilePage() {
       }
 
       const { results: matched, summary: sum } = reconcile(booksInv, gstrInv);
+      if (sum.unregisteredSkipped) {
+        const n = sum.unregisteredSkipped;
+        const skipNote = `${n} unregistered purchase${n === 1 ? "" : "s"} skipped (no GSTIN, so no ITC).`;
+        const base = describeImportSource(booksParsed.detected);
+        setBooksNote(base ? `${base} ${skipNote}` : skipNote);
+      }
       const saved = await persistRecon(matched, sum);
       if (!saved.ok) {
         if (saved.authError) {

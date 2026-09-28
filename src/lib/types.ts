@@ -48,6 +48,8 @@ export interface ReconSummary {
   valueMismatch: number;
   itcAtRiskAmount: number;
   matchedAmount: number;
+  /** Books rows with no GSTIN (unregistered dealer): no ITC, so left out of the recon. */
+  unregisteredSkipped?: number;
 }
 
 export interface UserSession {

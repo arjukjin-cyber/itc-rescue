@@ -170,9 +170,14 @@ const TAX_TOLERANCE = 1; // ₹1 tolerance for rounding
  * - Categories: matched, itc_at_risk (books only), unclaimed (2B only), value_mismatch
  */
 export function reconcile(
-  books: InvoiceRecord[],
+  allBooks: InvoiceRecord[],
   gstr2b: InvoiceRecord[]
 ): { results: MatchResult[]; summary: ReconSummary } {
+  // Purchases from unregistered dealers have no GSTIN and carry no ITC, so they
+  // can't be matched against GSTR-2B. Leave them out and report the count.
+  const isUnregistered = (b: InvoiceRecord) => !b.gstin || b.gstin === "UNKNOWN";
+  const books = allBooks.filter((b) => !isUnregistered(b));
+  const unregisteredSkipped = allBooks.length - books.length;
   const used2b = new Set<number>();
   const results: MatchResult[] = [];
 
@@ -261,6 +266,7 @@ export function reconcile(
   }
 
   const summary: ReconSummary = {
+    ...(unregisteredSkipped ? { unregisteredSkipped } : {}),
     totalBooks: books.length,
     totalGstr2b: gstr2b.length,
     matched: results.filter((r) => r.category === "matched").length,
