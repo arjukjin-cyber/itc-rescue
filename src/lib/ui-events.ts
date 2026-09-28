@@ -1,7 +1,5 @@
 "use client";
 
-import type { MatchResult } from "./types";
-
 /**
  * Tiny UI-only event bus so the app shell (sidebar pending count, trial meter)
  * refreshes after in-page actions without a navigation. No data logic here.
@@ -21,12 +19,8 @@ export function emitTrialChanged() {
   window.dispatchEvent(new Event(TRIAL_EVENT));
 }
 
-/**
- * Recon changed. No detail = a run was saved (sidebar re-reads GET /api/recon).
- * With results = an unsaved sample run shown in-page (#29); sidebar counts follow it
- * until the next navigation re-reads the server.
- */
-export function emitReconChanged(results?: MatchResult[]) {
+/** Recon changed (saved run, or an unsaved sample run shown in-page): the sidebar re-reads counts. */
+export function emitReconChanged() {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent<MatchResult[] | undefined>(RECON_EVENT, { detail: results }));
+  window.dispatchEvent(new Event(RECON_EVENT));
 }

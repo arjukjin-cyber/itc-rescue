@@ -489,6 +489,20 @@ html { scroll-behavior: smooth; }
 .toast-risk .btn-accent { background-color: transparent; color: #93c5fd; padding: 0; }
 
 /* ── Legacy helpers still used by settings / chase / landing ────────────── */
+/* Neutral info chip (e.g. "Sample data · not saved" in the file bar). */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-2);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
 .chip-filter {
   border-radius: var(--radius-md);
   border: 1px solid var(--color-line);

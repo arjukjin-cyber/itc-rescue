@@ -1,13 +1,16 @@
 import type { MatchCategory, MatchResult } from "./types";
 
 /**
- * ITC filtered views of the latest recon: /reconcile?view=at_risk | mismatch | unclaimed | matched.
+ * ITC filtered views of the latest recon. Routes follow nav-ia-v1.md: /itc/at-risk,
+ * /itc/mismatches, /itc/unclaimed (+ /itc/matched, kept per the CTO sidebar brief).
  * UI-only: filters the results GET /api/recon already returns.
  */
 export type ItcView = "at_risk" | "mismatch" | "unclaimed" | "matched";
 
 export interface ItcViewDef {
   key: ItcView;
+  /** URL segment under /itc */
+  slug: string;
   /** Sidebar label */
   label: string;
   /** Page title */
@@ -23,6 +26,7 @@ export interface ItcViewDef {
 export const ITC_VIEWS: ItcViewDef[] = [
   {
     key: "at_risk",
+    slug: "at-risk",
     label: "At risk",
     title: "ITC at risk",
     helper: "Invoices in your books that are missing from GSTR-2B.",
@@ -32,6 +36,7 @@ export const ITC_VIEWS: ItcViewDef[] = [
   },
   {
     key: "mismatch",
+    slug: "mismatches",
     label: "Mismatches",
     title: "Value mismatches",
     helper: "Invoices where the tax in your books differs from GSTR-2B.",
@@ -41,6 +46,7 @@ export const ITC_VIEWS: ItcViewDef[] = [
   },
   {
     key: "unclaimed",
+    slug: "unclaimed",
     label: "Unclaimed",
     title: "Unclaimed in 2B",
     helper: "Invoices in GSTR-2B that are not in your books.",
@@ -50,6 +56,7 @@ export const ITC_VIEWS: ItcViewDef[] = [
   },
   {
     key: "matched",
+    slug: "matched",
     label: "Matched",
     title: "Matched ITC",
     helper: "Invoices that match GSTR-2B on GSTIN, number, date and tax.",
@@ -59,8 +66,8 @@ export const ITC_VIEWS: ItcViewDef[] = [
   },
 ];
 
-export function parseView(v: string | null | undefined): ItcView | null {
-  return ITC_VIEWS.some((d) => d.key === v) ? (v as ItcView) : null;
+export function viewFromSlug(slug: string | null | undefined): ItcView | null {
+  return ITC_VIEWS.find((d) => d.slug === slug)?.key ?? null;
 }
 
 export function viewDef(v: ItcView): ItcViewDef {
@@ -68,7 +75,7 @@ export function viewDef(v: ItcView): ItcViewDef {
 }
 
 export function viewHref(v: ItcView): string {
-  return `/reconcile?view=${v}`;
+  return `/itc/${viewDef(v).slug}`;
 }
 
 export function viewCounts(results: MatchResult[]): Record<ItcView, number> {

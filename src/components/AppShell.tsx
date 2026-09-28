@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   LayoutGrid,
   History,
@@ -15,29 +15,30 @@ import {
   Plus,
   Check,
   ChevronsUpDown,
+  Users,
+  FileText,
+  CalendarDays,
+  Building2,
+  CreditCard,
+  type LucideIcon,
 } from "lucide-react";
 import { clearLocalUser, getLocalUser, getSettings, getTrialUsage, setLocalUser, setTrialFromServer } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
 import { CHASE_COUNT_EVENT, RECON_EVENT, TRIAL_EVENT } from "@/lib/ui-events";
 import { daysText, getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
 import { inr } from "@/lib/format";
-import { ITC_VIEWS, parseView, viewCounts, viewDef, viewHref, type ItcView } from "@/lib/views";
+import { ITC_VIEWS, viewCounts, viewHref, type ItcView } from "@/lib/views";
+import { getSampleRun, isReconScreen } from "@/lib/sample-run";
 import { Dropdown, MenuItem, MenuLabel, MenuSep } from "./Dropdown";
 import type { MatchResult, UserSession } from "@/lib/types";
 
 /*
- * v1 sidebar (CTO structure): company + GSTIN switcher + New recon · Overview · Reconcile ·
- * ITC views (counts from the latest recon) · Vendors · Filing (GSTR-3B) · Company · user + trial meter.
- * Every row is a real destination — no "Soon" rows, no exports / quick actions here.
+ * Sidebar (CTO structure; section names, order and routes per nav-ia-v1.md; plain v1.1 styling,
+ * Design's v3 visuals pending sign-off): company + GSTIN switcher + New recon · Overview ·
+ * Reconcile · ITC (counts from the latest recon) · Vendors · Filing (GSTR-3B) · Company ·
+ * trial meter + user menu. Every rendered row is a real screen: no "Soon" rows, no exports or
+ * quick actions here.
  */
-
-const PAGE_LABEL: Record<string, string> = {
-  "/dashboard": "Dashboard",
-  "/reconcile": "Reconcile · Runs",
-  "/chase": "Chase queue",
-  "/status": "Status board",
-  "/settings": "Settings",
-};
 
 const PLAN_LABEL: Record<string, string> = { trial: "Trial", starter: "Starter", growth: "Growth" };
 
@@ -68,8 +69,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   /** null = no recon yet (or not loaded): ITC counts + ₹ blocked are hidden. */
   const [recon, setRecon] = useState<ReconSnap | null>(null);
   const [reconTick, setReconTick] = useState(0);
-  /** An unsaved sample run is on screen: don't let a late server read overwrite its counts. */
-  const sampleShown = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,8 +131,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // ITC view counts + ₹ blocked from the latest recon (existing GET /api/recon).
   useEffect(() => {
     let cancelled = false;
+    // On /reconcile + /itc/*, an unsaved sample run (memory only, #29) is what's on screen.
+    const sample = isReconScreen(pathname) ? getSampleRun() : null;
+    if (sample) {
+      setRecon(snapOf(sample.results));
+      return;
+    }
     void fetchReconState().then((st) => {
-      if (cancelled || st.authError || sampleShown.current) return;
+      if (cancelled || st.authError) return;
       setRecon(st.summary && st.results.length ? snapOf(st.results) : null);
     });
     return () => {
@@ -144,12 +149,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const onCount = (e: Event) => setPending((e as CustomEvent<number>).detail);
     const onTrial = () => setReconUsed(getTrialUsage().reconCount);
-    const onRecon = (e: Event) => {
-      const sample = (e as CustomEvent<MatchResult[] | undefined>).detail;
-      sampleShown.current = Boolean(sample?.length);
-      if (sample?.length) setRecon(snapOf(sample));
-      else setReconTick((t) => t + 1);
-    };
+    const onRecon = () => setReconTick((t) => t + 1);
     window.addEventListener(CHASE_COUNT_EVENT, onCount);
     window.addEventListener(TRIAL_EVENT, onTrial);
     window.addEventListener(RECON_EVENT, onRecon);
@@ -161,10 +161,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Mobile drawer: close on navigation / Escape, lock page scroll while open.
-  useEffect(() => {
-    setOpen(false);
-    sampleShown.current = false;
-  }, [pathname]);
+  useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
@@ -189,9 +186,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex h-full min-h-0 flex-col">
       <Workspace company={company} gstin={gstin} planLabel={planLabel} onNavigate={onNavigate} />
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        <Suspense fallback={<SideNav view={null} pathname={pathname} recon={recon} pending={pending} onNavigate={onNavigate} />}>
-          <SideNavWithView pathname={pathname} recon={recon} pending={pending} onNavigate={onNavigate} />
-        </Suspense>
+        <SideNav pathname={pathname} recon={recon} pending={pending} onNavigate={onNavigate} />
       </div>
       <SideFooter plan={plan} reconUsed={reconUsed} email={email} onLogout={logout} />
     </div>
@@ -251,9 +246,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="min-w-0 truncate" style={{ color: "var(--color-text-3)" }}>
             <span className="hidden sm:inline">{company || "ITC Rescue"}</span>
             <span className="mx-1.5 hidden sm:inline">/</span>
-            <Suspense fallback={<Crumb pathname={pathname} view={null} />}>
-              <CrumbWithView pathname={pathname} />
-            </Suspense>
+            <Crumb pathname={pathname} />
           </div>
           <div className="flex-1" />
           {/* Desktop has "New recon" in the sidebar; keep it reachable when the drawer is closed. */}
@@ -332,28 +325,24 @@ function Workspace({
           >
             {(close) => (
               <>
-                <MenuLabel>GSTIN · {planLabel}</MenuLabel>
+                {/* No "Create workspace" (one workspace in v1). No "Add GSTIN" / "Manage GSTINs":
+                    there's no GSTINs screen or API yet, so those rows are left out. */}
+                <MenuLabel>Workspace</MenuLabel>
+                <div className="truncate px-2 pb-1 text-[13px] font-medium" style={{ color: "var(--color-ink)" }}>
+                  {name}
+                </div>
+                <MenuSep />
+                <MenuLabel>GSTIN</MenuLabel>
                 {gstin ? (
                   <MenuItem checked onSelect={close} meta={<Check size={14} aria-hidden />}>
                     <span className="block truncate font-mono text-[12px]" style={{ color: "var(--color-ink)" }}>
                       {gstin}
                     </span>
-                    <span className="block truncate text-[12px] font-normal" style={{ color: "var(--color-text-3)" }}>
-                      {name}
-                    </span>
                   </MenuItem>
                 ) : (
-                  <MenuItem href="/settings" onSelect={() => { close(); onNavigate?.(); }}>
-                    Add your GSTIN in Settings
-                  </MenuItem>
-                )}
-                {gstin && (
-                  <>
-                    <MenuSep />
-                    <MenuItem href="/settings" onSelect={() => { close(); onNavigate?.(); }}>
-                      Edit company details
-                    </MenuItem>
-                  </>
+                  <div className="px-2 pb-1.5 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+                    No GSTIN on this account
+                  </div>
                 )}
               </>
             )}
@@ -367,26 +356,89 @@ function Workspace({
   );
 }
 
-function SideNavWithView(p: Omit<Parameters<typeof SideNav>[0], "view">) {
-  const view = parseView(useSearchParams().get("view"));
-  return <SideNav {...p} view={view} />;
+/* ── Nav config: sections, order and routes follow nav-ia-v1.md ─────────────
+ * `enabled: false` rows are in the IA but have no screen/API yet, so they never render
+ * (no dead links, no "Soon" rows). Billing is flagged off until pricing visibility is decided.
+ */
+const NAV_FLAGS = { billing: false } as const;
+
+type CountKey = ItcView | "pending";
+interface NavLinkDef {
+  id: string;
+  label: string;
+  href: string;
+  icon?: LucideIcon;
+  /** ITC rows show a status dot instead of an icon */
+  dot?: string;
+  count?: CountKey;
+  enabled: boolean;
+}
+type NavEntry = NavLinkDef | { id: "filing-block" } | { id: "help" };
+interface NavSectionDef {
+  title: string;
+  items: NavEntry[];
+}
+
+const NAV: NavSectionDef[] = [
+  { title: "Overview", items: [{ id: "dashboard", label: "Dashboard", href: "/dashboard", icon: LayoutGrid, enabled: true }] },
+  {
+    title: "Reconcile",
+    items: [
+      { id: "runs", label: "Runs", href: "/reconcile", icon: History, enabled: true },
+      // No run-history screen or API yet (GET /api/recon returns the latest run only).
+      { id: "history", label: "History", href: "/reconcile/history", icon: History, enabled: false },
+    ],
+  },
+  {
+    title: "ITC",
+    items: ITC_VIEWS.map((d) => ({ id: d.key, label: d.label, href: viewHref(d.key), dot: d.dot, count: d.key, enabled: true })),
+  },
+  {
+    title: "Vendors",
+    items: [
+      { id: "directory", label: "Directory", href: "/vendors", icon: Users, enabled: false },
+      { id: "chase", label: "Chase queue", href: "/chase", icon: Send, count: "pending", enabled: true },
+      // CTO sidebar brief (not in the IA draft): the existing status board.
+      { id: "status", label: "Status board", href: "/status", icon: SquareKanban, enabled: true },
+      { id: "templates", label: "Templates", href: "/vendors/templates", icon: FileText, enabled: false },
+    ],
+  },
+  {
+    title: "Filing",
+    items: [
+      { id: "filing-block" },
+      { id: "calendar", label: "GSTR-3B calendar", href: "/filing/calendar", icon: CalendarDays, enabled: false },
+      { id: "reports", label: "Reports", href: "/filing/reports", icon: FileText, enabled: false },
+    ],
+  },
+  {
+    title: "Company",
+    items: [
+      { id: "gstins", label: "GSTINs", href: "/company/gstins", icon: Building2, enabled: false },
+      { id: "team", label: "Team", href: "/company/team", icon: Users, enabled: false },
+      { id: "billing", label: "Billing", href: "/company/billing", icon: CreditCard, enabled: NAV_FLAGS.billing },
+      { id: "settings", label: "Settings", href: "/settings", icon: Settings2, enabled: true },
+      { id: "help" },
+    ],
+  },
+];
+
+function isLink(e: NavEntry): e is NavLinkDef {
+  return "href" in e;
 }
 
 function SideNav({
-  view,
   pathname,
   recon,
   pending,
   onNavigate,
 }: {
-  view: ItcView | null;
   pathname: string;
   recon: ReconSnap | null;
   pending: number | null;
   onNavigate?: () => void;
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
-  const onRecon = pathname === "/reconcile";
   const due = recon?.due ?? ({ kind: "none" } as Gstr3bDue);
   const filingLabel =
     due.kind === "open"
@@ -395,73 +447,55 @@ function SideNav({
         ? `GSTR-3B for ${due.period}: was due ${due.dueLabel}`
         : "GSTR-3B: no recon yet";
 
-  return (
-    <nav aria-label="Main">
-      <Section title="Overview">
-        <Item href="/dashboard" active={pathname === "/dashboard"} icon={<LayoutGrid aria-hidden />} onNavigate={onNavigate}>
-          Dashboard
-        </Item>
-      </Section>
+  const countFor = (k?: CountKey) => {
+    if (!k) return undefined;
+    if (k === "pending") return pending !== null && pending > 0 ? pending : undefined;
+    return recon ? recon.counts[k] : undefined;
+  };
 
-      <Section title="Reconcile">
-        <Item href="/reconcile" active={onRecon && !view} icon={<History aria-hidden />} onNavigate={onNavigate}>
-          Runs
-        </Item>
-      </Section>
-
-      <Section title="ITC">
-        {ITC_VIEWS.map((d) => (
-          <Item
-            key={d.key}
-            href={viewHref(d.key)}
-            active={onRecon && view === d.key}
-            icon={
-              <span className="side-ico" aria-hidden>
-                <span className={`dot ${d.dot}`} />
-              </span>
-            }
-            count={recon ? recon.counts[d.key] : undefined}
-            onNavigate={onNavigate}
-          >
-            {d.label}
-          </Item>
-        ))}
-      </Section>
-
-      <Section title="Vendors">
+  const renderEntry = (e: NavEntry) => {
+    if (isLink(e)) {
+      if (!e.enabled) return null;
+      const Icon = e.icon;
+      return (
         <Item
-          href="/chase"
-          active={pathname === "/chase"}
-          icon={<Send aria-hidden />}
-          count={pending !== null && pending > 0 ? pending : undefined}
+          key={e.id}
+          href={e.href}
+          active={pathname === e.href}
+          icon={
+            e.dot ? (
+              <span className="side-ico" aria-hidden>
+                <span className={`dot ${e.dot}`} />
+              </span>
+            ) : Icon ? (
+              <Icon aria-hidden />
+            ) : null
+          }
+          count={countFor(e.count)}
           onNavigate={onNavigate}
         >
-          Chase queue
+          {e.label}
         </Item>
-        <Item href="/status" active={pathname === "/status"} icon={<SquareKanban aria-hidden />} onNavigate={onNavigate}>
-          Status board
-        </Item>
-      </Section>
-
-      <Section title="Filing">
-        <Link href="/dashboard#filing" onClick={onNavigate} className="side-filing" aria-label={filingLabel}>
+      );
+    }
+    if (e.id === "filing-block") {
+      return (
+        <Link key={e.id} href="/dashboard#filing" onClick={onNavigate} className="side-filing" aria-label={filingLabel}>
           <div className="flex items-baseline justify-between gap-2">
             <span className="font-medium" style={{ color: "var(--color-ink)" }}>
               GSTR-3B
             </span>
             {due.kind !== "none" && <span style={{ color: "var(--color-text-3)" }}>{due.period}</span>}
           </div>
-          {due.kind === "open" ? (
-            <div className="mt-1 flex items-baseline justify-between gap-2">
-              <span className="font-semibold" style={{ color: "var(--color-ink)" }}>
-                {daysText(due.daysLeft)} · due {due.dueLabel}
-              </span>
-            </div>
-          ) : null}
           {due.kind === "open" && (
-            <div className="mt-0.5" style={{ color: due.blocked > 0 ? "var(--color-risk)" : "var(--color-text-3)" }}>
-              {inr(due.blocked)} blocked
-            </div>
+            <>
+              <div className="mt-1 font-semibold" style={{ color: "var(--color-ink)" }}>
+                {daysText(due.daysLeft)} · due {due.dueLabel}
+              </div>
+              <div className="mt-0.5" style={{ color: due.blocked > 0 ? "var(--color-risk)" : "var(--color-text-3)" }}>
+                {inr(due.blocked)} blocked
+              </div>
+            </>
           )}
           {due.kind === "past" && (
             <div className="mt-1" style={{ color: "var(--color-text-2)" }}>
@@ -474,12 +508,10 @@ function SideNav({
             </div>
           )}
         </Link>
-      </Section>
-
-      <Section title="Company">
-        <Item href="/settings" active={pathname === "/settings"} icon={<Settings2 aria-hidden />} onNavigate={onNavigate}>
-          Settings
-        </Item>
+      );
+    }
+    return (
+      <div key={e.id}>
         <button
           type="button"
           className="side-item w-full"
@@ -500,7 +532,20 @@ function SideNav({
             </Link>
           </div>
         )}
-      </Section>
+      </div>
+    );
+  };
+
+  return (
+    <nav aria-label="Main">
+      {NAV.map((sec) => {
+        const items = sec.items.map(renderEntry).filter(Boolean);
+        return items.length ? (
+          <Section key={sec.title} title={sec.title}>
+            {items}
+          </Section>
+        ) : null;
+      })}
     </nav>
   );
 }
@@ -620,13 +665,11 @@ function SideFooter({
   );
 }
 
-function CrumbWithView({ pathname }: { pathname: string }) {
-  const view = parseView(useSearchParams().get("view"));
-  return <Crumb pathname={pathname} view={view} />;
-}
-
-function Crumb({ pathname, view }: { pathname: string; view: ItcView | null }) {
-  const label = pathname === "/reconcile" && view ? `ITC · ${viewDef(view).label}` : PAGE_LABEL[pathname] ?? "";
+function Crumb({ pathname }: { pathname: string }) {
+  const item = NAV.flatMap((sec) => sec.items.filter(isLink).map((i) => ({ sec: sec.title, i }))).find(
+    (x) => x.i.enabled && x.i.href === pathname
+  );
+  const label = item ? `${item.sec} · ${item.i.label}` : "";
   return (
     <span className="font-medium" style={{ color: "var(--color-ink)" }}>
       {label}
