@@ -170,10 +170,10 @@ export default function DashboardPage() {
       >
         <div className="min-w-0">
           <h3 className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>
-            Sample files (offline demo)
+            Sample files
           </h3>
           <p className="mt-0.5 text-meta">
-            Download, then upload on Reconcile — or use &quot;Load sample files&quot; there.
+            Download them, or use &quot;Try with sample files&quot; on Reconcile. Sample runs are never saved.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">

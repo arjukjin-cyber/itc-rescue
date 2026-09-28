@@ -291,7 +291,7 @@ export default function LandingPage() {
               className="mt-4 text-lg leading-relaxed"
               style={{ color: "var(--color-text-secondary)" }}
             >
-              Three steps. No GST portal login. Works offline with your Excel exports.
+              Three steps. No GST portal login. Works with your Excel and CSV exports.
             </p>
           </div>
           <div className="mt-10 grid gap-6 md:grid-cols-3 sm:mt-12 sm:gap-8">
@@ -384,8 +384,8 @@ export default function LandingPage() {
             className="flex items-center gap-2 text-sm"
             style={{ color: "var(--color-text-secondary)" }}
           >
-            <Zap size={18} style={{ color: "var(--color-accent)" }} /> Demo works offline with
-            sample CSVs
+            <Zap size={18} style={{ color: "var(--color-accent)" }} /> Try it with sample files
+            first. Sample runs are never saved
           </div>
         </div>
       </section>

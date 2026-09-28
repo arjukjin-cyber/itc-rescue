@@ -152,8 +152,9 @@ export default function ReconcilePage() {
         "purchase-register.csv"
       );
       const gstr = await fetchSampleAsFile("/samples/gstr-2b.csv", "gstr-2b.csv");
-      setBooksFile(books);
-      setGstrFile(gstr);
+      // Leave the upload zones empty so a sample file can never be mixed into a real run.
+      setBooksFile(null);
+      setGstrFile(null);
       const booksInv = await parseInvoiceFile(books, "books");
       const gstrInv = await parseInvoiceFile(gstr, "gstr2b");
       const { results: matched, summary: sum } = reconcile(booksInv, gstrInv);
@@ -402,12 +403,14 @@ export default function ReconcilePage() {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <Link
-              href="/chase"
-              className="rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800"
-            >
-              Chase vendors →
-            </Link>
+            {!isSample && (
+              <Link
+                href="/chase"
+                className="rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800"
+              >
+                Chase vendors →
+              </Link>
+            )}
             <Link
               href="/status"
               className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
