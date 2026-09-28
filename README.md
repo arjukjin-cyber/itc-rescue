@@ -73,6 +73,15 @@ Header synonyms recognised (case, punctuation and spacing are ignored):
   `Party Name`, `GSTIN`, `Bill No.`, `Bill Date`, `Taxable Amt`, `IGST`,
   `CGST`, `SGST` (and `IGST/CGST/SGST Amt`), `Tax Amt`, `Net Amt`, `Vch/Bill No`.
 
+### GST portal GSTR-2B Excel
+
+The GSTR-2B upload accepts the workbook downloaded from the GST portal
+(Returns Dashboard → GSTR-2B → Download Excel) as-is: the **B2B** sheet is picked
+automatically (Read me / ITC summary / B2BA / CDNR sheets are ignored), the
+title rows and two-row merged header are handled, per-rate rows of one invoice
+are merged, and `ITC Availability = No` rows are kept (flagged `itcAvailable: false`).
+See `src/lib/importers/gstr2b-portal.ts`.
+
 Run the importer tests with:
 
 ```bash
