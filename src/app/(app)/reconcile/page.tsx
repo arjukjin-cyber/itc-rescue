@@ -92,9 +92,8 @@ export default function ReconcilePage() {
         .filter(Boolean);
       setBooksNote(notes.length ? notes.join(" · ") : null);
       if (!booksInv.length || !gstrInv.length) {
-        setError(
-          "Could not parse invoices. Check column headers (GSTIN, Invoice Number, Invoice Date, tax columns)."
-        );
+        // parseInvoiceFileDetailed normally throws a file-specific error first
+        setError(`${(!booksInv.length ? books : gstr).name}: no invoice rows found`);
         return;
       }
 
@@ -227,7 +226,7 @@ export default function ReconcilePage() {
         />
         <FileDrop
           label="GSTR-2B"
-          hint="Excel/CSV export from GST portal"
+          hint="From the GST portal · .json or .xlsx"
           file={gstrFile}
           onFile={setGstrFile}
         />
@@ -252,7 +251,7 @@ export default function ReconcilePage() {
         </button>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
       {booksNote && <p className="text-xs text-slate-500">{booksNote}</p>}
 
       {summary && (
@@ -468,7 +467,7 @@ function FileDrop({
       )}
       <input
         type="file"
-        accept=".csv,.xlsx,.xls"
+        accept=".csv,.xlsx,.xls,.json"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];

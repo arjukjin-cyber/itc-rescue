@@ -19,7 +19,13 @@
 import { normalizeGstin, normalizeInvoiceNumber } from "../reconcile";
 import type { InvoiceRecord } from "../types";
 
-export type ImportSource = "tally" | "busy" | "template" | "generic" | "gstr2b_portal";
+export type ImportSource =
+  | "tally"
+  | "busy"
+  | "template"
+  | "generic"
+  | "gstr2b_portal"
+  | "gstr2b_portal_json";
 
 export type ImportField =
   | "gstin"
@@ -605,10 +611,61 @@ export function mapRegisterRows(
   return out;
 }
 
+/** Display names of the columns every register/2B file needs. */
+export const REQUIRED_COLUMN_LABELS = {
+  gstin: "GSTIN",
+  invoiceNumber: "Invoice number",
+  invoiceDate: "Invoice date",
+} as const;
+
+/** Required columns (GSTIN, invoice number, invoice date) missing from a column map. */
+export function missingRequiredColumns(columns: ColumnMap): string[] {
+  const missing: string[] = [];
+  if (!columns.gstin) missing.push(REQUIRED_COLUMN_LABELS.gstin);
+  if (!columns.invoiceNumber && !columns.voucherNumber) missing.push(REQUIRED_COLUMN_LABELS.invoiceNumber);
+  if (!columns.invoiceDate && !columns.voucherDate) missing.push(REQUIRED_COLUMN_LABELS.invoiceDate);
+  return missing;
+}
+
+/**
+ * Header labels as written in the file (for error messages). With a two-row
+ * header, the sub-header wins over the group label for each column.
+ */
+export function headerLabels(rows: unknown[][], headerRowIndex: number, headerRowCount = 1): string[] {
+  const bottom = rows[headerRowIndex] ?? [];
+  const top = headerRowCount > 1 ? rows[headerRowIndex - 1] ?? [] : [];
+  const width = Math.max(bottom.length, top.length);
+  const out: string[] = [];
+  for (let i = 0; i < width; i++) {
+    const label = cellText(bottom[i]) || cellText(top[i]);
+    if (label && !out.includes(label)) out.push(label);
+  }
+  return out;
+}
+
+/** Best guess at the header row when detection failed: first row with a known header. */
+export function guessHeaderRow(rows: unknown[][], maxScan = HEADER_SCAN_ROWS): number {
+  const limit = Math.min(rows.length, maxScan);
+  let firstNonBlank = -1;
+  for (let i = 0; i < limit; i++) {
+    if (isBlankRow(rows[i])) continue;
+    if (firstNonBlank < 0) firstNonBlank = i;
+    if (rows[i].some((c) => isKnownHeader(normalizeHeader(c)))) return i;
+  }
+  return firstNonBlank;
+}
+
+/** "file.xlsx: couldn't find columns: A, B. Found: x, y, z, …" (at most 6 found headers). */
+export function missingColumnsMessage(fileName: string, missing: string[], found: string[]): string {
+  const shown = found.slice(0, 6).join(", ") + (found.length > 6 ? ", …" : "");
+  return `${fileName}: couldn't find columns: ${missing.join(", ")}. Found: ${found.length ? shown : "no header row"}`;
+}
+
 /** One-line UI note for a detected source, or null when nothing is worth saying. */
 export function describeImportSource(source: ImportSource): string | null {
   if (source === "tally") return "Detected Tally export";
   if (source === "busy") return "Detected Busy export";
   if (source === "gstr2b_portal") return "Detected GSTR-2B (portal) export";
+  if (source === "gstr2b_portal_json") return "Detected GSTR-2B (portal JSON)";
   return null;
 }

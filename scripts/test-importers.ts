@@ -44,6 +44,18 @@ async function test(name: string, fn: () => void | Promise<void>) {
   }
 }
 
+function fixtureFile(rel: string, type: string): File {
+  return new File([readFileSync(join(root, rel))], rel.split("/").pop()!, { type });
+}
+
+async function rejectsWith(p: Promise<unknown>, message: string) {
+  await assert.rejects(p, (e: unknown) => {
+    assert.ok(e instanceof Error);
+    assert.equal(e.message, message);
+    return true;
+  });
+}
+
 function csvFile(rel: string): File {
   const text = readFileSync(join(root, rel), "utf8");
   return new File([text], rel.split("/").pop()!, { type: "text/csv" });
@@ -706,6 +718,168 @@ async function main() {
     // ±1 day inside one FY still matches
     out = reconcile([fyInv("books", "2025-04-01", 10000)], [fyInv("gstr2b", "2025-04-02", 10000)]);
     assert.deepEqual(out.results.map((r) => r.category), ["matched"]);
+  });
+
+  console.log("UX-01: portal GSTR-2B JSON + file-specific errors");
+
+  const jsonFile = (obj: unknown, name = "gstr2b.json") =>
+    new File([typeof obj === "string" ? obj : JSON.stringify(obj)], name, { type: "application/json" });
+
+  await test("JSON data.docdata.b2b[].inv[] with nested items[] (summed) and itcavl", async () => {
+    const res = await parseInvoiceFileDetailed(
+      jsonFile({
+        chksum: "x",
+        data: {
+          gstin: "27ZZZZZ9999Z1Z5",
+          rtnprd: "042025",
+          docdata: {
+            b2b: [
+              {
+                ctin: "07AAACP0505B1ZQ",
+                trdnm: "Delhi Pack Solutions",
+                inv: [
+                  {
+                    inum: "DPS-4491", dt: "08-04-2025", val: 70200, itcavl: "Y",
+                    items: [
+                      { num: 1, rt: 18, txval: 50000, igst: 0, cgst: 4500, sgst: 4500, cess: 0 },
+                      { num: 2, rt: 12, txval: 10000, igst: 0, cgst: 600, sgst: 600, cess: 0 },
+                    ],
+                  },
+                  {
+                    inum: "INV/24-25/001", dt: "31-03-2025", val: 11800, itcavl: "N",
+                    items: [{ num: 1, rt: 18, txval: 10000, igst: 1800, cgst: 0, sgst: 0, cess: 0 }],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+      "gstr2b"
+    );
+    assert.equal(res.detected, "gstr2b_portal_json");
+    assert.deepEqual(
+      res.invoices.map((i) => [i.gstin, i.vendorName, i.rawInvoiceNumber, i.invoiceDate, i.taxableValue, i.igst, i.cgst, i.sgst, i.totalTax, i.itcAvailable]),
+      [
+        ["07AAACP0505B1ZQ", "Delhi Pack Solutions", "DPS-4491", "2025-04-08", 60000, 0, 5100, 5100, 10200, true],
+        ["07AAACP0505B1ZQ", "Delhi Pack Solutions", "INV/24-25/001", "2025-03-31", 10000, 1800, 0, 0, 1800, false],
+      ]
+    );
+  });
+
+  await test("JSON with top-level docdata and flat amounts on inv", async () => {
+    const res = await parseInvoiceFileDetailed(
+      jsonFile({
+        docdata: {
+          b2b: [
+            {
+              ctin: "29aadcs1234a1z5",
+              trdnm: "Bengaluru Steel Traders",
+              inv: [{ inum: "BST#0881", dt: "02-04-2025", val: 295000, txval: 250000, igst: 45000, cgst: 0, sgst: 0, cess: 0 }],
+            },
+          ],
+        },
+      }),
+      "gstr2b"
+    );
+    assert.equal(res.detected, "gstr2b_portal_json");
+    assert.deepEqual(slim(res.invoices), [
+      {
+        gstin: "29AADCS1234A1Z5", vendorName: "Bengaluru Steel Traders", rawInvoiceNumber: "BST#0881",
+        invoiceNumber: "BST0881", invoiceDate: "2025-04-02", taxableValue: 250000,
+        igst: 45000, cgst: 0, sgst: 0, totalTax: 45000,
+      },
+    ]);
+  });
+
+  await test("JSON errors: invalid JSON and missing b2b section name the file", async () => {
+    await rejectsWith(
+      parseInvoiceFileDetailed(jsonFile("{not json"), "gstr2b"),
+      "gstr2b.json: not valid JSON (download the GSTR-2B JSON again from the GST portal)"
+    );
+    await rejectsWith(
+      parseInvoiceFileDetailed(jsonFile({ data: { docdata: { cdnr: [] } } }), "gstr2b"),
+      "gstr2b.json: no B2B invoices found (expected docdata.b2b)"
+    );
+    await rejectsWith(
+      parseInvoiceFileDetailed(jsonFile({ data: { docdata: { b2b: [] } } }, "aug-2b.json"), "gstr2b"),
+      "aug-2b.json: no B2B invoices found (expected docdata.b2b)"
+    );
+  });
+
+  await test("missing columns: message names the file, the missing columns and up to 6 found headers", async () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Goods and Services Tax  - GSTR-2B"],
+      [],
+      ["GSTIN of supplier", "Trade/Legal name", "Place of supply", "Taxable Value (₹)", "Integrated Tax(₹)", "Central Tax(₹)", "State/UT Tax(₹)", "Cess(₹)"],
+      ["27AABCT1332L1ZV", "TechParts India Pvt Ltd", "Maharashtra", 100000, 0, 9000, 9000, 0],
+    ]), "B2B");
+    const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+    await rejectsWith(
+      parseInvoiceFileDetailed(new File([buf], "gstr2b-aug.xlsx"), "gstr2b"),
+      "gstr2b-aug.xlsx: couldn't find columns: Invoice number, Invoice date. Found: GSTIN of supplier, Trade/Legal name, Place of supply, Taxable Value (₹), Integrated Tax(₹), Central Tax(₹), …"
+    );
+    await rejectsWith(
+      parseInvoiceFileDetailed(csvFile("fixtures/ux-audit-broken-2b-no-invoice-no-date.csv"), "gstr2b"),
+      "ux-audit-broken-2b-no-invoice-no-date.csv: couldn't find columns: Invoice number, Invoice date. Found: GSTIN of supplier, Trade/Legal name, Taxable Value, IGST"
+    );
+    await rejectsWith(
+      parseInvoiceFileDetailed(new File(["Invoice Number,Invoice Date,Taxable Value\nX-1,01/04/2025,100\n"], "reg.csv", { type: "text/csv" }), "books"),
+      "reg.csv: couldn't find columns: GSTIN. Found: Invoice Number, Invoice Date, Taxable Value"
+    );
+  });
+
+  const UX_2B = [
+    ["27AAAAA1111A1ZW", "UXA-001", "2026-08-03", 100000, 18000],
+    ["27AAAAA1111A1ZW", "UXA-002", "2026-08-11", 50000, 9000],
+    ["29BBBBB2222B1ZD", "UXB-26-101", "2026-08-05", 200000, 36000],
+    ["24DDDDD4444D1ZT", "UXD-55", "2026-08-14", 60000, 9000],
+    ["09FFFFF6666F1ZR", "UXF-3001", "2026-08-22", 40000, 7200],
+    ["29BBBBB2222B1ZD", "UXB/26/140", "2026-08-28", 30000, 5400],
+  ];
+  const ux = (list: InvoiceRecord[]) =>
+    list
+      .map((i) => [i.gstin, i.rawInvoiceNumber, i.invoiceDate, i.taxableValue, i.totalTax] as const)
+      .sort((a, b) => String(a[2]).localeCompare(String(b[2])));
+  const sortedUx = [...UX_2B].sort((a, b) => String(a[2]).localeCompare(String(b[2])));
+
+  await test("audit fixture ux-audit-gstr-2b-portal-style.xlsx -> 6 invoices (gstr2b_portal)", async () => {
+    const res = await parseInvoiceFileDetailed(
+      fixtureFile("fixtures/ux-audit-gstr-2b-portal-style.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+      "gstr2b"
+    );
+    assert.equal(res.detected, "gstr2b_portal");
+    assert.equal(res.headerRowIndex, 2);
+    assert.equal(res.invoices.length, 6);
+    assert.deepEqual(ux(res.invoices), sortedUx);
+  });
+
+  await test("audit fixture ux-audit-gstr-2b-portal.json -> 6 invoices (gstr2b_portal_json)", async () => {
+    const res = await parseInvoiceFileDetailed(fixtureFile("fixtures/ux-audit-gstr-2b-portal.json", "application/json"), "gstr2b");
+    assert.equal(res.detected, "gstr2b_portal_json");
+    assert.equal(res.invoices.length, 6);
+    assert.deepEqual(ux(res.invoices), sortedUx);
+  });
+
+  await test("audit purchase register vs audit 2B (xlsx and json) -> 4 matched / 2 at-risk / 1 mismatch / 1 unclaimed", async () => {
+    const books = await parseInvoiceFileDetailed(
+      fixtureFile("fixtures/ux-audit-purchase-register.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+      "books"
+    );
+    assert.equal(books.invoices.length, 7);
+    for (const g of [
+      fixtureFile("fixtures/ux-audit-gstr-2b-portal-style.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+      fixtureFile("fixtures/ux-audit-gstr-2b-portal.json", "application/json"),
+    ]) {
+      const g2b = await parseInvoiceFileDetailed(g, "gstr2b");
+      const { summary } = reconcile(books.invoices, g2b.invoices);
+      assert.deepEqual(
+        [summary.matched, summary.itcAtRisk, summary.valueMismatch, summary.unclaimed, summary.itcAtRiskAmount],
+        [4, 2, 1, 1, 36000],
+        g.name
+      );
+    }
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);
