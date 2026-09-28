@@ -108,8 +108,7 @@ export default function SignupPage() {
             Join the waitlist &amp; start free
           </h1>
           <p className="mt-1 text-sm" style={{ color: "var(--color-text-secondary)" }}>
-            Work email gets you early access. Includes 1 free reconciliation (or 50 invoices) — no card.
-            Full chase &amp; unlimited recon unlock on a paid plan.
+            Work email gets you early access. Includes 1 free reconciliation (up to 50 invoices). No card needed.
           </p>
           <form onSubmit={onSubmit} className="mt-8 space-y-4">
             {fields.map((field) => (

@@ -159,13 +159,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <ShieldAlert size={14} /> Trial
                 </div>
                 {trialHint || "1 free recon · 50 invoices"}
-                <Link
-                  href="/settings"
-                  className="mt-2 block font-semibold underline"
-                  style={{ color: "var(--color-accent)" }}
-                >
-                  Upgrade plan →
-                </Link>
               </div>
             )}
             <div className="truncate text-meta">{email}</div>

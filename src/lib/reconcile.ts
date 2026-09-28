@@ -290,7 +290,7 @@ export function reconcile(
         taxDiff,
         notes:
           category === "value_mismatch"
-            ? `Tax differs by ₹${taxDiff.toFixed(2)}`
+            ? `Tax differs by ${formatINRPrecise(taxDiff)}`
             : undefined,
       });
     } else {

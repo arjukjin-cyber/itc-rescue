@@ -6,6 +6,7 @@ import {
   saveReconForUser,
 } from "@/lib/db";
 import { requireDbUser } from "@/lib/session-user";
+import { isSampleRecon, TRIAL_USED_MESSAGE, validateReconResults } from "@/lib/recon-guard";
 import type { MatchResult, ReconSummary } from "@/lib/types";
 
 export async function GET() {
@@ -31,22 +32,30 @@ export async function POST(req: NextRequest) {
     const user = await requireDbUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const gate = await canUserRunRecon(user.id);
-    if (!gate.ok) {
-      return NextResponse.json(
-        {
-          error: gate.reason || "Free trial used — upgrade to continue",
-          code: "trial_exhausted",
-        },
-        { status: 402 }
-      );
-    }
-
     const body = await req.json();
     const results = (body.results || []) as MatchResult[];
     const summary = body.summary as ReconSummary;
     if (!summary || !Array.isArray(results)) {
       return NextResponse.json({ error: "results and summary required" }, { status: 400 });
+    }
+
+    // Sample runs are never saved or counted against the trial.
+    if (isSampleRecon(results)) {
+      return NextResponse.json({ persistence: "sample", saved: false });
+    }
+
+    // Don't save (or count) a run whose parse looks broken.
+    const valid = validateReconResults(results);
+    if (!valid.ok) {
+      return NextResponse.json({ error: valid.reason, code: "parse_invalid" }, { status: 422 });
+    }
+
+    const gate = await canUserRunRecon(user.id);
+    if (!gate.ok) {
+      return NextResponse.json(
+        { error: gate.reason || TRIAL_USED_MESSAGE, code: "trial_exhausted" },
+        { status: 402 }
+      );
     }
 
     const saved = await saveReconForUser(user.id, results, summary);
