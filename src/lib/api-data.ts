@@ -247,7 +247,7 @@ export async function persistChaseStatus(
 ): Promise<ChaseItem[]> {
   const wantsAuth = expectsServerAuth();
   try {
-    const res = await fetch(`/api/chase/${id}`, {
+    const res = await fetch(`/api/chase/${encodeURIComponent(id)}`, {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
