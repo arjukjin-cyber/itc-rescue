@@ -1,6 +1,15 @@
 import { neon, NeonQueryFunction } from "@neondatabase/serverless";
 import bcrypt from "bcryptjs";
 import type { ChaseItem, ChaseStatus, MatchResult, ReconSummary } from "./types";
+import {
+  VendorValidationError,
+  buildVendorSummaries,
+  normalizeIndianMobile,
+  normalizeVendorGstin,
+  offenderGstinsForRun,
+  type StoredVendor,
+  type VendorSummary,
+} from "./vendors";
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 let _schemaReady = false;
@@ -93,6 +102,22 @@ export async function ensureSchema() {
   } catch {
     /* ignore */
   }
+  // Vendor view (#2). Only user-owned fields (name override, phone) and the
+  // idempotent repeat-offender counter are stored. At-risk ₹ / mismatch are
+  // computed from the latest recon at read time (see listVendorsForUser).
+  await sql`
+    CREATE TABLE IF NOT EXISTS vendors (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      gstin TEXT NOT NULL,
+      name TEXT,
+      phone TEXT,
+      offender_count INT NOT NULL DEFAULT 0,
+      last_offense_run_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, gstin)
+    )
+  `;
   _schemaReady = true;
 }
 
@@ -301,12 +326,23 @@ export async function saveReconForUser(
   const summaryJson = JSON.stringify(summary);
   const resultsJson = JSON.stringify(results);
 
-  // Sequential writes (neon HTTP). Avoid fragile multi-style transaction batches.
-  await sql.query(
+  // recon_runs insert + vendor offense bump in ONE non-interactive transaction
+  // (both via sql.query, same style) so a run is never saved without its bump
+  // or vice versa. Remaining writes stay sequential (neon HTTP).
+  const offenders = offenderGstinsForRun(results);
+  const runInsert = sql.query(
     `INSERT INTO recon_runs (id, user_id, summary, results)
      VALUES ($1, $2, $3::jsonb, $4::jsonb)`,
     [reconId, userId, summaryJson, resultsJson]
   );
+  if (offenders.length) {
+    await sql.transaction([
+      runInsert,
+      sql.query(VENDOR_OFFENSE_BUMP_SQL, [userId, reconId, JSON.stringify(offenders)]),
+    ]);
+  } else {
+    await runInsert;
+  }
 
   await sql`DELETE FROM chase_items WHERE user_id = ${userId}`;
 
@@ -356,6 +392,42 @@ export async function saveReconForUser(
   }
 
   return { reconId, chase: verified.length ? verified : chase };
+}
+
+/**
+ * Idempotent repeat-offender bump, keyed on the recon run id.
+ * $1 user_id, $2 run id, $3 JSON array of distinct offender GSTINs.
+ * - New GSTIN → row inserted with offender_count = 1, last_offense_run_id = run.
+ * - Existing GSTIN → +1 only if last_offense_run_id IS DISTINCT FROM this run,
+ *   so re-applying the same run (retry) matches 0 rows and changes nothing.
+ * Does not touch name/phone (user-owned).
+ */
+export const VENDOR_OFFENSE_BUMP_SQL = `
+INSERT INTO vendors (user_id, gstin, offender_count, last_offense_run_id)
+SELECT DISTINCT $1::text, g.gstin, 1, $2::text
+FROM jsonb_array_elements_text($3::jsonb) AS g(gstin)
+ON CONFLICT (user_id, gstin) DO UPDATE SET
+  offender_count = vendors.offender_count + 1,
+  last_offense_run_id = EXCLUDED.last_offense_run_id,
+  updated_at = NOW()
+WHERE vendors.last_offense_run_id IS DISTINCT FROM EXCLUDED.last_offense_run_id`;
+
+/**
+ * Standalone (re-)application of the offense bump for an already-saved run.
+ * Safe to call repeatedly for the same runId. saveReconForUser does this
+ * inline, in the same transaction as the recon_runs insert.
+ */
+export async function recordVendorOffensesForRun(
+  userId: string,
+  runId: string,
+  results: MatchResult[]
+): Promise<number> {
+  await ensureSchema();
+  const offenders = offenderGstinsForRun(results);
+  if (!offenders.length) return 0;
+  const sql = getSql();
+  await sql.query(VENDOR_OFFENSE_BUMP_SQL, [userId, runId, JSON.stringify(offenders)]);
+  return offenders.length;
 }
 
 export async function getLatestReconForUser(userId: string): Promise<{
@@ -523,4 +595,76 @@ export async function canUserRunRecon(userId: string): Promise<{ ok: boolean; re
   }
 
   return { ok: true };
+}
+
+/**
+ * Vendor view (#2): one row per GSTIN in the latest recon ∪ stored vendors.
+ * At-risk ₹ / mismatch come from the latest recon_runs row (computed, never
+ * stored); phone/name/offender_count come from `vendors`; open chase count
+ * from chase_items (pending | still_blocked). Sorted by atRiskAmount desc.
+ * Read-only: does not trigger the chase self-heal in listChaseForUser.
+ */
+export async function listVendorsForUser(userId: string): Promise<VendorSummary[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const latest = await getLatestReconForUser(userId);
+  const vendorRows = await sql`
+    SELECT gstin, name, phone, offender_count, updated_at
+    FROM vendors
+    WHERE user_id = ${userId}
+  `;
+  const chaseRows = await sql`
+    SELECT gstin, status FROM chase_items WHERE user_id = ${userId}
+  `;
+  const stored: StoredVendor[] = (vendorRows as Record<string, unknown>[]).map((r) => ({
+    gstin: String(r.gstin || ""),
+    name: r.name == null ? null : String(r.name),
+    phone: r.phone == null ? null : String(r.phone),
+    offenderCount: Number(r.offender_count || 0),
+    updatedAt: r.updated_at ? new Date(r.updated_at as string).toISOString() : null,
+  }));
+  const chase = (chaseRows as Record<string, unknown>[]).map((r) => ({
+    gstin: String(r.gstin || ""),
+    status: r.status as ChaseStatus,
+  }));
+  return buildVendorSummaries({ latestResults: latest?.results, stored, chase });
+}
+
+/**
+ * Save a vendor's phone (and optionally a display-name override).
+ * - gstin: normalised (uppercase, no spaces) and must be a valid 15-char GSTIN.
+ * - phone: Indian mobile → stored as +91XXXXXXXXXX; `null` clears it.
+ * - name: omitted/undefined leaves the stored name unchanged; "" clears the override.
+ * Throws VendorValidationError (status 400) on invalid input.
+ */
+export async function upsertVendorPhone(
+  userId: string,
+  gstin: string,
+  phone: string | null,
+  name?: string | null
+): Promise<{ vendor: VendorSummary | null; vendors: VendorSummary[] }> {
+  const g = normalizeVendorGstin(gstin);
+  const normalizedPhone = phone === null ? null : normalizeIndianMobile(phone);
+  const nameProvided = name !== undefined;
+  let normalizedName: string | null = null;
+  if (nameProvided && name !== null) {
+    if (typeof name !== "string") throw new VendorValidationError("name must be a string");
+    const trimmed = name.trim();
+    if (trimmed.length > 200) throw new VendorValidationError("name is too long (max 200)");
+    normalizedName = trimmed || null;
+  }
+
+  await ensureSchema();
+  const sql = getSql();
+  await sql.query(
+    `INSERT INTO vendors (user_id, gstin, name, phone)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (user_id, gstin) DO UPDATE SET
+       phone = EXCLUDED.phone,
+       name = CASE WHEN $5::boolean THEN EXCLUDED.name ELSE vendors.name END,
+       updated_at = NOW()`,
+    [userId, g, normalizedName, normalizedPhone, nameProvided]
+  );
+  const vendors = await listVendorsForUser(userId);
+  return { vendor: vendors.find((v) => v.gstin === g) || null, vendors };
 }
