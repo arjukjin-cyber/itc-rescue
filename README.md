@@ -55,6 +55,17 @@ Sample files live in `/public/samples/`:
 - `purchase-register.csv`
 - `gstr-2b.csv`
 
+### Tally / Busy purchase registers
+
+The purchase register upload also accepts Tally Prime / Tally ERP 9 and Busy
+exports as-is (title rows, totals rows, `1-Apr-2025` / `01/04/2025` / Excel
+serial dates, `1,23,456.00 Dr` amounts). See `src/lib/importers/tally-busy.ts`
+and the samples in `fixtures/`. Run the importer tests with:
+
+```bash
+npm run test:importers   # = npx tsx scripts/test-importers.ts
+```
+
 ## Tech stack
 
 - Next.js App Router + TypeScript + Tailwind CSS v4

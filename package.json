@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "smoke:dod": "node scripts/dod-persist-smoke.mjs"
+    "smoke:dod": "node scripts/dod-persist-smoke.mjs",
+    "test:importers": "npx --yes tsx scripts/test-importers.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
