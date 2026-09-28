@@ -1,15 +1,15 @@
 import type { MatchCategory, MatchResult } from "./types";
 
 /**
- * ITC filtered views of the latest recon. Routes follow nav-ia-v1.md: /itc/at-risk,
- * /itc/mismatches, /itc/unclaimed (+ /itc/matched, kept per the CTO sidebar brief).
- * UI-only: filters the results GET /api/recon already returns.
+ * ITC filtered views of the latest recon (Drop 1, CTO): /reconcile?view=at-risk | mismatches |
+ * unclaimed | matched. The sidebar shows At risk / Mismatches / Unclaimed (v3 frames); Matched
+ * is reached from the Runs tabs. UI-only: filters the results GET /api/recon already returns.
  */
 export type ItcView = "at_risk" | "mismatch" | "unclaimed" | "matched";
 
 export interface ItcViewDef {
   key: ItcView;
-  /** URL segment under /itc */
+  /** ?view= value on /reconcile */
   slug: string;
   /** Sidebar label */
   label: string;
@@ -66,8 +66,10 @@ export const ITC_VIEWS: ItcViewDef[] = [
   },
 ];
 
+/** Accepts the slug (at-risk) and the older key form (at_risk) used by earlier ?view= links. */
 export function viewFromSlug(slug: string | null | undefined): ItcView | null {
-  return ITC_VIEWS.find((d) => d.slug === slug)?.key ?? null;
+  if (!slug) return null;
+  return ITC_VIEWS.find((d) => d.slug === slug || d.key === slug)?.key ?? null;
 }
 
 export function viewDef(v: ItcView): ItcViewDef {
@@ -75,7 +77,7 @@ export function viewDef(v: ItcView): ItcViewDef {
 }
 
 export function viewHref(v: ItcView): string {
-  return `/itc/${viewDef(v).slug}`;
+  return `/reconcile?view=${viewDef(v).slug}`;
 }
 
 export function viewCounts(results: MatchResult[]): Record<ItcView, number> {

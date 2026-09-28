@@ -4,8 +4,8 @@ import type { MatchResult, ReconSummary } from "./types";
 
 /**
  * The unsaved sample run (#29: samples are never saved or counted) lives in memory only, for
- * this tab. It lets /reconcile and the /itc/* views (separate routes) show the same sample
- * results, and the sidebar counts follow it on those screens. Cleared by a real saved run;
+ * this tab. It keeps the sample on screen across /reconcile and its ?view= filters (and
+ * back from other pages in the same tab), and the sidebar counts follow it on those screens. Cleared by a real saved run;
  * gone on reload.
  */
 export interface SampleRun {
@@ -30,5 +30,5 @@ export function clearSampleRun() {
 
 /** Screens that show the in-page recon (and therefore a sample run). */
 export function isReconScreen(pathname: string): boolean {
-  return pathname === "/reconcile" || pathname.startsWith("/itc/");
+  return pathname === "/reconcile";
 }

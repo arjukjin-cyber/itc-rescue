@@ -1,72 +1,177 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import {
-  LayoutGrid,
+  LayoutDashboard,
+  GitCompareArrows,
   History,
+  TriangleAlert,
+  Diff,
+  Inbox,
+  Building2,
   Send,
+  MessageSquareText,
+  CalendarDays,
+  FileText,
+  Landmark,
+  Users,
+  CreditCard,
+  Settings,
   SquareKanban,
-  Settings2,
+  CircleCheck,
+  Search,
+  ChevronsUpDown,
+  ChevronDown,
+  Calendar,
+  CircleHelp,
+  Check,
   LogOut,
   Menu,
   X,
-  Plus,
-  Check,
-  ChevronsUpDown,
-  Users,
-  FileText,
-  CalendarDays,
-  Building2,
-  CreditCard,
   type LucideIcon,
 } from "lucide-react";
 import { clearLocalUser, getLocalUser, getSettings, getTrialUsage, setLocalUser, setTrialFromServer } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
 import { CHASE_COUNT_EVENT, RECON_EVENT, TRIAL_EVENT } from "@/lib/ui-events";
-import { daysText, getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
-import { inr } from "@/lib/format";
-import { ITC_VIEWS, viewCounts, viewHref, type ItcView } from "@/lib/views";
+import { getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
+import { viewCounts, viewFromSlug, viewHref, type ItcView } from "@/lib/views";
 import { getSampleRun, isReconScreen } from "@/lib/sample-run";
-import { Dropdown, MenuItem, MenuLabel, MenuSep } from "./Dropdown";
+import { Dropdown } from "./Dropdown";
+import { CommandPalette, type PalettePage } from "./CommandPalette";
 import type { MatchResult, UserSession } from "@/lib/types";
 
 /*
- * Sidebar (CTO structure; section names, order and routes per nav-ia-v1.md; plain v1.1 styling,
- * Design's v3 visuals pending sign-off): company + GSTIN switcher + New recon · Overview ·
- * Reconcile · ITC (counts from the latest recon) · Vendors · Filing (GSTR-3B) · Company ·
- * trial meter + user menu. Every rendered row is a real screen: no "Soon" rows, no exports or
- * quick actions here.
+ * v3 app shell (approved frames /workspace/itc-redesign/v3; routes nav-ia-v1.md; Drop 1).
+ * Sidebar 240: workspace/GSTIN switcher · "Search or jump to" ⌘K · nav · trial meter.
+ * Top bar 52: breadcrumb (company / section / page) · Return period · help · avatar menu.
+ * Drop 1 shows only rows whose screen is on v3 (or an existing screen that works in the shell);
+ * every other IA row stays in NAV with `on: false` and never renders. No dead links.
  */
 
-const PLAN_LABEL: Record<string, string> = { trial: "Trial", starter: "Starter", growth: "Growth" };
-
 const MATCH_RULE = "Invoices match on GSTIN + invoice number + invoice date (±1 day), then tax is compared.";
+
+/** Billing stays hidden until pricing visibility is decided (CTO). */
+const NAV_FLAGS = { billing: false } as const;
+
+type CountKey = ItcView | "pending";
+interface NavRow {
+  id: string;
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  count?: CountKey;
+  /** ?view= on /reconcile, for the ITC rows */
+  view?: ItcView;
+  /** Rendered in Drop 1. false = IA row whose screen isn't rebuilt yet (Drop 2) — never rendered. */
+  on: boolean;
+}
+interface NavSection {
+  title: string;
+  /** Breadcrumb section; Overview pages show only company / page (v3 frames). */
+  crumb: string | null;
+  rows: NavRow[];
+}
+
+const NAV: NavSection[] = [
+  { title: "Overview", crumb: null, rows: [{ id: "dashboard", label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, on: true }] },
+  {
+    title: "Reconcile",
+    crumb: "Reconcile",
+    rows: [
+      { id: "runs", label: "Runs", href: "/reconcile", icon: GitCompareArrows, on: true },
+      { id: "history", label: "History", href: "/reconcile/history", icon: History, on: false },
+    ],
+  },
+  {
+    title: "ITC",
+    crumb: "ITC",
+    rows: [
+      { id: "at_risk", label: "At risk", href: viewHref("at_risk"), view: "at_risk", icon: TriangleAlert, count: "at_risk", on: true },
+      { id: "mismatch", label: "Mismatches", href: viewHref("mismatch"), view: "mismatch", icon: Diff, count: "mismatch", on: true },
+      { id: "unclaimed", label: "Unclaimed", href: viewHref("unclaimed"), view: "unclaimed", icon: Inbox, count: "unclaimed", on: true },
+      // Not a v3 sidebar row; reached from the Runs "Matched" tab.
+      { id: "matched", label: "Matched", href: viewHref("matched"), view: "matched", icon: CircleCheck, on: false },
+    ],
+  },
+  {
+    title: "Vendors",
+    crumb: "Vendors",
+    rows: [
+      { id: "directory", label: "Directory", href: "/vendors", icon: Building2, on: false },
+      { id: "chase", label: "Chase queue", href: "/chase", icon: Send, count: "pending", on: true },
+      { id: "templates", label: "Templates", href: "/vendors/templates", icon: MessageSquareText, on: false },
+      // Existing screen, not in the v3 IA: kept routable (⌘K), not in the sidebar.
+      { id: "status", label: "Status board", href: "/status", icon: SquareKanban, on: false },
+    ],
+  },
+  {
+    title: "Filing",
+    crumb: "Filing",
+    rows: [
+      { id: "calendar", label: "GSTR-3B calendar", href: "/filing/calendar", icon: CalendarDays, on: false },
+      { id: "reports", label: "Reports", href: "/filing/reports", icon: FileText, on: false },
+    ],
+  },
+  {
+    title: "Company",
+    crumb: "Company",
+    rows: [
+      { id: "gstins", label: "GSTINs", href: "/company/gstins", icon: Landmark, on: false },
+      { id: "team", label: "Team", href: "/company/team", icon: Users, on: false },
+      { id: "billing", label: "Billing", href: "/company/billing", icon: CreditCard, on: NAV_FLAGS.billing },
+      { id: "settings", label: "Settings", href: "/settings", icon: Settings, on: true },
+    ],
+  },
+];
+
+/** Routable screens that aren't sidebar rows in v3 but work in the shell (palette + breadcrumb). */
+const EXTRA_PAGES: { section: string; row: NavRow }[] = [
+  { section: "Vendors", row: NAV[3].rows.find((r) => r.id === "status")! },
+  { section: "ITC", row: NAV[2].rows.find((r) => r.id === "matched")! },
+];
+
+const PALETTE_PAGES: PalettePage[] = [
+  ...NAV.flatMap((s) => s.rows.filter((r) => r.on).map((r) => ({ label: r.label, href: r.href, icon: r.icon, section: s.title }))),
+  ...EXTRA_PAGES.map(({ section, row }) => ({ label: row.label, href: row.href, icon: row.icon, section })),
+];
+
+/** GST state codes → names (switcher shows the state next to the GSTIN, per switcher.html). */
+const GST_STATES: Record<string, string> = {
+  "01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh", "05": "Uttarakhand",
+  "06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh", "10": "Bihar", "11": "Sikkim",
+  "12": "Arunachal Pradesh", "13": "Nagaland", "14": "Manipur", "15": "Mizoram", "16": "Tripura", "17": "Meghalaya",
+  "18": "Assam", "19": "West Bengal", "20": "Jharkhand", "21": "Odisha", "22": "Chhattisgarh", "23": "Madhya Pradesh",
+  "24": "Gujarat", "26": "Dadra and Nagar Haveli and Daman and Diu", "27": "Maharashtra", "29": "Karnataka", "30": "Goa",
+  "31": "Lakshadweep", "32": "Kerala", "33": "Tamil Nadu", "34": "Puducherry", "35": "Andaman and Nicobar Islands",
+  "36": "Telangana", "37": "Andhra Pradesh", "38": "Ladakh",
+};
+
+function initials(name: string): string {
+  const w = name.replace(/\(.*?\)/g, "").trim().split(/\s+/).filter(Boolean);
+  return ((w[0]?.[0] ?? "I") + (w[1]?.[0] ?? w[0]?.[1] ?? "R")).toUpperCase();
+}
 
 interface ReconSnap {
   counts: Record<ItcView, number>;
   due: Gstr3bDue;
 }
-
-function snapOf(results: MatchResult[]): ReconSnap {
-  return {
-    counts: viewCounts(results),
-    due: getGstr3bDue(results),
-  };
-}
+const snapOf = (results: MatchResult[]): ReconSnap => ({ counts: viewCounts(results), due: getGstr3bDue(results) });
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [gstin, setGstin] = useState("");
   const [plan, setPlan] = useState("trial");
   const [reconUsed, setReconUsed] = useState(0);
   const [pending, setPending] = useState<number | null>(null);
-  /** null = no recon yet (or not loaded): ITC counts + ₹ blocked are hidden. */
+  /** null = no recon yet (or not loaded): ITC counts and the period picker are hidden. */
   const [recon, setRecon] = useState<ReconSnap | null>(null);
   const [reconTick, setReconTick] = useState(0);
 
@@ -80,6 +185,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
       const s = getSettings();
       setEmail(local.email);
+      setName(local.name || "");
       setCompany(s.companyName || local.companyName || local.name || "");
       setGstin(s.gstin || local.gstin || "");
       try {
@@ -96,6 +202,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           if (user) {
             setLocalUser(user);
             setEmail(user.email);
+            setName(user.name || "");
             setPlan(user.plan);
             if (user.companyName) setCompany(user.companyName);
             if (user.gstin) setGstin(user.gstin);
@@ -128,10 +235,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [pathname]);
 
-  // ITC view counts + ₹ blocked from the latest recon (existing GET /api/recon).
+  // ITC counts + return period from the latest recon (existing GET /api/recon).
   useEffect(() => {
     let cancelled = false;
-    // On /reconcile + /itc/*, an unsaved sample run (memory only, #29) is what's on screen.
+    // On /reconcile an unsaved sample run (memory only, #29) is what's on screen.
     const sample = isReconScreen(pathname) ? getSampleRun() : null;
     if (sample) {
       setRecon(snapOf(sample.results));
@@ -160,6 +267,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // ⌘K / Ctrl+K opens the palette anywhere in the app.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setOpen(false);
+        setPaletteOpen((o) => !o);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
   // Mobile drawer: close on navigation / Escape, lock page scroll while open.
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
@@ -180,499 +300,423 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.push("/");
   }
 
-  const planLabel = PLAN_LABEL[plan] ?? plan;
+  const companyName = company || "ITC Rescue";
+  const period = recon && recon.due.kind !== "none" ? recon.due.period : null;
 
   const sidebar = (onNavigate?: () => void) => (
     <div className="flex h-full min-h-0 flex-col">
-      <Workspace company={company} gstin={gstin} planLabel={planLabel} onNavigate={onNavigate} />
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        <SideNav pathname={pathname} recon={recon} pending={pending} onNavigate={onNavigate} />
+      <Switcher company={companyName} gstin={gstin} />
+      <SearchButton
+        onOpen={() => {
+          onNavigate?.();
+          setPaletteOpen(true);
+        }}
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <Suspense fallback={<SideNav pathname={pathname} view={null} recon={recon} pending={pending} onNavigate={onNavigate} />}>
+          <SideNavWithParams pathname={pathname} recon={recon} pending={pending} onNavigate={onNavigate} />
+        </Suspense>
       </div>
-      <SideFooter plan={plan} reconUsed={reconUsed} email={email} onLogout={logout} />
+      <TrialMeter plan={plan} reconUsed={reconUsed} />
     </div>
   );
 
   return (
     <div className="flex min-h-screen" style={{ backgroundColor: "var(--color-surface)" }}>
-      <aside
-        className="hidden w-56 shrink-0 lg:block"
-        style={{ backgroundColor: "var(--color-subtle)", borderRight: "1px solid var(--color-line)" }}
-        aria-label="Sidebar"
-      >
+      <aside className="v3-aside hidden shrink-0 lg:block" aria-label="Sidebar">
         <div className="sticky top-0 h-screen">{sidebar()}</div>
       </aside>
 
-      {/* Mobile / tablet: the same sidebar as an off-canvas drawer */}
+      {/* Mobile / tablet: the same sidebar (incl. the trial meter) as an off-canvas drawer */}
       {open && (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
           <button
             type="button"
             className="absolute inset-0 h-full w-full cursor-default"
-            style={{ backgroundColor: "rgb(9 9 11 / 0.24)" }}
+            style={{ backgroundColor: "rgba(9,9,11,.32)" }}
             aria-label="Close menu"
             onClick={() => setOpen(false)}
           />
-          <div
-            className="absolute inset-y-0 left-0 w-64 max-w-[85vw]"
-            style={{ backgroundColor: "var(--color-subtle)", borderRight: "1px solid var(--color-line)" }}
-          >
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="btn btn-quiet btn-icon absolute right-2 top-3 z-10"
-              aria-label="Close menu"
-            >
-              <X aria-hidden />
-            </button>
+          <div className="v3-aside absolute inset-y-0 left-0 max-w-[85vw]">
             {sidebar(() => setOpen(false))}
           </div>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="v3-ib absolute top-2 z-10"
+            style={{ left: "min(248px, calc(85vw + 8px))", backgroundColor: "#fff" }}
+            aria-label="Close menu"
+          >
+            <X aria-hidden />
+          </button>
         </div>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header
-          className="flex h-[52px] shrink-0 items-center gap-2.5 px-4 sm:px-6"
-          style={{ borderBottom: "1px solid var(--color-line)" }}
-        >
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="btn btn-quiet btn-icon lg:hidden"
-            aria-label="Open menu"
-            aria-expanded={open}
-          >
-            <Menu aria-hidden />
-          </button>
-          <div className="min-w-0 truncate" style={{ color: "var(--color-text-3)" }}>
-            <span className="hidden sm:inline">{company || "ITC Rescue"}</span>
-            <span className="mx-1.5 hidden sm:inline">/</span>
-            <Crumb pathname={pathname} />
-          </div>
+        <header className="v3-top">
+          {/* wrapper carries lg:hidden: .v3-ib sets display and would override the utility */}
+          <span className="lg:hidden">
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="v3-ib"
+              aria-label="Open menu"
+              aria-expanded={open}
+            >
+              <Menu aria-hidden />
+            </button>
+          </span>
+          <Suspense fallback={<Crumb company={companyName} pathname={pathname} view={null} period={period} />}>
+            <CrumbWithParams company={companyName} pathname={pathname} period={period} />
+          </Suspense>
           <div className="flex-1" />
-          {/* Desktop has "New recon" in the sidebar; keep it reachable when the drawer is closed. */}
-          <div className="lg:hidden">
-            <NewRecon compact />
-          </div>
+          {period && <PeriodPicker period={period} />}
+          {period && <div className="v3-vr hidden sm:block" aria-hidden />}
+          {/* Notifications bell: no backend in v1 (IA Q7), so it's hidden rather than a dead control. */}
+          <HelpMenu />
+          <UserMenu email={email} name={name} onLogout={logout} />
         </header>
 
         <main className="min-w-0 flex-1 px-4 pb-8 pt-5 sm:px-6">{children}</main>
       </div>
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} pages={PALETTE_PAGES} canUpload />
     </div>
   );
 }
 
-/* ── Pieces ─────────────────────────────────────────────────────────────── */
+/* ── Sidebar pieces ─────────────────────────────────────────────────────── */
 
 /**
- * Always opens the upload step: after the free run, "Run again" is locked there
- * (tooltip "Free trial used"), but sample runs stay available (#29, never saved).
+ * Workspace / GSTIN switcher (switcher.html). One workspace in v1: no "Create workspace".
+ * "Add GSTIN" / "Manage GSTINs" are left out: there is no GSTINs screen or API to open (CTO rule:
+ * no dead link, no new API in this PR).
  */
-function NewRecon({ compact = false, onNavigate }: { compact?: boolean; onNavigate?: () => void }) {
+function Switcher({ company, gstin }: { company: string; gstin: string }) {
+  const state = gstin ? GST_STATES[gstin.slice(0, 2)] : undefined;
   return (
-    <Link href="/reconcile?new=1" onClick={onNavigate} className={`btn btn-pri btn-sm ${compact ? "" : "w-full"}`}>
-      <Plus aria-hidden /> New recon
-    </Link>
-  );
-}
-
-function Workspace({
-  company,
-  gstin,
-  planLabel,
-  onNavigate,
-}: {
-  company: string;
-  gstin: string;
-  planLabel: string;
-  onNavigate?: () => void;
-}) {
-  const name = company || "ITC Rescue";
-  return (
-    <div className="px-3 pb-3 pt-3.5" style={{ borderBottom: "1px solid var(--color-line)" }}>
-      <div className="flex items-start gap-2.5 pr-8 lg:pr-0">
-        <Link
-          href="/dashboard"
-          onClick={onNavigate}
-          className="mt-0.5 grid h-[26px] w-[26px] shrink-0 place-items-center rounded-[5px] text-[11px] font-bold tracking-[0.02em] text-white"
-          style={{ backgroundColor: "var(--color-ink)" }}
-          aria-label="ITC Rescue dashboard"
+    <Dropdown
+      label="Workspace and GSTIN"
+      menuClassName="v3-pop v3-sw-pop w-[280px]"
+      trigger={({ open, toggle, id }) => (
+        <button
+          type="button"
+          className="v3-sw"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={open ? id : undefined}
+          onClick={toggle}
+          title="Workspace and GSTIN"
         >
-          IR
-        </Link>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-semibold" style={{ color: "var(--color-ink)" }} title={name}>
-            {name}
-          </div>
-          {/* GSTIN switcher: one GSTIN today; the control is real and lists it. */}
-          <Dropdown
-            label="Switch GSTIN"
-            className="min-w-0"
-            menuClassName="w-[236px]"
-            trigger={({ open, toggle, id }) => (
-              <button
-                type="button"
-                className="gstin-btn"
-                aria-haspopup="menu"
-                aria-expanded={open}
-                aria-controls={open ? id : undefined}
-                onClick={toggle}
-                title="Switch GSTIN"
-              >
-                <span className="truncate">{gstin || "GSTIN not set"}</span>
-                <ChevronsUpDown aria-hidden />
-              </button>
-            )}
-          >
-            {(close) => (
-              <>
-                {/* No "Create workspace" (one workspace in v1). No "Add GSTIN" / "Manage GSTINs":
-                    there's no GSTINs screen or API yet, so those rows are left out. */}
-                <MenuLabel>Workspace</MenuLabel>
-                <div className="truncate px-2 pb-1 text-[13px] font-medium" style={{ color: "var(--color-ink)" }}>
-                  {name}
-                </div>
-                <MenuSep />
-                <MenuLabel>GSTIN</MenuLabel>
-                {gstin ? (
-                  <MenuItem checked onSelect={close} meta={<Check size={14} aria-hidden />}>
-                    <span className="block truncate font-mono text-[12px]" style={{ color: "var(--color-ink)" }}>
-                      {gstin}
-                    </span>
-                  </MenuItem>
-                ) : (
-                  <div className="px-2 pb-1.5 text-[12px]" style={{ color: "var(--color-text-3)" }}>
-                    No GSTIN on this account
-                  </div>
-                )}
-              </>
-            )}
-          </Dropdown>
+          <span className="v3-mark" aria-hidden>
+            {initials(company)}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="v3-sw-name">{company}</span>
+            <span className="v3-sw-gstin">{gstin || "GSTIN not set"}</span>
+          </span>
+          <ChevronsUpDown aria-hidden />
+        </button>
+      )}
+    >
+      {(close) => (
+        <div style={{ position: "relative" }}>
+          <div className="v3-mh">Workspace</div>
+          <button type="button" role="menuitemradio" aria-checked="true" className="v3-mi" data-on="true" onClick={close}>
+            <span className="v3-mark" data-size="sm" aria-hidden>
+              {initials(company)}
+            </span>
+            <span className="min-w-0 flex-1 truncate font-medium" style={{ color: "var(--color-ink)" }}>
+              {company}
+            </span>
+            <Check aria-hidden style={{ color: "var(--color-ink)" }} />
+          </button>
+          <div className="v3-hr" />
+          <div className="v3-mh">GSTIN</div>
+          {gstin ? (
+            <button type="button" role="menuitemradio" aria-checked="true" className="v3-mi" data-on="true" onClick={close}>
+              <span className="v3-mono" style={{ color: "var(--color-ink)" }}>
+                {gstin}
+              </span>
+              {state && <span style={{ color: "var(--color-text-3)" }}>{state}</span>}
+              <span className="flex-1" />
+              <Check aria-hidden style={{ color: "var(--color-ink)" }} />
+            </button>
+          ) : (
+            <div className="v3-mi" style={{ color: "var(--color-text-3)" }}>
+              No GSTIN on this account
+            </div>
+          )}
         </div>
-      </div>
-      <div className="mt-3">
-        <NewRecon onNavigate={onNavigate} />
-      </div>
-    </div>
+      )}
+    </Dropdown>
   );
 }
 
-/* ── Nav config: sections, order and routes follow nav-ia-v1.md ─────────────
- * `enabled: false` rows are in the IA but have no screen/API yet, so they never render
- * (no dead links, no "Soon" rows). Billing is flagged off until pricing visibility is decided.
- */
-const NAV_FLAGS = { billing: false } as const;
-
-type CountKey = ItcView | "pending";
-interface NavLinkDef {
-  id: string;
-  label: string;
-  href: string;
-  icon?: LucideIcon;
-  /** ITC rows show a status dot instead of an icon */
-  dot?: string;
-  count?: CountKey;
-  enabled: boolean;
-}
-type NavEntry = NavLinkDef | { id: "filing-block" } | { id: "help" };
-interface NavSectionDef {
-  title: string;
-  items: NavEntry[];
+function SearchButton({ onOpen }: { onOpen: () => void }) {
+  const [mac, setMac] = useState(true);
+  useEffect(() => setMac(/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)), []);
+  return (
+    <button type="button" className="v3-srch" onClick={onOpen} aria-keyshortcuts={mac ? "Meta+K" : "Control+K"}>
+      <Search aria-hidden />
+      Search or jump to
+      <span className="v3-kbd" aria-hidden>
+        {mac ? "⌘K" : "Ctrl K"}
+      </span>
+    </button>
+  );
 }
 
-const NAV: NavSectionDef[] = [
-  { title: "Overview", items: [{ id: "dashboard", label: "Dashboard", href: "/dashboard", icon: LayoutGrid, enabled: true }] },
-  {
-    title: "Reconcile",
-    items: [
-      { id: "runs", label: "Runs", href: "/reconcile", icon: History, enabled: true },
-      // No run-history screen or API yet (GET /api/recon returns the latest run only).
-      { id: "history", label: "History", href: "/reconcile/history", icon: History, enabled: false },
-    ],
-  },
-  {
-    title: "ITC",
-    items: ITC_VIEWS.map((d) => ({ id: d.key, label: d.label, href: viewHref(d.key), dot: d.dot, count: d.key, enabled: true })),
-  },
-  {
-    title: "Vendors",
-    items: [
-      { id: "directory", label: "Directory", href: "/vendors", icon: Users, enabled: false },
-      { id: "chase", label: "Chase queue", href: "/chase", icon: Send, count: "pending", enabled: true },
-      // CTO sidebar brief (not in the IA draft): the existing status board.
-      { id: "status", label: "Status board", href: "/status", icon: SquareKanban, enabled: true },
-      { id: "templates", label: "Templates", href: "/vendors/templates", icon: FileText, enabled: false },
-    ],
-  },
-  {
-    title: "Filing",
-    items: [
-      { id: "filing-block" },
-      { id: "calendar", label: "GSTR-3B calendar", href: "/filing/calendar", icon: CalendarDays, enabled: false },
-      { id: "reports", label: "Reports", href: "/filing/reports", icon: FileText, enabled: false },
-    ],
-  },
-  {
-    title: "Company",
-    items: [
-      { id: "gstins", label: "GSTINs", href: "/company/gstins", icon: Building2, enabled: false },
-      { id: "team", label: "Team", href: "/company/team", icon: Users, enabled: false },
-      { id: "billing", label: "Billing", href: "/company/billing", icon: CreditCard, enabled: NAV_FLAGS.billing },
-      { id: "settings", label: "Settings", href: "/settings", icon: Settings2, enabled: true },
-      { id: "help" },
-    ],
-  },
-];
-
-function isLink(e: NavEntry): e is NavLinkDef {
-  return "href" in e;
+function SideNavWithParams(props: Omit<Parameters<typeof SideNav>[0], "view">) {
+  const sp = useSearchParams();
+  return <SideNav {...props} view={props.pathname === "/reconcile" ? viewFromSlug(sp.get("view")) : null} />;
 }
 
 function SideNav({
   pathname,
+  view,
   recon,
   pending,
   onNavigate,
 }: {
   pathname: string;
+  view: ItcView | null;
   recon: ReconSnap | null;
   pending: number | null;
   onNavigate?: () => void;
 }) {
-  const [helpOpen, setHelpOpen] = useState(false);
-  const due = recon?.due ?? ({ kind: "none" } as Gstr3bDue);
-  const filingLabel =
-    due.kind === "open"
-      ? `GSTR-3B for ${due.period}: ${daysText(due.daysLeft)}, due ${due.dueLabel}, ${inr(due.blocked)} blocked`
-      : due.kind === "past"
-        ? `GSTR-3B for ${due.period}: was due ${due.dueLabel}`
-        : "GSTR-3B: no recon yet";
-
   const countFor = (k?: CountKey) => {
     if (!k) return undefined;
     if (k === "pending") return pending !== null && pending > 0 ? pending : undefined;
     return recon ? recon.counts[k] : undefined;
   };
-
-  const renderEntry = (e: NavEntry) => {
-    if (isLink(e)) {
-      if (!e.enabled) return null;
-      const Icon = e.icon;
-      return (
-        <Item
-          key={e.id}
-          href={e.href}
-          active={pathname === e.href}
-          icon={
-            e.dot ? (
-              <span className="side-ico" aria-hidden>
-                <span className={`dot ${e.dot}`} />
-              </span>
-            ) : Icon ? (
-              <Icon aria-hidden />
-            ) : null
-          }
-          count={countFor(e.count)}
-          onNavigate={onNavigate}
-        >
-          {e.label}
-        </Item>
-      );
-    }
-    if (e.id === "filing-block") {
-      return (
-        <Link key={e.id} href="/dashboard#filing" onClick={onNavigate} className="side-filing" aria-label={filingLabel}>
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="font-medium" style={{ color: "var(--color-ink)" }}>
-              GSTR-3B
-            </span>
-            {due.kind !== "none" && <span style={{ color: "var(--color-text-3)" }}>{due.period}</span>}
-          </div>
-          {due.kind === "open" && (
-            <>
-              <div className="mt-1 font-semibold" style={{ color: "var(--color-ink)" }}>
-                {daysText(due.daysLeft)} · due {due.dueLabel}
-              </div>
-              <div className="mt-0.5" style={{ color: due.blocked > 0 ? "var(--color-risk)" : "var(--color-text-3)" }}>
-                {inr(due.blocked)} blocked
-              </div>
-            </>
-          )}
-          {due.kind === "past" && (
-            <div className="mt-1" style={{ color: "var(--color-text-2)" }}>
-              Was due {due.dueLabel}
-            </div>
-          )}
-          {due.kind === "none" && (
-            <div className="mt-1" style={{ color: "var(--color-text-3)" }}>
-              No recon yet
-            </div>
-          )}
-        </Link>
-      );
-    }
-    return (
-      <div key={e.id}>
-        <button
-          type="button"
-          className="side-item w-full"
-          aria-expanded={helpOpen}
-          aria-controls="side-help"
-          onClick={() => setHelpOpen((o) => !o)}
-        >
-          <span className="side-q" aria-hidden>
-            ?
-          </span>
-          Help
-        </button>
-        {helpOpen && (
-          <div id="side-help" className="mx-2 mb-1 mt-0.5 text-[12px] leading-[1.45]" style={{ color: "var(--color-text-3)" }}>
-            <p>{MATCH_RULE}</p>
-            <Link href="/#how" className="link-accent mt-1 inline-block" onClick={onNavigate}>
-              How ITC Rescue works
-            </Link>
-          </div>
-        )}
-      </div>
-    );
+  const isActive = (r: NavRow) => {
+    if (r.view) return pathname === "/reconcile" && view === r.view;
+    if (r.href === "/reconcile") return pathname === "/reconcile" && !view;
+    return pathname === r.href;
   };
 
   return (
-    <nav aria-label="Main">
+    <nav className="v3-nav" aria-label="Main">
       {NAV.map((sec) => {
-        const items = sec.items.map(renderEntry).filter(Boolean);
-        return items.length ? (
-          <Section key={sec.title} title={sec.title}>
-            {items}
-          </Section>
-        ) : null;
+        const rows = sec.rows.filter((r) => r.on);
+        if (!rows.length) return null;
+        return (
+          <div key={sec.title} className="flex flex-col">
+            <div className="v3-lbl">{sec.title}</div>
+            {rows.map((r) => {
+              const Icon = r.icon;
+              const ct = countFor(r.count);
+              return (
+                <Link key={r.id} href={r.href} aria-current={isActive(r) ? "page" : undefined} onClick={onNavigate}>
+                  <Icon aria-hidden />
+                  <span className="min-w-0 truncate">{r.label}</span>
+                  {ct !== undefined && (
+                    <span className="v3-ct" data-risk={r.count === "at_risk" && ct > 0 ? "true" : undefined}>
+                      {ct}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        );
       })}
     </nav>
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div>
-      <div className="side-sec">{title}</div>
-      <div className="flex flex-col gap-px">{children}</div>
-    </div>
-  );
-}
-
-function Item({
-  href,
-  active,
-  icon,
-  count,
-  children,
-  onNavigate,
-}: {
-  href: string;
-  active: boolean;
-  icon: ReactNode;
-  count?: number | string;
-  children: ReactNode;
-  onNavigate?: () => void;
-}) {
-  return (
-    <Link href={href} aria-current={active ? "page" : undefined} className="side-item" onClick={onNavigate}>
-      {icon}
-      <span className="min-w-0 truncate">{children}</span>
-      {count !== undefined && <span className="side-ct">{count}</span>}
-    </Link>
-  );
-}
-
-function SideFooter({
-  plan,
-  reconUsed,
-  email,
-  onLogout,
-}: {
-  plan: string;
-  reconUsed: number;
-  email: string;
-  onLogout: () => void;
-}) {
+/** F-9 / v3 foot: "Free trial · N of 1 recon used" + 4px ink meter; same in the mobile drawer. */
+function TrialMeter({ plan, reconUsed }: { plan: string; reconUsed: number }) {
+  if (plan !== "trial") return null;
   const used = Math.min(reconUsed, 1);
   return (
-    <div className="px-3 pb-2.5 pt-3 text-[12px]" style={{ borderTop: "1px solid var(--color-line)", color: "var(--color-text-2)" }}>
-      {plan === "trial" ? (
-        <div className="px-1">
-          <div>{used} of 1 free recon used</div>
-          <div
-            className="my-1.5 h-1 overflow-hidden rounded-sm"
-            style={{ backgroundColor: "var(--color-line)" }}
-            role="progressbar"
-            aria-label="Free recons used"
-            aria-valuemin={0}
-            aria-valuemax={1}
-            aria-valuenow={used}
-          >
-            <div className="h-full" style={{ width: `${used * 100}%`, backgroundColor: "var(--color-ink)" }} />
-          </div>
-        </div>
-      ) : (
-        <div className="mb-1.5 px-1">{PLAN_LABEL[plan] ?? plan} plan</div>
-      )}
-      <Dropdown
-        label="Account"
-        align="stretch"
-        placement="up"
-        trigger={({ open, toggle, id }) => (
-          <button
-            type="button"
-            onClick={toggle}
-            aria-haspopup="menu"
-            aria-expanded={open}
-            aria-controls={open ? id : undefined}
-            className="side-item w-full"
-          >
-            <span
-              className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[10px] font-semibold uppercase"
-              style={{ backgroundColor: "var(--color-line)", color: "var(--color-text-2)" }}
-              aria-hidden
-            >
-              {(email || "?").charAt(0)}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-left text-[12px] font-normal" style={{ color: "var(--color-text-3)" }}>
-              {email}
-            </span>
-            <ChevronsUpDown aria-hidden />
-          </button>
-        )}
+    <div className="v3-foot">
+      <div className="flex items-center justify-between gap-2">
+        <span>Free trial</span>
+        <span>{used} of 1 recon used</span>
+      </div>
+      <div
+        className="v3-bar"
+        role="progressbar"
+        aria-label="Free recons used"
+        aria-valuemin={0}
+        aria-valuemax={1}
+        aria-valuenow={used}
       >
-        {(close) => (
-          <>
-            <MenuLabel>
-              <span className="block truncate">{email}</span>
-            </MenuLabel>
-            <MenuSep />
-            <MenuItem
-              onSelect={() => {
-                close();
-                onLogout();
-              }}
-            >
-              <span className="inline-flex items-center gap-2">
-                <LogOut aria-hidden /> Sign out
-              </span>
-            </MenuItem>
-          </>
-        )}
-      </Dropdown>
+        <i style={{ width: `${used * 100}%` }} />
+      </div>
     </div>
   );
 }
 
-function Crumb({ pathname }: { pathname: string }) {
-  const item = NAV.flatMap((sec) => sec.items.filter(isLink).map((i) => ({ sec: sec.title, i }))).find(
-    (x) => x.i.enabled && x.i.href === pathname
-  );
-  const label = item ? `${item.sec} · ${item.i.label}` : "";
+/* ── Top bar pieces ─────────────────────────────────────────────────────── */
+
+function CrumbWithParams(props: Omit<Parameters<typeof Crumb>[0], "view">) {
+  const sp = useSearchParams();
+  return <Crumb {...props} view={props.pathname === "/reconcile" ? viewFromSlug(sp.get("view")) : null} />;
+}
+
+function Crumb({
+  company,
+  pathname,
+  view,
+  period,
+}: {
+  company: string;
+  pathname: string;
+  view: ItcView | null;
+  period: string | null;
+}) {
+  let section: string | null = null;
+  let page = "";
+  const all = [
+    ...NAV.flatMap((s) => s.rows.map((r) => ({ crumb: s.crumb, r }))),
+    ...EXTRA_PAGES.map(({ section: sec, row }) => ({ crumb: sec, r: row })),
+  ];
+  const hit =
+    pathname === "/reconcile"
+      ? all.find((x) => (view ? x.r.view === view : x.r.id === "runs"))
+      : all.find((x) => x.r.href === pathname);
+  if (hit) {
+    section = hit.crumb;
+    page = hit.r.id === "runs" && period ? `${period} run` : hit.r.label;
+  }
+  const parts = [company, section].filter(Boolean) as string[];
   return (
-    <span className="font-medium" style={{ color: "var(--color-ink)" }}>
-      {label}
-    </span>
+    <nav className="v3-crumb" aria-label="Breadcrumb">
+      {parts.map((p, i) => (
+        <span key={i} className={`items-center gap-1.5 ${i === 0 ? "hidden sm:flex" : "hidden md:flex"}`}>
+          <span className="truncate">{p}</span>
+          <span aria-hidden>/</span>
+        </span>
+      ))}
+      <b aria-current="page">{page}</b>
+    </nav>
   );
 }
+
+/** Return period: the period of the latest recon (the only run the API returns today). */
+function PeriodPicker({ period }: { period: string }) {
+  return (
+    <Dropdown
+      label="Return period"
+      align="right"
+      menuClassName="v3-pop w-[240px]"
+      className="hidden sm:block"
+      trigger={({ open, toggle, id }) => (
+        <button
+          type="button"
+          className="btn v3-sel"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={open ? id : undefined}
+          onClick={toggle}
+        >
+          <Calendar aria-hidden />
+          Return period <b>{period}</b>
+          <ChevronDown aria-hidden />
+        </button>
+      )}
+    >
+      {(close) => (
+        <>
+          <div className="v3-mh">Return period</div>
+          <button type="button" role="menuitemradio" aria-checked="true" className="v3-mi" data-on="true" onClick={close}>
+            <span className="flex-1 font-medium" style={{ color: "var(--color-ink)" }}>
+              {period}
+            </span>
+            <Check aria-hidden style={{ color: "var(--color-ink)" }} />
+          </button>
+          <p className="px-2.5 pb-1.5 pt-1 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+            Periods come from your recon runs.
+          </p>
+        </>
+      )}
+    </Dropdown>
+  );
+}
+
+function HelpMenu() {
+  return (
+    <Dropdown
+      label="Help"
+      align="right"
+      menuClassName="v3-pop w-[280px]"
+      trigger={({ open, toggle, id }) => (
+        <button
+          type="button"
+          className="v3-ib"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={open ? id : undefined}
+          onClick={toggle}
+          aria-label="Help"
+          title="Help"
+        >
+          <CircleHelp aria-hidden />
+        </button>
+      )}
+    >
+      {(close) => (
+        <div id="shell-help">
+          <div className="v3-mh">How matching works</div>
+          <p className="px-2.5 pb-2 text-[13px] leading-[1.45]" style={{ color: "var(--color-text-2)" }}>
+            {MATCH_RULE}
+          </p>
+          <div className="v3-hr" />
+          <Link href="/#how" className="v3-mi" onClick={close}>
+            <FileText aria-hidden /> How ITC Rescue works
+          </Link>
+        </div>
+      )}
+    </Dropdown>
+  );
+}
+
+function UserMenu({ email, name, onLogout }: { email: string; name: string; onLogout: () => void }) {
+  const label = name || email || "?";
+  return (
+    <Dropdown
+      label="Account"
+      align="right"
+      menuClassName="v3-pop w-[240px]"
+      className="ml-1.5"
+      trigger={({ open, toggle, id }) => (
+        <button
+          type="button"
+          className="v3-av"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={open ? id : undefined}
+          onClick={toggle}
+          aria-label="Account menu"
+          title={email}
+        >
+          {initials(label)}
+        </button>
+      )}
+    >
+      {(close) => (
+        <>
+          <div className="v3-mh truncate">{email}</div>
+          <Link href="/settings" className="v3-mi" onClick={close}>
+            <Settings aria-hidden /> Settings
+          </Link>
+          <div className="v3-hr" />
+          <button
+            type="button"
+            className="v3-mi"
+            onClick={() => {
+              close();
+              onLogout();
+            }}
+          >
+            <LogOut aria-hidden /> Log out
+          </button>
+        </>
+      )}
+    </Dropdown>
+  );
+}
+

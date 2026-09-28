@@ -12,7 +12,7 @@ import { TRIAL_USED_MESSAGE } from "@/lib/recon-guard";
 import { KpiStrip } from "@/components/KpiStrip";
 import { emitReconChanged, emitTrialChanged } from "@/lib/ui-events";
 import { Dropdown, MenuItem, MenuLabel } from "@/components/Dropdown";
-import { viewDef, type ItcView } from "@/lib/views";
+import { viewDef, viewFromSlug, type ItcView } from "@/lib/views";
 import { clearSampleRun, getSampleRun, setSampleRun } from "@/lib/sample-run";
 import { Toast, useToast } from "@/components/Toast";
 import { getSettings, setTrialFromServer } from "@/lib/storage";
@@ -43,12 +43,14 @@ export function ReconcileSkeleton() {
 }
 
 /**
- * /reconcile (Runs, view = null) and the ITC views /itc/<slug> (view set) share this screen.
+ * /reconcile (Runs) and its ITC views /reconcile?view=<slug> share this screen.
  * Uses useSearchParams (?new=1), so callers wrap it in <Suspense>.
  */
-export function ReconcileScreen({ view }: { view: ItcView | null }) {
+export function ReconcileScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  /** ITC filtered view (?view=at-risk | mismatches | unclaimed | matched); null = Runs. */
+  const view: ItcView | null = viewFromSlug(searchParams.get("view"));
   const def = view ? viewDef(view) : null;
   /** Sidebar "New recon" → upload step */
   const wantsNew = searchParams.get("new") === "1";
