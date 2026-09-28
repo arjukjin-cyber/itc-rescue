@@ -508,8 +508,7 @@ export async function canUserRunRecon(userId: string): Promise<{ ok: boolean; re
   const plan = (row.plan as string) || "trial";
   if (plan !== "trial") return { ok: true };
 
-  const trialReason =
-    "Free trial allows 1 reconciliation. Upgrade to Starter (₹999/mo) or Growth (₹2,499/mo) to continue.";
+  const trialReason = "Free trial used. We'll email you when more runs open.";
 
   if (Number(row.recon_count || 0) >= 1) {
     return { ok: false, reason: trialReason };

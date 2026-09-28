@@ -194,7 +194,7 @@ export function canRunRecon(): { ok: boolean; reason?: string } {
     return {
       ok: false,
       reason:
-        "Free trial allows 1 reconciliation. Upgrade to Starter (₹999/mo) or Growth (₹2,499/mo) to continue.",
+        "Free trial used. We'll email you when more runs open.",
     };
   }
   return { ok: true };
