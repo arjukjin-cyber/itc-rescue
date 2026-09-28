@@ -6,11 +6,11 @@ import { useRouter } from "next/navigation";
 import { CircleCheck, Clock, Inbox, Send, SquareKanban, Upload } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { KpiStrip } from "@/components/KpiStrip";
-import { ActionTable, ResultTabs, atRiskTotal, filterByTab, useChaseRows, type TabKey } from "@/components/RiskTable";
+import { ActionTable, ResultTabs, filterByTab, useChaseRows, type TabKey } from "@/components/RiskTable";
 import { Toast, useToast } from "@/components/Toast";
 import { getSettings } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
-import { getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
+import { daysText, getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
 import { formatIstTimestamp } from "@/lib/format";
 import type { MatchResult, ReconSummary } from "@/lib/types";
 
@@ -54,7 +54,7 @@ export default function DashboardPage() {
   }, [loaded]);
 
   const rows = useMemo(() => filterByTab(results, tab), [results, tab]);
-  const due = useMemo(() => getGstr3bDue(atRiskTotal(results)), [results]);
+  const due = useMemo(() => getGstr3bDue(results), [results]);
 
   if (!loaded) {
     return (
@@ -170,8 +170,11 @@ function DashboardEmpty({ due }: { due: Gstr3bDue }) {
         <div className="flex-1" />
         <span id="filing" className="filing-target inline-flex items-center gap-1.5 rounded px-1 muted">
           <Clock size={13} strokeWidth={1.75} aria-hidden />
-          GSTR-3B due {due.dueLabel} ·{" "}
-          {due.daysLeft < 0 ? `${Math.abs(due.daysLeft)} days overdue` : `${due.daysLeft} day${due.daysLeft === 1 ? "" : "s"}`}
+          {due.kind === "open"
+            ? `GSTR-3B · ${daysText(due.daysLeft)} · due ${due.dueLabel}`
+            : due.kind === "past"
+              ? `GSTR-3B · Was due ${due.dueLabel}`
+              : "GSTR-3B · No recon yet"}
         </span>
       </div>
     </div>

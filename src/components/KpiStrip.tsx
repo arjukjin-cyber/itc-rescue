@@ -69,15 +69,30 @@ export function KpiStrip({
         <div className="kpi" id="filing">
           <div className="kpi-l">
             <Clock size={13} strokeWidth={1.75} aria-hidden />
-            GSTR-3B due
+            GSTR-3B{due.kind !== "none" ? ` · ${due.period}` : ""}
           </div>
-          <div className="kpi-v">
-            {due.daysLeft < 0 ? Math.abs(due.daysLeft) : due.daysLeft}{" "}
-            <small>{due.daysLeft < 0 ? "days overdue" : due.daysLeft === 1 ? "day" : "days"}</small>
-          </div>
-          <div className="kpi-s">
-            {due.dueLabel} · {inrParts(due.blocked).whole} blocked
-          </div>
+          {due.kind === "open" ? (
+            <>
+              <div className="kpi-v">
+                {due.daysLeft} <small>{due.daysLeft === 1 ? "day" : "days"}</small>
+              </div>
+              <div className="kpi-s">
+                due {due.dueLabel} · {inrParts(due.blocked).whole} blocked
+              </div>
+            </>
+          ) : due.kind === "past" ? (
+            <>
+              <div className="kpi-v" style={{ fontSize: 15, marginTop: 10 }}>
+                Was due {due.dueLabel}
+              </div>
+              <div className="kpi-s">Past return period</div>
+            </>
+          ) : (
+            <>
+              <div className="kpi-v">—</div>
+              <div className="kpi-s">No recon yet</div>
+            </>
+          )}
         </div>
       )}
     </div>

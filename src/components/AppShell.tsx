@@ -19,7 +19,7 @@ import {
 import { clearLocalUser, getLocalUser, getSettings, getTrialUsage, setLocalUser, setTrialFromServer } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
 import { CHASE_COUNT_EVENT, RECON_EVENT, TRIAL_EVENT } from "@/lib/ui-events";
-import { getGstr3bDue } from "@/lib/filing";
+import { daysText, getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
 import { inr } from "@/lib/format";
 import { ITC_VIEWS, parseView, viewCounts, viewDef, viewHref, type ItcView } from "@/lib/views";
 import { Dropdown, MenuItem, MenuLabel, MenuSep } from "./Dropdown";
@@ -45,13 +45,13 @@ const MATCH_RULE = "Invoices match on GSTIN + invoice number + invoice date (±1
 
 interface ReconSnap {
   counts: Record<ItcView, number>;
-  atRisk: number;
+  due: Gstr3bDue;
 }
 
 function snapOf(results: MatchResult[]): ReconSnap {
   return {
     counts: viewCounts(results),
-    atRisk: results.filter((r) => r.category === "itc_at_risk").reduce((s, r) => s + (r.booksTax || 0), 0),
+    due: getGstr3bDue(results),
   };
 }
 
@@ -387,9 +387,13 @@ function SideNav({
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const onRecon = pathname === "/reconcile";
-  const due = getGstr3bDue(recon?.atRisk ?? 0);
-  const dueDays =
-    due.daysLeft < 0 ? `${Math.abs(due.daysLeft)} days overdue` : `${due.daysLeft} day${due.daysLeft === 1 ? "" : "s"}`;
+  const due = recon?.due ?? ({ kind: "none" } as Gstr3bDue);
+  const filingLabel =
+    due.kind === "open"
+      ? `GSTR-3B for ${due.period}: ${daysText(due.daysLeft)}, due ${due.dueLabel}, ${inr(due.blocked)} blocked`
+      : due.kind === "past"
+        ? `GSTR-3B for ${due.period}: was due ${due.dueLabel}`
+        : "GSTR-3B: no recon yet";
 
   return (
     <nav aria-label="Main">
@@ -440,25 +444,35 @@ function SideNav({
       </Section>
 
       <Section title="Filing">
-        <Link href="/dashboard#filing" onClick={onNavigate} className="side-filing" aria-label={`GSTR-3B due ${due.dueLabel}, ${dueDays}${recon ? `, ${inr(due.blocked)} blocked` : ""}`}>
+        <Link href="/dashboard#filing" onClick={onNavigate} className="side-filing" aria-label={filingLabel}>
           <div className="flex items-baseline justify-between gap-2">
             <span className="font-medium" style={{ color: "var(--color-ink)" }}>
               GSTR-3B
             </span>
-            <span style={{ color: "var(--color-text-3)" }}>due {due.dueLabel}</span>
+            {due.kind !== "none" && <span style={{ color: "var(--color-text-3)" }}>{due.period}</span>}
           </div>
-          <div className="mt-1 flex items-baseline justify-between gap-2">
-            <span className="font-semibold" style={{ color: due.daysLeft < 0 ? "var(--color-risk)" : "var(--color-ink)" }}>
-              {dueDays}
-            </span>
-            {recon ? (
-              <span style={{ color: due.blocked > 0 ? "var(--color-risk)" : "var(--color-text-3)" }}>
-                {inr(due.blocked)} blocked
+          {due.kind === "open" ? (
+            <div className="mt-1 flex items-baseline justify-between gap-2">
+              <span className="font-semibold" style={{ color: "var(--color-ink)" }}>
+                {daysText(due.daysLeft)} · due {due.dueLabel}
               </span>
-            ) : (
-              <span style={{ color: "var(--color-text-3)" }}>No recon yet</span>
-            )}
-          </div>
+            </div>
+          ) : null}
+          {due.kind === "open" && (
+            <div className="mt-0.5" style={{ color: due.blocked > 0 ? "var(--color-risk)" : "var(--color-text-3)" }}>
+              {inr(due.blocked)} blocked
+            </div>
+          )}
+          {due.kind === "past" && (
+            <div className="mt-1" style={{ color: "var(--color-text-2)" }}>
+              Was due {due.dueLabel}
+            </div>
+          )}
+          {due.kind === "none" && (
+            <div className="mt-1" style={{ color: "var(--color-text-3)" }}>
+              No recon yet
+            </div>
+          )}
         </Link>
       </Section>
 
