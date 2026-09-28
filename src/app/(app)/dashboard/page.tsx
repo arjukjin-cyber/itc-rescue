@@ -12,7 +12,6 @@ import { getSettings } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
 import { getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
 import { formatIstTimestamp } from "@/lib/format";
-import { getLastReconAt } from "@/lib/ui-events";
 import type { MatchResult, ReconSummary } from "@/lib/types";
 
 export default function DashboardPage() {
@@ -39,7 +38,8 @@ export default function DashboardPage() {
       setSummary(recon.summary);
       setResults(recon.results);
       if (!chaseRes.authError) setChase(chaseRes.items);
-      setLastRecon(recon.summary ? getLastReconAt(chaseRes.items.map((c) => c.lastUpdated)) : null);
+      // "Last recon" = the saved run's created_at from GET /api/recon (#28), shown in IST.
+      setLastRecon(recon.summary ? recon.createdAt ?? null : null);
       setLoaded(true);
     })();
     return () => {
@@ -157,7 +157,7 @@ function DashboardEmpty({ due }: { due: Gstr3bDue }) {
         title="Upload your purchase register to see how much ITC is at risk."
         actionLabel="Upload purchase register"
         actionHref="/reconcile"
-        secondaryLabel="Try with sample files"
+        secondaryLabel="Try with sample files (not saved)"
         secondaryHref="/reconcile?sample=1"
       />
       <div className="progress-line">

@@ -23,11 +23,26 @@ const CATEGORY_ORDER: Record<MatchCategory, number> = {
   matched: 3,
 };
 
-/** At-risk first, then value mismatch, then the rest (stable). */
+/** ₹ used to rank a needs-action row: at-risk = books tax, mismatch = |tax diff|. */
+function actionAmount(r: MatchResult): number {
+  if (r.category === "itc_at_risk") return r.booksTax || 0;
+  if (r.category === "value_mismatch") return Math.abs(r.taxDiff || 0);
+  return 0;
+}
+
+/**
+ * Needs-action order everywhere: at-risk rows by ₹ at risk (descending), then value-mismatch
+ * rows (by ₹ difference, descending), then unclaimed, then matched (stable within those).
+ */
 export function sortForAction(rows: MatchResult[]): MatchResult[] {
   return rows
     .map((r, i) => ({ r, i }))
-    .sort((a, b) => CATEGORY_ORDER[a.r.category] - CATEGORY_ORDER[b.r.category] || a.i - b.i)
+    .sort(
+      (a, b) =>
+        CATEGORY_ORDER[a.r.category] - CATEGORY_ORDER[b.r.category] ||
+        actionAmount(b.r) - actionAmount(a.r) ||
+        a.i - b.i
+    )
     .map((x) => x.r);
 }
 
@@ -256,7 +271,13 @@ export function ActionTable({
   company,
   onResolve,
   onResolveMany,
+  tracking = true,
 }: {
+  /**
+   * false for an unsaved sample run (#29): no chase items exist server-side, so row
+   * checkboxes, the bulk bar, Chase and Mark resolved are hidden (row Export stays).
+   */
+  tracking?: boolean;
   rows: MatchResult[];
   statusById: Map<string, ChaseStatus>;
   busy: Record<string, boolean>;
@@ -267,7 +288,7 @@ export function ActionTable({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const headerCb = useRef<HTMLInputElement>(null);
 
-  const selectable = useMemo(() => rows.filter(isActionable), [rows]);
+  const selectable = useMemo(() => (tracking ? rows.filter(isActionable) : []), [rows, tracking]);
   // Drop selections that are no longer visible (tab switch / new recon)
   useEffect(() => {
     setSelected((s) => {
@@ -363,7 +384,8 @@ export function ActionTable({
           <tbody>
             {rows.map((r) => {
               const actionable = isActionable(r);
-              const st = actionable ? statusById.get(r.id) : undefined;
+              const trackable = actionable && tracking;
+              const st = trackable ? statusById.get(r.id) : undefined;
               const resolved = st === "fixed";
               const isSel = selected.has(r.id);
               return (
@@ -374,7 +396,7 @@ export function ActionTable({
                   title={r.notes || undefined}
                 >
                   <td>
-                    {actionable && (
+                    {trackable && (
                       <input
                         type="checkbox"
                         className="cb"
@@ -408,11 +430,11 @@ export function ActionTable({
                       <span className="muted">—</span>
                     )}
                   </td>
-                  <td>{actionable ? <ChaseStateCell status={st} /> : <span className="muted">—</span>}</td>
+                  <td>{trackable ? <ChaseStateCell status={st} /> : <span className="muted">—</span>}</td>
                   <td>
                     {actionable && (
                       <div className="acts">
-                        {!resolved && (
+                        {trackable && !resolved && (
                           <>
                             <a
                               href={waLink(whatsappEnglish(r, company))}

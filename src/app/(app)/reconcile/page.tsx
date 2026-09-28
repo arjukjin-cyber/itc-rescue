@@ -7,9 +7,10 @@ import { EmptyState } from "@/components/EmptyState";
 import * as XLSX from "xlsx";
 import { reconCsv, atRiskCsv, atRiskResults, downloadCsv, istDate } from "@/lib/csv-export";
 import { HelpTip } from "@/components/HelpTip";
-import { ActionTable, ResultTabs, filterByTab, useChaseRows, type TabKey } from "@/components/RiskTable";
+import { ActionTable, ResultTabs, filterByTab, sortForAction, useChaseRows, type TabKey } from "@/components/RiskTable";
+import { TRIAL_USED_MESSAGE } from "@/lib/recon-guard";
 import { KpiStrip } from "@/components/KpiStrip";
-import { emitReconChanged, emitTrialChanged, setLastReconAt } from "@/lib/ui-events";
+import { emitReconChanged, emitTrialChanged } from "@/lib/ui-events";
 import { Dropdown, MenuItem, MenuLabel } from "@/components/Dropdown";
 import { parseView, viewDef } from "@/lib/views";
 import { Toast, useToast } from "@/components/Toast";
@@ -68,13 +69,15 @@ function ReconcileInner() {
   const [booksNote, setBooksNote] = useState<string | null>(null);
   /** 402 toast — set only by a real run attempt (server still enforces the gate). */
   const [paywall, setPaywall] = useState<string | null>(null);
-  /** Trial used → locked "Run again · Upgrade" button (no banner above results). */
+  /** Trial used → locked "Run again" button (no banner above results). */
   const [locked, setLocked] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [company, setCompany] = useState("My Company");
   const { toast, show, dismiss } = useToast();
   const { setChase, statusById, pendingCount, resolve, resolveMany, busy } = useChaseRows(show);
   const autoSampleDone = useRef(false);
+  /** Sample run (#29): shown in-page only, never saved — chase tracking is off. */
+  const [isSample, setIsSample] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,7 +101,8 @@ function ReconcileInner() {
       // Dashboard "Try with sample files" deep link (/reconcile?sample=1)
       if (new URLSearchParams(window.location.search).get("sample") === "1") {
         router.replace("/reconcile");
-        if (state.canRun && !state.results.length && !autoSampleDone.current) {
+        // Sample runs are never saved or counted (#29), so they don't need the trial gate.
+        if (!state.results.length && !autoSampleDone.current) {
           autoSampleDone.current = true;
           void loadSamples();
         }
@@ -119,19 +123,19 @@ function ReconcileInner() {
 
   const filtered = useMemo(() => filterByTab(results, filter), [results, filter]);
   const viewRows = useMemo(
-    () => (def ? results.filter((r) => r.category === def.category) : []),
+    () => (def ? sortForAction(results.filter((r) => r.category === def.category)) : []),
     [results, def]
   );
 
   async function afterSaved(
     matched: MatchResult[],
     sum: ReconSummary,
-    saved: { persistence: "postgres" | "demo"; reconCount?: number }
+    saved: { persistence: "postgres" | "demo" | "sample"; reconCount?: number }
   ) {
+    setIsSample(false);
     if (saved.persistence === "postgres" && typeof saved.reconCount === "number") {
       setTrialFromServer(saved.reconCount);
     }
-    setLastReconAt();
     emitTrialChanged();
     emitReconChanged();
     setResults(matched);
@@ -144,9 +148,24 @@ function ReconcileInner() {
     if (!chase.authError) setChase(chase.items);
   }
 
+  /** Sample run (#29): shown in-page only. Sidebar counts follow it until the next navigation. */
+  function showSample(matched: MatchResult[], sum: ReconSummary) {
+    setResults(matched);
+    setSummary(sum);
+    setFilter(defaultFilter(matched));
+    setShowUpload(false);
+    setIsSample(true);
+    emitReconChanged(matched);
+  }
+
+  function lockedToast() {
+    show({ text: TRIAL_USED_MESSAGE });
+  }
+
   async function runWithFiles(books: File, gstr: File) {
     setError("");
     setPaywall(null);
+    setIsSample(false);
 
     const state = await fetchReconState();
     if (!state.canRun) {
@@ -186,6 +205,10 @@ function ReconcileInner() {
         setError(saved.error || "Failed to save reconciliation");
         return;
       }
+      if (saved.persistence === "sample") {
+        showSample(matched, sum);
+        return;
+      }
       await afterSaved(matched, sum, saved);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Reconciliation failed");
@@ -203,14 +226,9 @@ function ReconcileInner() {
   }
 
   async function loadSamples() {
+    // Sample runs are shown in-page only: never saved, never counted against the trial.
     setError("");
     setPaywall(null);
-    const state = await fetchReconState();
-    if (!state.canRun) {
-      setPaywall(state.reason || "Upgrade required");
-      setLocked(true);
-      return;
-    }
     setLoading(true);
     setBooksNote(null);
     try {
@@ -221,27 +239,10 @@ function ReconcileInner() {
       const gstr = await fetchSampleAsFile("/samples/gstr-2b.csv", "gstr-2b.csv");
       setBooksFile(books);
       setGstrFile(gstr);
-      // parse inline so loading spinner stays until done
       const booksInv = await parseInvoiceFile(books, "books");
       const gstrInv = await parseInvoiceFile(gstr, "gstr2b");
       const { results: matched, summary: sum } = reconcile(booksInv, gstrInv);
-      const saved = await persistRecon(matched, sum);
-      if (!saved.ok) {
-        if (saved.authError) {
-          setError(saved.authError);
-          router.replace("/login");
-          return;
-        }
-        if (saved.paywall) {
-          setPaywall(saved.error || "Upgrade required");
-          setLocked(true);
-          return;
-        }
-        // Surface 500 / other server failures (do not silently pretend success)
-        setError(saved.error || "Failed to save reconciliation");
-        return;
-      }
-      await afterSaved(matched, sum, saved);
+      showSample(matched, sum);
     } catch {
       setError("Failed to load sample files");
     } finally {
@@ -253,7 +254,7 @@ function ReconcileInner() {
 
   const bothFiles = Boolean(booksFile && gstrFile);
   const chaseBtn =
-    pendingCount > 0 ? (
+    pendingCount > 0 && !isSample ? (
       <Link href="/chase" className="btn btn-pri">
         <Send aria-hidden /> Chase {pendingCount} vendor{pendingCount === 1 ? "" : "s"}
       </Link>
@@ -285,16 +286,10 @@ function ReconcileInner() {
           <div className="flex min-w-0 items-start gap-2 text-sm">
             <Lock size={18} className="mt-0.5 shrink-0" aria-hidden />
             <div className="min-w-0">
-              <p className="toast-risk-title">Free trial used — upgrade to continue</p>
-              <p className="toast-risk-body">{paywall}</p>
+              <p className="toast-risk-title">Free trial used</p>
+              <p className="toast-risk-body">We&apos;ll email you when more runs open.</p>
             </div>
           </div>
-          <Link
-            href="/settings"
-            className="btn-accent shrink-0 px-4 py-2 text-center text-sm font-semibold"
-          >
-            Upgrade in Settings
-          </Link>
         </div>
       )}
 
@@ -316,28 +311,26 @@ function ReconcileInner() {
           </div>
           <div className="flex flex-wrap items-center gap-4">
             {locked ? (
-              <LockedRun label={summary ? "Run again · Upgrade" : "Run recon · Upgrade"} />
+              <LockedRun onClick={lockedToast} />
             ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={onRun}
-                  disabled={loading || !bothFiles}
-                  className="btn btn-pri btn-lg"
-                >
-                  {loading ? <Loader2 className="animate-spin" aria-hidden /> : <Play aria-hidden />}
-                  Run recon
-                </button>
-                <button
-                  type="button"
-                  onClick={loadSamples}
-                  disabled={loading}
-                  className="link-accent text-[13px] disabled:opacity-45"
-                >
-                  Try with sample files
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={onRun}
+                disabled={loading || !bothFiles}
+                className="btn btn-pri btn-lg"
+              >
+                {loading ? <Loader2 className="animate-spin" aria-hidden /> : <Play aria-hidden />}
+                Run recon
+              </button>
             )}
+            <button
+              type="button"
+              onClick={loadSamples}
+              disabled={loading}
+              className="link-accent text-[13px] disabled:opacity-45"
+            >
+              Try with sample files (not saved)
+            </button>
             {summary && (
               <button type="button" className="btn btn-quiet" onClick={() => setShowUpload(false)}>
                 Cancel
@@ -355,10 +348,28 @@ function ReconcileInner() {
       )}
       {booksNote && uploadStep && <ImportNote note={booksNote} />}
 
+      {isSample && summary && !uploadStep && (
+        <p className="status" style={{ color: "var(--color-text-2)" }}>
+          <span className="dot" style={{ backgroundColor: "var(--color-text-3)" }} aria-hidden />
+          Sample data · not saved. Upload your own files to track chases.
+          <button
+            type="button"
+            className="link-accent"
+            onClick={() => {
+              setShowUpload(true);
+              if (view) router.replace("/reconcile", { scroll: false });
+            }}
+          >
+            Upload files
+          </button>
+        </p>
+      )}
+
       {def &&
         (summary ? (
           viewRows.length ? (
             <ActionTable
+              tracking={!isSample}
               rows={viewRows}
               statusById={statusById}
               busy={busy}
@@ -388,24 +399,27 @@ function ReconcileInner() {
               <span className="muted">
                 {summary.totalBooks} books · {summary.totalGstr2b} in 2B
               </span>
-              <div className="ml-auto flex items-center gap-2">
-                {locked ? (
-                  <LockedRun label="Run again · Upgrade" small />
+              <div className="ml-auto flex items-center gap-3">
+                <button type="button" className="link-accent text-[13px]" onClick={() => setShowUpload(true)}>
+                  Replace files
+                </button>
+                {isSample ? (
+                  <button type="button" className="btn btn-sm" disabled={loading} onClick={() => void loadSamples()}>
+                    {loading ? <Loader2 className="animate-spin" aria-hidden /> : <Play aria-hidden />}
+                    Run again
+                  </button>
+                ) : locked ? (
+                  <LockedRun small onClick={lockedToast} />
                 ) : (
-                  <>
-                    <button type="button" className="link-accent text-[13px]" onClick={() => setShowUpload(true)}>
-                      Replace files
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={loading}
-                      onClick={() => (bothFiles ? void onRun() : setShowUpload(true))}
-                    >
-                      {loading ? <Loader2 className="animate-spin" aria-hidden /> : <Play aria-hidden />}
-                      Run again
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={loading}
+                    onClick={() => (bothFiles ? void onRun() : setShowUpload(true))}
+                  >
+                    {loading ? <Loader2 className="animate-spin" aria-hidden /> : <Play aria-hidden />}
+                    Run again
+                  </button>
                 )}
               </div>
             </div>
@@ -424,6 +438,7 @@ function ReconcileInner() {
 
           {filtered.length ? (
             <ActionTable
+              tracking={!isSample}
               rows={filtered}
               statusById={statusById}
               busy={busy}
@@ -447,16 +462,21 @@ function ReconcileInner() {
   );
 }
 
-/** Trial gate: locked secondary button + sidebar meter replace the old red banner. */
-function LockedRun({ label, small = false }: { label: string; small?: boolean }) {
+/**
+ * Trial gate: locked "Run again" (tooltip "Free trial used") + sidebar meter replace the old
+ * red banner. No upgrade path exists (#29); clicking explains via the trial toast text.
+ */
+function LockedRun({ small = false, onClick }: { small?: boolean; onClick: () => void }) {
   return (
-    <Link
-      href="/settings#billing"
+    <button
+      type="button"
       className={`btn ${small ? "btn-sm" : "btn-lg"}`}
-      title="Free trial used. Upgrade to run another reconciliation."
+      aria-disabled="true"
+      title="Free trial used"
+      onClick={onClick}
     >
-      <Lock aria-hidden /> {label}
-    </Link>
+      <Lock aria-hidden /> Run again
+    </button>
   );
 }
 
@@ -525,7 +545,7 @@ function FileDrop({
       <input
         type="file"
         accept=".csv,.xlsx,.xls"
-        className="hidden"
+        className="sr-only"
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) onFile(f);

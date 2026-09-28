@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, MessageCircle, IndianRupee, Upload, GitCompareArrows, Send, Check } from "lucide-react";
+import { AlertTriangle, MessageCircle, IndianRupee, Upload, GitCompareArrows, Send, Shield, Zap } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 
 const PROBLEMS = [
@@ -26,21 +26,6 @@ const STEPS = [
   { icon: Send, title: "Chase", desc: "WhatsApp in English or Hindi, then track Pending → Fixed." },
 ];
 
-const PLANS = [
-  {
-    name: "Starter",
-    price: "₹999",
-    recommended: false,
-    features: ["Unlimited reconciliations", "Up to 500 invoices / month", "WhatsApp EN + HI templates", "Status board", "Email support"],
-  },
-  {
-    name: "Growth",
-    price: "₹2,499",
-    recommended: true,
-    features: ["Everything in Starter", "Unlimited invoices", "Multi-GSTIN (coming soon)", "Priority chase reminders", "Priority support"],
-  },
-];
-
 export default function LandingPage() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--color-surface)" }}>
@@ -49,12 +34,8 @@ export default function LandingPage() {
       {/* Hero: H1, one sub-line, one primary CTA, real product frame */}
       <section className="mx-auto max-w-6xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20">
         <div className="mx-auto max-w-3xl text-center">
-          <p className="status justify-center text-[12px]" style={{ color: "var(--color-text-2)" }}>
-            <span className="dot dot-risk" aria-hidden />
-            April 2026 · GSTR-2B hard block is live
-          </p>
           <h1
-            className="mt-4 text-[32px] font-semibold leading-[1.15] tracking-[-0.02em] sm:text-[40px]"
+            className="text-[32px] font-semibold leading-[1.15] tracking-[-0.02em] sm:text-[40px]"
             style={{ color: "var(--color-ink)" }}
           >
             Stop losing ITC because vendors didn&apos;t file GSTR-1
@@ -129,47 +110,24 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="pricing" className="landing-section border-t py-14" style={{ borderColor: "var(--color-line)" }}>
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <h2 className="text-[22px] font-semibold tracking-[-0.02em]" style={{ color: "var(--color-ink)" }}>
-            Simple MSME pricing
-          </h2>
-          <div className="mt-6 grid max-w-3xl gap-4 md:grid-cols-2">
-            {PLANS.map((p) => (
-              <div
-                key={p.name}
-                className="rounded-lg border p-5"
-                style={{ borderColor: p.recommended ? "var(--color-accent)" : "var(--color-line)" }}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[13px] font-semibold" style={{ color: "var(--color-ink)" }}>
-                    {p.name}
-                  </span>
-                  {p.recommended && (
-                    <span className="text-[12px] font-medium" style={{ color: "var(--color-accent)" }}>
-                      Recommended
-                    </span>
-                  )}
-                </div>
-                <div className="mt-2 flex items-baseline gap-1">
-                  <span className="text-[22px] font-semibold tracking-[-0.02em]" style={{ color: "var(--color-ink)" }}>
-                    {p.price}
-                  </span>
-                  <span className="muted">/mo</span>
-                </div>
-                <ul className="mt-4 space-y-2 text-[13px]" style={{ color: "var(--color-text-2)" }}>
-                  {p.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2">
-                      <Check size={14} strokeWidth={1.75} className="mt-0.5 shrink-0" style={{ color: "var(--color-ok)" }} aria-hidden />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/signup" className="btn mt-5 w-full">
-                  Start free trial
-                </Link>
-              </div>
-            ))}
+      {/* Trust (#29 copy) */}
+      <section className="border-t py-10" style={{ borderColor: "var(--color-line)" }}>
+        <div
+          className="mx-auto flex max-w-6xl flex-col gap-3 px-4 text-[13px] sm:flex-row sm:gap-10 sm:px-6"
+          style={{ color: "var(--color-text-2)" }}
+        >
+          <div className="flex items-start gap-2">
+            <Shield size={15} strokeWidth={1.75} className="mt-0.5 shrink-0" style={{ color: "var(--color-text-3)" }} aria-hidden />
+            <span>
+              Files are read in your browser. Only match results (GSTIN, invoice no., tax) are saved to your account.{" "}
+              <Link href="/privacy" className="link-accent">
+                Privacy
+              </Link>
+            </span>
+          </div>
+          <div className="flex items-start gap-2">
+            <Zap size={15} strokeWidth={1.75} className="mt-0.5 shrink-0" style={{ color: "var(--color-text-3)" }} aria-hidden />
+            Demo works offline with sample CSVs
           </div>
         </div>
       </section>

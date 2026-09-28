@@ -30,6 +30,8 @@ export async function fetchReconState(): Promise<{
   canRun: boolean;
   reason?: string;
   authError?: string;
+  /** Saved run's created_at (ISO) from GET /api/recon (#28); postgres only. */
+  createdAt?: string;
 }> {
   const wantsAuth = expectsServerAuth();
   try {
@@ -75,6 +77,7 @@ export async function fetchReconState(): Promise<{
           summary: data.recon?.summary || null,
           canRun: data.trial?.canRun !== false,
           reason: data.trial?.reason,
+          createdAt: typeof data.recon?.createdAt === "string" ? data.recon.createdAt : undefined,
         };
       }
       if (!wantsAuth || data.persistence === "demo") {
@@ -117,7 +120,7 @@ export async function persistRecon(
   ok: boolean;
   error?: string;
   chase?: ChaseItem[];
-  persistence: "postgres" | "demo";
+  persistence: "postgres" | "demo" | "sample";
   reconCount?: number;
   authError?: string;
   paywall?: boolean;
@@ -140,6 +143,10 @@ export async function persistRecon(
         persistence: "postgres",
         reconCount: (data.trial as { reconCount?: number } | undefined)?.reconCount,
       };
+    }
+    if (res.ok && data.persistence === "sample") {
+      // Sample data: shown only, never saved or counted.
+      return { ok: true, persistence: "sample" };
     }
     if (res.status === 402) {
       return {

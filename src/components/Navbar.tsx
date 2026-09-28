@@ -8,7 +8,6 @@ import { Menu, X } from "lucide-react";
 const SECTIONS = [
   { id: "problem", label: "Problem" },
   { id: "how", label: "How it works" },
-  { id: "pricing", label: "Pricing" },
 ] as const;
 
 export function Navbar() {

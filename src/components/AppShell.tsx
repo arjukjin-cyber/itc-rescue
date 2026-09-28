@@ -2,19 +2,17 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   LayoutGrid,
   History,
   Send,
   SquareKanban,
   Settings2,
-  CreditCard,
   LogOut,
   Menu,
   X,
   Plus,
-  Lock,
   Check,
   ChevronsUpDown,
 } from "lucide-react";
@@ -25,7 +23,7 @@ import { getGstr3bDue } from "@/lib/filing";
 import { inr } from "@/lib/format";
 import { ITC_VIEWS, parseView, viewCounts, viewDef, viewHref, type ItcView } from "@/lib/views";
 import { Dropdown, MenuItem, MenuLabel, MenuSep } from "./Dropdown";
-import type { UserSession } from "@/lib/types";
+import type { MatchResult, UserSession } from "@/lib/types";
 
 /*
  * v1 sidebar (CTO structure): company + GSTIN switcher + New recon · Overview · Reconcile ·
@@ -50,6 +48,13 @@ interface ReconSnap {
   atRisk: number;
 }
 
+function snapOf(results: MatchResult[]): ReconSnap {
+  return {
+    counts: viewCounts(results),
+    atRisk: results.filter((r) => r.category === "itc_at_risk").reduce((s, r) => s + (r.booksTax || 0), 0),
+  };
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -63,6 +68,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   /** null = no recon yet (or not loaded): ITC counts + ₹ blocked are hidden. */
   const [recon, setRecon] = useState<ReconSnap | null>(null);
   const [reconTick, setReconTick] = useState(0);
+  /** An unsaved sample run is on screen: don't let a late server read overwrite its counts. */
+  const sampleShown = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,15 +133,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     void fetchReconState().then((st) => {
-      if (cancelled || st.authError) return;
-      setRecon(
-        st.summary && st.results.length
-          ? {
-              counts: viewCounts(st.results),
-              atRisk: st.results.filter((r) => r.category === "itc_at_risk").reduce((s, r) => s + (r.booksTax || 0), 0),
-            }
-          : null
-      );
+      if (cancelled || st.authError || sampleShown.current) return;
+      setRecon(st.summary && st.results.length ? snapOf(st.results) : null);
     });
     return () => {
       cancelled = true;
@@ -144,7 +144,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const onCount = (e: Event) => setPending((e as CustomEvent<number>).detail);
     const onTrial = () => setReconUsed(getTrialUsage().reconCount);
-    const onRecon = () => setReconTick((t) => t + 1);
+    const onRecon = (e: Event) => {
+      const sample = (e as CustomEvent<MatchResult[] | undefined>).detail;
+      sampleShown.current = Boolean(sample?.length);
+      if (sample?.length) setRecon(snapOf(sample));
+      else setReconTick((t) => t + 1);
+    };
     window.addEventListener(CHASE_COUNT_EVENT, onCount);
     window.addEventListener(TRIAL_EVENT, onTrial);
     window.addEventListener(RECON_EVENT, onRecon);
@@ -156,7 +161,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Mobile drawer: close on navigation / Escape, lock page scroll while open.
-  useEffect(() => setOpen(false), [pathname]);
+  useEffect(() => {
+    setOpen(false);
+    sampleShown.current = false;
+  }, [pathname]);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
@@ -175,15 +183,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.push("/");
   }
 
-  const trialLocked = plan === "trial" && reconUsed >= 1;
   const planLabel = PLAN_LABEL[plan] ?? plan;
 
   const sidebar = (onNavigate?: () => void) => (
     <div className="flex h-full min-h-0 flex-col">
-      <Workspace company={company} gstin={gstin} planLabel={planLabel} trialLocked={trialLocked} onNavigate={onNavigate} />
+      <Workspace company={company} gstin={gstin} planLabel={planLabel} onNavigate={onNavigate} />
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        <Suspense fallback={<SideNav view={null} pathname={pathname} recon={recon} pending={pending} planLabel={planLabel} onNavigate={onNavigate} />}>
-          <SideNavWithView pathname={pathname} recon={recon} pending={pending} planLabel={planLabel} onNavigate={onNavigate} />
+        <Suspense fallback={<SideNav view={null} pathname={pathname} recon={recon} pending={pending} onNavigate={onNavigate} />}>
+          <SideNavWithView pathname={pathname} recon={recon} pending={pending} onNavigate={onNavigate} />
         </Suspense>
       </div>
       <SideFooter plan={plan} reconUsed={reconUsed} email={email} onLogout={logout} />
@@ -251,7 +258,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex-1" />
           {/* Desktop has "New recon" in the sidebar; keep it reachable when the drawer is closed. */}
           <div className="lg:hidden">
-            <NewRecon trialLocked={trialLocked} compact />
+            <NewRecon compact />
           </div>
         </header>
 
@@ -263,19 +270,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 /* ── Pieces ─────────────────────────────────────────────────────────────── */
 
-function NewRecon({ trialLocked, compact = false, onNavigate }: { trialLocked: boolean; compact?: boolean; onNavigate?: () => void }) {
-  if (trialLocked) {
-    return (
-      <Link
-        href="/settings#billing"
-        onClick={onNavigate}
-        className={`btn btn-sm ${compact ? "" : "w-full"}`}
-        title="Free trial used. Upgrade to run another reconciliation."
-      >
-        <Lock aria-hidden /> New recon · Upgrade
-      </Link>
-    );
-  }
+/**
+ * Always opens the upload step: after the free run, "Run again" is locked there
+ * (tooltip "Free trial used"), but sample runs stay available (#29, never saved).
+ */
+function NewRecon({ compact = false, onNavigate }: { compact?: boolean; onNavigate?: () => void }) {
   return (
     <Link href="/reconcile?new=1" onClick={onNavigate} className={`btn btn-pri btn-sm ${compact ? "" : "w-full"}`}>
       <Plus aria-hidden /> New recon
@@ -287,13 +286,11 @@ function Workspace({
   company,
   gstin,
   planLabel,
-  trialLocked,
   onNavigate,
 }: {
   company: string;
   gstin: string;
   planLabel: string;
-  trialLocked: boolean;
   onNavigate?: () => void;
 }) {
   const name = company || "ITC Rescue";
@@ -341,7 +338,7 @@ function Workspace({
                     <span className="block truncate font-mono text-[12px]" style={{ color: "var(--color-ink)" }}>
                       {gstin}
                     </span>
-                    <span className="block truncate text-[11.5px] font-normal" style={{ color: "var(--color-text-3)" }}>
+                    <span className="block truncate text-[12px] font-normal" style={{ color: "var(--color-text-3)" }}>
                       {name}
                     </span>
                   </MenuItem>
@@ -364,7 +361,7 @@ function Workspace({
         </div>
       </div>
       <div className="mt-3">
-        <NewRecon trialLocked={trialLocked} onNavigate={onNavigate} />
+        <NewRecon onNavigate={onNavigate} />
       </div>
     </div>
   );
@@ -380,14 +377,12 @@ function SideNav({
   pathname,
   recon,
   pending,
-  planLabel,
   onNavigate,
 }: {
   view: ItcView | null;
   pathname: string;
   recon: ReconSnap | null;
   pending: number | null;
-  planLabel: string;
   onNavigate?: () => void;
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
@@ -471,9 +466,6 @@ function SideNav({
         <Item href="/settings" active={pathname === "/settings"} icon={<Settings2 aria-hidden />} onNavigate={onNavigate}>
           Settings
         </Item>
-        <Item href="/settings#billing" active={false} icon={<CreditCard aria-hidden />} count={planLabel} onNavigate={onNavigate}>
-          Billing
-        </Item>
         <button
           type="button"
           className="side-item w-full"
@@ -548,12 +540,7 @@ function SideFooter({
     <div className="px-3 pb-2.5 pt-3 text-[12px]" style={{ borderTop: "1px solid var(--color-line)", color: "var(--color-text-2)" }}>
       {plan === "trial" ? (
         <div className="px-1">
-          <div className="flex items-center justify-between">
-            <span>{used} of 1 free recon used</span>
-            <Link href="/settings#billing" className="link-accent">
-              Upgrade
-            </Link>
-          </div>
+          <div>{used} of 1 free recon used</div>
           <div
             className="my-1.5 h-1 overflow-hidden rounded-sm"
             style={{ backgroundColor: "var(--color-line)" }}

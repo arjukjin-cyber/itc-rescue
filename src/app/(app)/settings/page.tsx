@@ -15,7 +15,6 @@ export default function SettingsPage() {
   });
   const [saved, setSaved] = useState(false);
   const [trial, setTrial] = useState({ reconCount: 0, invoiceCount: 0 });
-  const [razorpayNote, setRazorpayNote] = useState("");
 
   useEffect(() => {
     setForm(getSettings());
@@ -31,16 +30,6 @@ export default function SettingsPage() {
     saveSettings(form);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  }
-
-  function upgrade(plan: "starter" | "growth") {
-    // Razorpay placeholder
-    setRazorpayNote(
-      `Razorpay checkout placeholder: would charge ₹${plan === "starter" ? "999" : "2,499"}/mo for ${plan}. Activating ${plan} plan in demo mode.`
-    );
-    const next = { ...form, plan };
-    setForm(next);
-    saveSettings(next);
   }
 
   return (
@@ -82,10 +71,10 @@ export default function SettingsPage() {
         </button>
       </form>
 
-      <div id="billing" className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-2">
           <CreditCard size={18} className="text-accent" />
-          <h2 className="font-semibold text-slate-900">Plan &amp; billing</h2>
+          <h2 className="font-semibold text-slate-900">Plan</h2>
         </div>
         <p className="mt-2 text-sm" style={{ color: "var(--color-text-secondary)" }}>
           Current plan:{" "}
@@ -142,68 +131,11 @@ export default function SettingsPage() {
           </div>
         )}
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          <div
-            className="p-4 text-left shadow-sm"
-            style={{
-              borderRadius: "var(--radius-lg)",
-              border: "2px solid var(--color-accent)",
-              backgroundColor:
-                form.plan === "starter" ? "var(--color-accent-soft)" : "var(--color-bg)",
-            }}
-          >
-            <div className="text-sm font-bold" style={{ color: "var(--color-text)" }}>
-              Starter · ₹999/mo
-            </div>
-            <div className="mt-1 text-xs" style={{ color: "var(--color-text-secondary)" }}>
-              Unlimited recon · 500 invoices/mo
-            </div>
-            <button
-              type="button"
-              onClick={() => upgrade("starter")}
-              disabled={form.plan === "starter"}
-              className="btn-accent mt-3 w-full py-2 text-xs font-semibold disabled:opacity-60"
-            >
-              {form.plan === "starter" ? "Current plan" : "Upgrade to Starter"}
-            </button>
-          </div>
-          <div
-            className="p-4 text-left shadow-sm"
-            style={{
-              borderRadius: "var(--radius-lg)",
-              border:
-                form.plan === "growth"
-                  ? "2px solid var(--color-accent)"
-                  : "1.5px solid var(--color-border-strong)",
-              backgroundColor:
-                form.plan === "growth" ? "var(--color-accent-soft)" : "var(--color-bg)",
-            }}
-          >
-            <div className="text-sm font-bold" style={{ color: "var(--color-text)" }}>
-              Growth · ₹2,499/mo
-            </div>
-            <div className="mt-1 text-xs" style={{ color: "var(--color-text-secondary)" }}>
-              Unlimited invoices · priority support
-            </div>
-            <button
-              type="button"
-              onClick={() => upgrade("growth")}
-              disabled={form.plan === "growth"}
-              className="btn-secondary mt-3 w-full py-2 text-xs disabled:opacity-60"
-            >
-              {form.plan === "growth" ? "Current plan" : "Upgrade to Growth"}
-            </button>
-          </div>
-        </div>
-
-        {razorpayNote && (
-          <p className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-600 ring-1 ring-slate-200">
-            {razorpayNote}
+        {form.plan === "trial" && trial.reconCount >= 1 && (
+          <p className="mt-3 text-sm" style={{ color: "var(--color-text-secondary)" }}>
+            Free trial used. We&apos;ll email you when more runs open.
           </p>
         )}
-        <p className="mt-3 text-xs text-slate-400">
-          Production: wire Razorpay Subscriptions here. Demo activates plan locally without payment.
-        </p>
       </div>
     </div>
   );
