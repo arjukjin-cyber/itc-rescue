@@ -18,7 +18,8 @@
   --color-accent: #1d4ed8;     /* primary buttons, links, checkboxes, focus */
   --color-accent-hover: #1e40af;
   --color-accent-soft: #eff4ff;/* selected row bg: use #fafbff at most */
-  --color-ring: #93c5fd;
+  --color-ring: #93c5fd;       /* optional outer halo only, never the focus indicator (v1.1 T-01) */
+  --color-border-input: #71717a; /* inputs, checkboxes, other interactive boundaries (v1.1 T-02/T-03) */
 
   /* semantic: text + 6px dots ONLY, never fills */
   --color-risk: #b91c1c;       /* ITC at risk ₹ figures, "Missing in 2B" dot */
@@ -81,8 +82,9 @@ body {
 
 html { scroll-behavior: smooth; }
 
-:focus-visible {
-  outline: 2px solid var(--color-ring);
+/* v1.1 T-01: one global focus indicator, 2px accent outline. Never outline:none. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }
 
@@ -125,8 +127,9 @@ html { scroll-behavior: smooth; }
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 30px;
-  padding: 0 11px;
+  position: relative;
+  height: 36px;
+  padding: 0 12px;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-line);
   background-color: var(--color-surface);
@@ -157,9 +160,22 @@ html { scroll-behavior: smooth; }
   padding: 0 7px;
 }
 .btn-quiet:hover { background-color: var(--color-subtle); color: var(--color-ink); }
-.btn-lg { height: 34px; padding: 0 14px; }
-.btn-sm { height: 26px; padding: 0 8px; font-size: 12.5px; }
-.btn-icon { width: 26px; padding: 0; }
+.btn-lg { height: 40px; padding: 0 16px; font-size: 14px; }
+.btn-sm { height: 32px; padding: 0 10px; font-size: 13px; }
+.btn-icon { width: 36px; padding: 0; }
+.btn-sm.btn-icon { width: 32px; }
+/* v1.1: 36px minimum visual height; on touch the hit area grows to 44px (pseudo-element, not the button). */
+@media (pointer: coarse) {
+  .btn::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+}
 .link-accent { color: var(--color-accent); font-weight: 500; }
 .link-accent:hover { text-decoration: underline; }
 
@@ -188,16 +204,14 @@ html { scroll-behavior: smooth; }
 }
 .btn-ghost:hover { background-color: var(--color-subtle); color: var(--color-ink); }
 .input-token {
+  min-height: 36px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--color-line);
+  border: 1px solid var(--color-border-input);
   background-color: var(--color-surface);
   color: var(--color-ink);
 }
-.input-token:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px var(--color-ring);
-  outline: none;
-}
+/* focus: accent border + the global 2px accent outline (v1.1) */
+.input-token:focus { border-color: var(--color-accent); }
 .form-error { font-size: 13px; line-height: 1.4; font-weight: 500; color: var(--color-risk); }
 
 /* Segmented control (EN / HI) */
@@ -302,7 +316,7 @@ html { scroll-behavior: smooth; }
   color: #ffffff;
 }
 .bulk .btn { height: 26px; font-size: 12.5px; box-shadow: none; }
-.bulk .btn-ghost-dark { background-color: transparent; border-color: #3f3f46; color: #e4e4e7; }
+.bulk .btn-ghost-dark { background-color: transparent; border-color: #71717a; color: #e4e4e7; }
 .bulk .btn-ghost-dark:hover { background-color: #18181b; }
 .bulk .btn-white { background-color: #ffffff; border-color: #ffffff; color: var(--color-ink); }
 
@@ -312,10 +326,10 @@ html { scroll-behavior: smooth; }
   -webkit-appearance: none;
   display: inline-grid;
   place-content: center;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   margin: 0;
-  border: 1px solid #a1a1aa;
+  border: 1px solid var(--color-border-input);
   border-radius: var(--radius-sm);
   background-color: var(--color-surface);
   vertical-align: middle;
@@ -341,7 +355,7 @@ html { scroll-behavior: smooth; }
   padding: 8px 10px;
   border-bottom: 1px solid var(--color-line);
   color: var(--color-text-3);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   text-align: left;
   white-space: nowrap;
@@ -369,14 +383,16 @@ html { scroll-behavior: smooth; }
   justify-content: center;
   padding: 28px 16px;
   text-align: center;
-  border: 1px dashed #d4d4d8;
+  border: 1px dashed #a1a1aa;
   border-radius: var(--radius-lg);
   background-color: var(--color-surface);
   cursor: pointer;
   transition: border-color 0.12s ease;
 }
 .dropzone:hover,
+.dropzone:focus-within,
 .dropzone[data-over="true"] { border-color: var(--color-accent); }
+.dropzone:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
 /* ── Icon tile (empty states) ───────────────────────────────────────────── */
 .icon-tile {
@@ -546,16 +562,16 @@ html { scroll-behavior: smooth; }
   }
   .menu-item svg { width: 14px; height: 14px; stroke-width: 1.75; flex-shrink: 0; color: var(--color-text-3); }
   .menu-item:hover:not(:disabled),
-  .menu-item:focus-visible { background-color: var(--color-subtle); color: var(--color-ink); outline: none; }
+  .menu-item:focus-visible { background-color: var(--color-subtle); color: var(--color-ink); }
   .menu-item:disabled { opacity: 0.45; cursor: not-allowed; }
   .menu-meta { font-size: 12px; font-weight: 400; color: var(--color-text-3); font-variant-numeric: tabular-nums; }
-  .menu-label { padding: 6px 8px 4px; font-size: 11px; font-weight: 500; color: var(--color-text-3); }
+  .menu-label { padding: 6px 8px 4px; font-size: 12px; font-weight: 500; color: var(--color-text-3); }
   .menu-sep { height: 1px; margin: 4px -4px; background-color: var(--color-line); }
 
   /* ── Sidebar (224px, dense) ─────────────────────────────────────────────── */
   .side-sec {
     padding: 12px 8px 3px;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--color-text-3);
   }
@@ -579,10 +595,13 @@ html { scroll-behavior: smooth; }
     box-shadow: 0 0 0 1px var(--color-line);
   }
   .side-item[aria-current="page"] > svg { color: var(--color-ink); }
+  @media (pointer: coarse) {
+    .side-item { height: 40px; }
+  }
   .side-ico { display: grid; width: 15px; height: 15px; flex-shrink: 0; place-items: center; }
   .side-ct {
     margin-left: auto;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--color-text-3);
     font-variant-numeric: tabular-nums;
@@ -620,7 +639,7 @@ html { scroll-behavior: smooth; }
     padding: 1px 4px;
     border-radius: var(--radius-sm);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 12px;
     color: var(--color-text-3);
   }
   .gstin-btn:hover,
@@ -631,5 +650,5 @@ html { scroll-behavior: smooth; }
   .kpi:target,
   .filing-target:target { box-shadow: inset 0 0 0 1px var(--color-accent); }
   #filing { scroll-margin-top: 72px; }
-  #billing { scroll-margin-top: 72px; }
+
 }

@@ -33,11 +33,22 @@ export default function ChasePage() {
       router.replace("/login");
       return;
     }
-    const open = all.filter((c) => c.status === "pending" || c.status === "still_blocked");
+    const byId = new Map(recon.results.map((r) => [r.id, r]));
+    // Same needs-action order as dashboard / reconcile: at-risk by ₹ desc, mismatch rows last.
+    const rank = (c: ChaseItem) => (c.category === "itc_at_risk" ? 0 : c.category === "value_mismatch" ? 1 : 2);
+    const amt = (c: ChaseItem) => {
+      const r = byId.get(c.id);
+      return c.category === "value_mismatch" ? Math.abs(r?.taxDiff ?? 0) : r?.booksTax ?? c.amount ?? 0;
+    };
+    const open = all
+      .filter((c) => c.status === "pending" || c.status === "still_blocked")
+      .map((c, i) => ({ c, i }))
+      .sort((a, b) => rank(a.c) - rank(b.c) || amt(b.c) - amt(a.c) || a.i - b.i)
+      .map((x) => x.c);
     setItems(open);
     emitChaseCount(open.filter((c) => c.status === "pending").length);
     setAllFixed(open.length === 0 && all.some((c) => c.status === "fixed"));
-    setResultsMap(new Map(recon.results.map((r) => [r.id, r])));
+    setResultsMap(byId);
     setCompany(getSettings().companyName || "My Company");
     setLoaded(true);
   }

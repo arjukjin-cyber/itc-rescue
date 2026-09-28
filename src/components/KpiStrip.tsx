@@ -7,7 +7,7 @@ import type { MatchResult, ReconSummary } from "@/lib/types";
 function Money({ n, risk = false }: { n: number; risk?: boolean }) {
   const p = inrParts(n);
   return (
-    <div className="kpi-v" style={risk ? { color: "var(--color-risk)" } : undefined}>
+    <div className="kpi-v" style={{ color: risk ? "var(--color-risk)" : "var(--color-ink)" }}>
       {p.whole}
       <small>{p.paise}</small>
     </div>

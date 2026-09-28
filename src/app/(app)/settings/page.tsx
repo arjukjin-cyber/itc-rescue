@@ -53,7 +53,7 @@ export default function SettingsPage() {
               type={f.type}
               value={form[f.key] || ""}
               onChange={(e) => set(f.key, e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-ring"
+              className="input-token mt-1 w-full px-3 py-2 text-sm"
             />
           </div>
         ))}
