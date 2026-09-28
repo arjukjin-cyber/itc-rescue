@@ -267,3 +267,12 @@ export async function persistChaseStatus(
   }
   return localUpdateChase(id, status);
 }
+
+/**
+ * Inline "Mark resolved" for an at-risk recon row. Chase items share the
+ * recon result id, so this flips the chase item to "fixed" (persisted in
+ * Postgres for signed-in users). Returns the updated chase list.
+ */
+export function markResultResolved(resultId: string): Promise<ChaseItem[]> {
+  return persistChaseStatus(resultId, "fixed");
+}

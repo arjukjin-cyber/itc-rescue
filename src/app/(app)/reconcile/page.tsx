@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Upload, Play, Loader2, Lock, Filter } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import * as XLSX from "xlsx";
-import { reconCsv, atRiskCsv, atRiskResults, downloadCsv } from "@/lib/csv-export";
+import { reconCsv, atRiskCsv, atRiskResults, downloadCsv, istDate } from "@/lib/csv-export";
 import { CategoryBadge } from "@/components/Badge";
 import { StatCard } from "@/components/StatCard";
 import { isPaywalled, setTrialFromServer } from "@/lib/storage";
@@ -437,13 +437,13 @@ export default function ReconcilePage() {
               Export Excel
             </button>
             <button
-              onClick={() => downloadCsv(`itc-rescue-recon-${new Date().toISOString().slice(0, 10)}.csv`, reconCsv(results))}
+              onClick={() => downloadCsv(`itc-rescue-recon-${istDate()}.csv`, reconCsv(results))}
               className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
             >
               Download recon CSV
             </button>
             <button
-              onClick={() => downloadCsv(`itc-at-risk-${new Date().toISOString().slice(0, 10)}.csv`, atRiskCsv(results))}
+              onClick={() => downloadCsv(`itc-at-risk-${istDate()}.csv`, atRiskCsv(results))}
               disabled={atRiskResults(results).length === 0}
               className="rounded-xl border border-rose-300 bg-white px-5 py-2.5 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
