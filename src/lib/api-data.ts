@@ -247,7 +247,7 @@ export async function persistChaseStatus(
 ): Promise<ChaseItem[]> {
   const wantsAuth = expectsServerAuth();
   try {
-    const res = await fetch(`/api/chase/${id}`, {
+    const res = await fetch(`/api/chase/${encodeURIComponent(id)}`, {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -266,4 +266,13 @@ export async function persistChaseStatus(
     if (wantsAuth) return [];
   }
   return localUpdateChase(id, status);
+}
+
+/**
+ * Inline "Mark resolved" for an at-risk recon row. Chase items share the
+ * recon result id, so this flips the chase item to "fixed" (persisted in
+ * Postgres for signed-in users). Returns the updated chase list.
+ */
+export function markResultResolved(resultId: string): Promise<ChaseItem[]> {
+  return persistChaseStatus(resultId, "fixed");
 }

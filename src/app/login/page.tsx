@@ -67,7 +67,7 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
@@ -77,7 +77,7 @@ export default function LoginPage() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-ring"
               />
             </div>
             {error && (
@@ -88,14 +88,14 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-xl bg-teal-700 py-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-60"
+              className="w-full rounded-md bg-accent py-3 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-60"
             >
               {loading ? "Signing in…" : "Log in"}
             </button>
           </form>
           <p className="mt-6 text-center text-sm text-slate-600">
             New here?{" "}
-            <Link href="/signup" className="font-semibold text-teal-700 hover:underline">
+            <Link href="/signup" className="font-semibold text-accent hover:underline">
               Create account
             </Link>
           </p>

@@ -1,46 +1,56 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Upload, Play, Loader2, Lock, Filter } from "lucide-react";
+import { Upload, Play, Loader2, Lock, Inbox, CircleCheck, Send } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import * as XLSX from "xlsx";
-import { reconCsv, atRiskCsv, atRiskResults, downloadCsv } from "@/lib/csv-export";
-import { CategoryBadge } from "@/components/Badge";
-import { StatCard } from "@/components/StatCard";
-import { isPaywalled, setTrialFromServer } from "@/lib/storage";
+import { reconCsv, atRiskCsv, atRiskResults, downloadCsv, istDate } from "@/lib/csv-export";
+import { HelpTip } from "@/components/HelpTip";
+import { ActionTable, ResultTabs, filterByTab, useChaseRows, type TabKey } from "@/components/RiskTable";
+import { KpiStrip } from "@/components/KpiStrip";
+import { emitTrialChanged, setLastReconAt } from "@/lib/ui-events";
+import { Toast, useToast } from "@/components/Toast";
+import { getSettings, setTrialFromServer } from "@/lib/storage";
 import { useRouter } from "next/navigation";
-import { fetchReconState, persistRecon } from "@/lib/api-data";
+import { fetchChaseItems, fetchReconState, persistRecon } from "@/lib/api-data";
 import { parseInvoiceFile, parseInvoiceFileDetailed, fetchSampleAsFile } from "@/lib/parseFile";
 import { describeImportSource } from "@/lib/importers/tally-busy";
-import { formatINR, formatINRPrecise, reconcile } from "@/lib/reconcile";
-import type { MatchCategory, MatchResult, ReconSummary } from "@/lib/types";
+import { reconcile } from "@/lib/reconcile";
+import type { MatchResult, ReconSummary } from "@/lib/types";
 
-const FILTERS: { key: MatchCategory | "all"; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "itc_at_risk", label: "ITC at risk" },
-  { key: "value_mismatch", label: "Value mismatch" },
-  { key: "matched", label: "Matched" },
-  { key: "unclaimed", label: "Unclaimed" },
-];
+const MATCH_RULE = "Matched on GSTIN + invoice number + invoice date (±1 day).";
+
+function defaultFilter(results: MatchResult[]): TabKey {
+  return results.some((r) => r.category === "itc_at_risk" || r.category === "value_mismatch") ? "action" : "all";
+}
 
 export default function ReconcilePage() {
   const router = useRouter();
+  const [loaded, setLoaded] = useState(false);
   const [booksFile, setBooksFile] = useState<File | null>(null);
   const [gstrFile, setGstrFile] = useState<File | null>(null);
   const [results, setResults] = useState<MatchResult[]>([]);
   const [summary, setSummary] = useState<ReconSummary | null>(null);
-  const [filter, setFilter] = useState<MatchCategory | "all">("all");
+  const [filter, setFilter] = useState<TabKey>("action");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [booksNote, setBooksNote] = useState<string | null>(null);
+  /** 402 toast — set only by a real run attempt (server still enforces the gate). */
   const [paywall, setPaywall] = useState<string | null>(null);
-  const [trialUsed, setTrialUsed] = useState(false);
+  /** Trial used → locked "Run again · Upgrade" button (no banner above results). */
+  const [locked, setLocked] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [company, setCompany] = useState("My Company");
+  const { toast, show, dismiss } = useToast();
+  const { setChase, statusById, pendingCount, resolve, resolveMany, busy } = useChaseRows(show);
+  const autoSampleDone = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
+    setCompany(getSettings().companyName || "My Company");
     (async () => {
-      const state = await fetchReconState();
+      const [state, chase] = await Promise.all([fetchReconState(), fetchChaseItems()]);
       if (cancelled) return;
       if (state.authError) {
         setError(state.authError);
@@ -50,23 +60,47 @@ export default function ReconcilePage() {
       if (state.results.length) {
         setResults(state.results);
         setSummary(state.summary);
+        setFilter(defaultFilter(state.results));
       }
-      if (!state.canRun) {
-        setTrialUsed(true);
-        setPaywall(state.reason || "Upgrade required");
-      } else {
-        setTrialUsed(isPaywalled() && state.persistence === "demo");
+      if (!chase.authError) setChase(chase.items);
+      setLocked(!state.canRun);
+      setLoaded(true);
+      // Dashboard "Try with sample files" deep link (/reconcile?sample=1)
+      if (new URLSearchParams(window.location.search).get("sample") === "1") {
+        router.replace("/reconcile");
+        if (state.canRun && !state.results.length && !autoSampleDone.current) {
+          autoSampleDone.current = true;
+          void loadSamples();
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router, setChase]);
 
-  const filtered = useMemo(() => {
-    if (filter === "all") return results;
-    return results.filter((r) => r.category === filter);
-  }, [results, filter]);
+  const filtered = useMemo(() => filterByTab(results, filter), [results, filter]);
+
+  async function afterSaved(
+    matched: MatchResult[],
+    sum: ReconSummary,
+    saved: { persistence: "postgres" | "demo"; reconCount?: number }
+  ) {
+    if (saved.persistence === "postgres" && typeof saved.reconCount === "number") {
+      setTrialFromServer(saved.reconCount);
+    }
+    setLastReconAt();
+    emitTrialChanged();
+    setResults(matched);
+    setSummary(sum);
+    setFilter(defaultFilter(matched));
+    setShowUpload(false);
+    // Re-read gate + chase list so the locked button and "Chase N" are authoritative
+    const [state, chase] = await Promise.all([fetchReconState(), fetchChaseItems()]);
+    setLocked(!state.canRun);
+    if (!chase.authError) setChase(chase.items);
+  }
 
   async function runWithFiles(books: File, gstr: File) {
     setError("");
@@ -75,6 +109,7 @@ export default function ReconcilePage() {
     const state = await fetchReconState();
     if (!state.canRun) {
       setPaywall(state.reason || "Upgrade required");
+      setLocked(true);
       return;
     }
 
@@ -102,20 +137,14 @@ export default function ReconcilePage() {
         }
         if (saved.paywall) {
           setPaywall(saved.error || "Upgrade required");
-          setTrialUsed(true);
+          setLocked(true);
           return;
         }
         // Surface 500 / other server failures (do not silently pretend success)
         setError(saved.error || "Failed to save reconciliation");
         return;
       }
-      if (saved.persistence === "postgres" && typeof saved.reconCount === "number") {
-        setTrialFromServer(saved.reconCount);
-      }
-      setResults(matched);
-      setSummary(sum);
-      setFilter("itc_at_risk");
-      setTrialUsed(true);
+      await afterSaved(matched, sum, saved);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Reconciliation failed");
     } finally {
@@ -137,6 +166,7 @@ export default function ReconcilePage() {
     const state = await fetchReconState();
     if (!state.canRun) {
       setPaywall(state.reason || "Upgrade required");
+      setLocked(true);
       return;
     }
     setLoading(true);
@@ -162,20 +192,14 @@ export default function ReconcilePage() {
         }
         if (saved.paywall) {
           setPaywall(saved.error || "Upgrade required");
-          setTrialUsed(true);
+          setLocked(true);
           return;
         }
         // Surface 500 / other server failures (do not silently pretend success)
         setError(saved.error || "Failed to save reconciliation");
         return;
       }
-      if (saved.persistence === "postgres" && typeof saved.reconCount === "number") {
-        setTrialFromServer(saved.reconCount);
-      }
-      setResults(matched);
-      setSummary(sum);
-      setFilter("itc_at_risk");
-      setTrialUsed(true);
+      await afterSaved(matched, sum, saved);
     } catch {
       setError("Failed to load sample files");
     } finally {
@@ -183,13 +207,29 @@ export default function ReconcilePage() {
     }
   }
 
+  if (!loaded) {
+    return (
+      <div className="space-y-4" aria-busy="true" aria-label="Loading reconciliation">
+        <div className="h-6 w-32 animate-pulse rounded" style={{ backgroundColor: "var(--color-line-2)" }} />
+        <div className="grid gap-3 md:grid-cols-2">
+          {[0, 1].map((i) => (
+            <div key={i} className="h-32 animate-pulse rounded-lg" style={{ backgroundColor: "var(--color-line-2)" }} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const bothFiles = Boolean(booksFile && gstrFile);
+
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="space-y-3">
       <div>
         <h1 className="page-title">Reconcile</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Match purchase register vs GSTR-2B · GSTIN + invoice# + date (±1 day)
-        </p>
+        <div className="helper-line">
+          <span>{summary ? "Match your books against GSTR-2B." : "Drop both files, then run the match."}</span>
+          <HelpTip label="Matching rule" text={MATCH_RULE} />
+        </div>
       </div>
 
       {paywall && (
@@ -210,233 +250,132 @@ export default function ReconcilePage() {
         </div>
       )}
 
-      {!paywall && trialUsed && summary && (
-        <div
-          className="px-4 py-3 text-sm"
-          style={{
-            borderRadius: "var(--radius-lg)",
-            border: "1px solid var(--color-accent-ring)",
-            backgroundColor: "var(--color-accent-soft)",
-            color: "var(--color-text)",
-          }}
-        >
-          <span className="font-semibold" style={{ color: "var(--color-accent)" }}>
-            Trial recon used.
-          </span>{" "}
-          <span style={{ color: "var(--color-text-secondary)" }}>
-            Chase vendors below on this result. Next upload needs a paid plan —{" "}
-          </span>
-          <Link
-            href="/settings"
-            className="font-semibold underline"
-            style={{ color: "var(--color-accent)" }}
-          >
-            see Starter / Growth
-          </Link>
-          .
-        </div>
+      {(!summary || showUpload) && (
+        <>
+          <div className="grid gap-3 pt-1 md:grid-cols-2">
+            <FileDrop
+              label="Purchase register"
+              hint="Tally, Zoho or Excel · .csv / .xlsx"
+              file={booksFile}
+              onFile={setBooksFile}
+            />
+            <FileDrop
+              label="GSTR-2B"
+              hint="From the GST portal · .csv / .xlsx"
+              file={gstrFile}
+              onFile={setGstrFile}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            {locked ? (
+              <LockedRun label={summary ? "Run again · Upgrade" : "Run recon · Upgrade"} />
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onRun}
+                  disabled={loading || !bothFiles}
+                  className="btn btn-pri btn-lg"
+                >
+                  {loading ? <Loader2 className="animate-spin" aria-hidden /> : <Play aria-hidden />}
+                  Run recon
+                </button>
+                <button
+                  type="button"
+                  onClick={loadSamples}
+                  disabled={loading}
+                  className="link-accent text-[13px] disabled:opacity-45"
+                >
+                  Try with sample files
+                </button>
+              </>
+            )}
+            {summary && (
+              <button type="button" className="btn btn-quiet" onClick={() => setShowUpload(false)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <FileDrop
-          label="Purchase register (books)"
-          hint="Excel or CSV from Tally / Zoho / Excel"
-          file={booksFile}
-          onFile={setBooksFile}
-        />
-        <FileDrop
-          label="GSTR-2B"
-          hint="Excel/CSV export from GST portal"
-          file={gstrFile}
-          onFile={setGstrFile}
-        />
-      </div>
-
-      <div className="flex flex-wrap gap-3">
-        <button
-          onClick={onRun}
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-60"
-        >
-          {loading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-          Run reconciliation
-        </button>
-        <button
-          onClick={loadSamples}
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
-        >
-          <Upload size={16} />
-          Load sample files
-        </button>
-      </div>
-
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {booksNote && <p className="text-xs text-slate-500">{booksNote}</p>}
+      {error && (
+        <p className="status" style={{ color: "var(--color-text-2)" }}>
+          <span className="dot dot-risk" aria-hidden />
+          {error}
+        </p>
+      )}
+      {booksNote && (!summary || showUpload) && <ImportNote note={booksNote} />}
 
       {summary && (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              label="Matched"
-              value={summary.matched}
-              tone="success"
-              sub={formatINR(summary.matchedAmount)}
-            />
-            <StatCard
-              label="ITC at risk"
-              value={summary.itcAtRisk}
-              tone="danger"
-              sub={formatINR(summary.itcAtRiskAmount)}
-            />
-            <StatCard label="Value mismatch" value={summary.valueMismatch} tone="warn" />
-            <StatCard label="Unclaimed" value={summary.unclaimed} tone="info" />
-          </div>
-
-          {summary.itcAtRiskAmount > 0 && (
-            <div
-              className="px-4 py-3 text-sm font-medium sm:px-5"
-              style={{
-                borderRadius: "var(--radius-md)",
-                border: "1px solid color-mix(in srgb, var(--color-status-risk-fg) 28%, transparent)",
-                backgroundColor: "var(--color-status-risk-bg)",
-                color: "var(--color-status-risk-fg)",
-              }}
-            >
-              <strong className="font-bold tabular-nums">
-                {formatINR(summary.itcAtRiskAmount)} ITC at risk
-              </strong>
-              {" — "}
-              {summary.itcAtRisk} invoice{summary.itcAtRisk === 1 ? "" : "s"} missing from
-              GSTR-2B. Chase vendors before filing GSTR-3B.
+          {!showUpload && (
+            <div className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2">
+              <FileName name={booksFile?.name} fallback="Purchase register" />
+              {booksNote && <ImportNote note={booksNote} />}
+              <FileName name={gstrFile?.name} fallback="GSTR-2B" />
+              <span className="muted">
+                {summary.totalBooks} books · {summary.totalGstr2b} in 2B
+              </span>
+              <div className="ml-auto flex items-center gap-2">
+                {locked ? (
+                  <LockedRun label="Run again · Upgrade" small />
+                ) : (
+                  <>
+                    <button type="button" className="link-accent text-[13px]" onClick={() => setShowUpload(true)}>
+                      Replace files
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={loading}
+                      onClick={() => (bothFiles ? void onRun() : setShowUpload(true))}
+                    >
+                      {loading ? <Loader2 className="animate-spin" aria-hidden /> : <Play aria-hidden />}
+                      Run again
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2">
-            {FILTERS.map((f) => (
-              <button
-                key={f.key}
-                onClick={() => setFilter(f.key)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                  filter === f.key
-                    ? "bg-teal-700 text-white"
-                    : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
-                }`}
-              >
-                {f.label}
-                {f.key !== "all" &&
-                  ` (${results.filter((r) => r.category === f.key).length})`}
-              </button>
-            ))}
+          <KpiStrip results={results} summary={summary} />
+
+          <div className="pt-2">
+            <ResultTabs
+              results={results}
+              tab={filter}
+              onTab={setFilter}
+              right={
+                pendingCount > 0 ? (
+                  <Link href="/chase" className="btn btn-pri">
+                    <Send aria-hidden /> Chase {pendingCount} vendor{pendingCount === 1 ? "" : "s"}
+                  </Link>
+                ) : null
+              }
+            />
           </div>
 
-          <div
-            className="overflow-hidden shadow-sm"
-            style={{
-              borderRadius: "var(--radius-lg)",
-              border: "1px solid var(--color-border)",
-              backgroundColor: "var(--color-bg)",
-            }}
-          >
-            <div className="table-scroll overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead
-                  className="text-xs uppercase tracking-wide"
-                  style={{ color: "var(--color-text-muted)" }}
-                >
-                  <tr>
-                    <th className="px-4 py-3 font-semibold">Status</th>
-                    <th className="px-4 py-3 font-semibold">Vendor</th>
-                    <th className="px-4 py-3 font-semibold">GSTIN</th>
-                    <th className="px-4 py-3 font-semibold">Invoice</th>
-                    <th className="px-4 py-3 font-semibold">Date</th>
-                    <th className="px-4 py-3 font-semibold text-right">Books tax</th>
-                    <th className="px-4 py-3 font-semibold text-right">2B tax</th>
-                    <th className="px-4 py-3 font-semibold">Notes</th>
-                  </tr>
-                </thead>
-                <tbody style={{ borderColor: "var(--color-border)" }} className="divide-y divide-slate-100">
-                  {filtered.map((r) => (
-                    <tr key={r.id} className="recon-row">
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <CategoryBadge category={r.category} />
-                      </td>
-                      <td
-                        className="max-w-[160px] truncate px-4 py-3 font-medium"
-                        style={{ color: "var(--color-text)" }}
-                      >
-                        {r.vendorName}
-                      </td>
-                      <td
-                        className="whitespace-nowrap px-4 py-3 font-mono"
-                        style={{
-                          fontSize: "0.8125rem",
-                          lineHeight: "1.125rem",
-                          color: "var(--color-text-secondary)",
-                          fontFamily: "var(--font-mono), ui-monospace, monospace",
-                        }}
-                      >
-                        {r.gstin}
-                      </td>
-                      <td
-                        className="whitespace-nowrap px-4 py-3 font-mono"
-                        style={{
-                          fontSize: "0.8125rem",
-                          color: "var(--color-text)",
-                          fontFamily: "var(--font-mono), ui-monospace, monospace",
-                        }}
-                      >
-                        {r.invoiceNumber}
-                      </td>
-                      <td
-                        className="whitespace-nowrap px-4 py-3"
-                        style={{ color: "var(--color-text-secondary)" }}
-                      >
-                        {r.invoiceDate}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
-                        {r.booksTax ? formatINRPrecise(r.booksTax) : "—"}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
-                        {r.gstr2bTax ? formatINRPrecise(r.gstr2bTax) : "—"}
-                      </td>
-                      <td
-                        className="max-w-[200px] truncate px-4 py-3 text-xs"
-                        style={{ color: "var(--color-text-muted)" }}
-                      >
-                        {r.notes || "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {!filtered.length && (
-              <div className="border-t px-3 py-4" style={{ borderColor: "var(--color-border)" }}>
-                <EmptyState
-                  icon={Filter}
-                  title="No rows in this filter"
-                  description="Nothing matches the selected category. Switch filter or show all invoices from this recon."
-                  actionLabel="Show all rows"
-                  onAction={() => setFilter("all")}
-                />
-              </div>
-            )}
-          </div>
+          {filtered.length ? (
+            <ActionTable
+              rows={filtered}
+              statusById={statusById}
+              busy={busy}
+              company={company}
+              onResolve={(id) => void resolve(id)}
+              onResolveMany={resolveMany}
+            />
+          ) : (
+            <EmptyState
+              icon={Inbox}
+              title="No invoices in this view."
+              actionLabel="Show all invoices"
+              onAction={() => setFilter("all")}
+            />
+          )}
 
           <div className="flex flex-wrap gap-3">
-            <Link
-              href="/chase"
-              className="rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800"
-            >
-              Chase vendors →
-            </Link>
-            <Link
-              href="/status"
-              className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-            >
-              Open status board
-            </Link>
             <button
               onClick={() => exportResults(results)}
               className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
@@ -444,13 +383,13 @@ export default function ReconcilePage() {
               Export Excel
             </button>
             <button
-              onClick={() => downloadCsv(`itc-rescue-recon-${new Date().toISOString().slice(0, 10)}.csv`, reconCsv(results))}
+              onClick={() => downloadCsv(`itc-rescue-recon-${istDate()}.csv`, reconCsv(results))}
               className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
             >
               Download recon CSV
             </button>
             <button
-              onClick={() => downloadCsv(`itc-at-risk-${new Date().toISOString().slice(0, 10)}.csv`, atRiskCsv(results))}
+              onClick={() => downloadCsv(`itc-at-risk-${istDate()}.csv`, atRiskCsv(results))}
               disabled={atRiskResults(results).length === 0}
               className="rounded-xl border border-rose-300 bg-white px-5 py-2.5 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -459,7 +398,41 @@ export default function ReconcilePage() {
           </div>
         </>
       )}
+
+      <Toast toast={toast} onDismiss={dismiss} />
     </div>
+  );
+}
+
+/** Trial gate: locked secondary button + sidebar meter replace the old red banner. */
+function LockedRun({ label, small = false }: { label: string; small?: boolean }) {
+  return (
+    <Link
+      href="/settings"
+      className={`btn ${small ? "btn-sm" : "btn-lg"}`}
+      title="Free trial used. Upgrade to run another reconciliation."
+    >
+      <Lock aria-hidden /> {label}
+    </Link>
+  );
+}
+
+/** PR #24 import-source line ("Detected Tally export"), v1 style: muted text + ok check. */
+function ImportNote({ note }: { note: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+      <CircleCheck size={13} strokeWidth={1.75} style={{ color: "var(--color-ok)" }} aria-hidden />
+      {note}
+    </span>
+  );
+}
+
+function FileName({ name, fallback }: { name?: string; fallback: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5" style={{ color: "var(--color-text-2)" }}>
+      <CircleCheck size={14} strokeWidth={1.75} style={{ color: "var(--color-ok)" }} aria-hidden />
+      <span className={name ? "mono-sm" : undefined}>{name || fallback}</span>
+    </span>
   );
 }
 
@@ -474,14 +447,36 @@ function FileDrop({
   file: File | null;
   onFile: (f: File) => void;
 }) {
+  const [over, setOver] = useState(false);
   return (
-    <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-8 transition hover:border-teal-400 hover:bg-teal-50/30">
-      <Upload className="text-teal-700" size={28} />
-      <span className="mt-3 text-sm font-semibold text-slate-900">{label}</span>
-      <span className="mt-1 text-xs text-slate-500">{hint}</span>
+    <label
+      className="dropzone"
+      data-over={over ? "true" : undefined}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        const f = e.dataTransfer.files?.[0];
+        if (f) onFile(f);
+      }}
+    >
+      <span className="icon-tile">
+        <Upload size={16} strokeWidth={1.75} aria-hidden />
+      </span>
+      <span className="mt-3 text-[13px] font-medium" style={{ color: "var(--color-ink)" }}>
+        {label}
+      </span>
+      <span className="mt-0.5 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+        {hint}
+      </span>
       {file && (
-        <span className="mt-3 rounded-full bg-teal-50 px-3 py-1 text-xs font-medium text-teal-800">
-          {file.name}
+        <span className="mt-3 inline-flex items-center gap-1.5" style={{ color: "var(--color-text-2)" }}>
+          <CircleCheck size={14} strokeWidth={1.75} style={{ color: "var(--color-ok)" }} aria-hidden />
+          <span className="mono-sm">{file.name}</span>
         </span>
       )}
       <input
