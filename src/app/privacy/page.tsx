@@ -26,7 +26,7 @@ export default function PrivacyPage() {
               Match results from each reconciliation: vendor GSTIN, vendor name, invoice number, invoice date,
               tax amounts and the match status.
             </li>
-            <li>Vendor chase status (pending, sent, fixed).</li>
+            <li>The chase status you set for each vendor invoice.</li>
           </ul>
           <p className="mt-2">Sample-data runs are never saved.</p>
         </section>

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { isSampleRecon, validateReconResults } from "../src/lib/recon-guard";
+import { isMixedSampleRecon, isSampleRecon, validateReconResults } from "../src/lib/recon-guard";
 import type { MatchResult } from "../src/lib/types";
 
 const r = (gstin: string, inv = "INV-1", date = "2026-04-02") =>
@@ -8,6 +8,9 @@ const r = (gstin: string, inv = "INV-1", date = "2026-04-02") =>
 assert.equal(isSampleRecon([r("27AABCT1332L1ZV"), r("36AABCT6677G1ZV")]), true);
 assert.equal(isSampleRecon([r("27AABCT1332L1ZV"), r("32AAAAA0000A1Z1")]), false);
 assert.equal(isSampleRecon([]), false);
+assert.equal(isMixedSampleRecon([r("27AABCT1332L1ZV"), r("32AAAAA0000A1Z1")]), true);
+assert.equal(isMixedSampleRecon([r("27AABCT1332L1ZV")]), false);
+assert.equal(isMixedSampleRecon([r("32AAAAA0000A1Z1")]), false);
 
 assert.equal(validateReconResults([]).ok, false);
 assert.equal(validateReconResults([r("UNKNOWN", "UNKNOWN")]).ok, false);

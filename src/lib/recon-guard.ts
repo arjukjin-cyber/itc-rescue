@@ -17,6 +17,12 @@ export const SAMPLE_GSTINS = new Set([
 
 export const TRIAL_USED_MESSAGE = "Free trial used. We'll email you when more runs open.";
 
+/** Some rows come from the sample files but not all: a sample file was mixed with a real one. */
+export function isMixedSampleRecon(results: MatchResult[]): boolean {
+  const n = results.filter((r) => SAMPLE_GSTINS.has(String(r.gstin || "").toUpperCase())).length;
+  return n > 0 && n < results.length;
+}
+
 export function isSampleRecon(results: MatchResult[]): boolean {
   if (!results.length) return false;
   return results.every((r) => SAMPLE_GSTINS.has(String(r.gstin || "").toUpperCase()));

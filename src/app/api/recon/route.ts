@@ -6,7 +6,12 @@ import {
   saveReconForUser,
 } from "@/lib/db";
 import { requireDbUser } from "@/lib/session-user";
-import { isSampleRecon, TRIAL_USED_MESSAGE, validateReconResults } from "@/lib/recon-guard";
+import {
+  isMixedSampleRecon,
+  isSampleRecon,
+  TRIAL_USED_MESSAGE,
+  validateReconResults,
+} from "@/lib/recon-guard";
 import type { MatchResult, ReconSummary } from "@/lib/types";
 
 export async function GET() {
@@ -42,6 +47,18 @@ export async function POST(req: NextRequest) {
     // Sample runs are never saved or counted against the trial.
     if (isSampleRecon(results)) {
       return NextResponse.json({ persistence: "sample", saved: false });
+    }
+
+    // A sample file mixed with a real one: don't save or count it.
+    if (isMixedSampleRecon(results)) {
+      return NextResponse.json(
+        {
+          error:
+            "One of these files is our sample file. Upload both of your own files. Nothing was saved and your free run wasn't used.",
+          code: "sample_mixed",
+        },
+        { status: 422 }
+      );
     }
 
     // Don't save (or count) a run whose parse looks broken.
