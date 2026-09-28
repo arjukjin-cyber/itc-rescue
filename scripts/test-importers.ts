@@ -18,6 +18,7 @@ import {
   parseImportAmount,
   parseImportDate,
 } from "../src/lib/importers/tally-busy";
+import { flattenHeaderRows, pickGstr2bSheet } from "../src/lib/importers/gstr2b-portal";
 import type { InvoiceRecord } from "../src/lib/types";
 
 const root = join(__dirname, "..");
@@ -72,6 +73,105 @@ function legacyParseCsv(text: string, source: "books" | "gstr2b"): InvoiceRecord
   }
   return out;
 }
+
+// ---------- GST portal GSTR-2B workbook mimic ----------
+// Layout per GSTN's B2B sheet: title rows, a merged group header row
+// ("Invoice details", "Tax Amount") and a sub-header row, data from row 7.
+const PORTAL_TOP = [
+  "GSTIN of supplier", "Trade/Legal name", "Invoice details", "", "", "",
+  "Place of supply", "Supply Attract Reverse Charge", "Rate(%)", "Taxable Value (₹)",
+  "Tax Amount", "", "", "", "GSTR-1/IFF/GSTR-5 Period", "GSTR-1/IFF/GSTR-5 Filing Date",
+  "ITC Availability", "Reason", "Applicable % of Tax Rate", "Source", "IRN", "IRN Date",
+];
+const PORTAL_SUB = [
+  "", "", "Invoice number", "Invoice type", "Invoice Date", "Invoice Value(₹)",
+  "", "", "", "", "Integrated Tax(₹)", "Central Tax(₹)", "State/UT Tax(₹)", "Cess(₹)",
+  "", "", "", "", "", "", "", "",
+];
+
+function portalB2BSheet(): XLSX.WorkSheet {
+  const row = (
+    gstin: string, name: string, inv: string, date: string | number, value: number,
+    pos: string, rate: number, taxable: number, igst: number, cgst: number, sgst: number,
+    itc: string, reason = ""
+  ) => [gstin, name, inv, "Regular", date, value, pos, "N", rate, taxable, igst, cgst, sgst, 0,
+    "Apr'25", "11-05-2025", itc, reason, "", "", "", ""];
+  const aoa: unknown[][] = [
+    ["Goods and Services Tax  - GSTR-2B"],
+    [],
+    ["Taxable inward supplies received from registered persons"],
+    [],
+    PORTAL_TOP,
+    PORTAL_SUB,
+    row("27AABCT1332L1ZV", "TechParts India Pvt Ltd", "INV/24-25/001", "01-04-2025", 118000, "Maharashtra", 18, 100000, 0, 9000, 9000, "Yes"),
+    row("29AADCS1234A1Z5", "Bengaluru Steel Traders", "BST0881", 45749, 295000, "Karnataka", 18, 250000, 45000, 0, 0, "Yes"),
+    row("07AAACP0505B1ZQ", "Delhi Pack Solutions", "DPS-4491", "08-04-2025", 70200, "Delhi", 18, 50000, 0, 4500, 4500, "Yes"),
+    row("07AAACP0505B1ZQ", "Delhi Pack Solutions", "DPS-4491", "08-04-2025", 70200, "Delhi", 12, 10000, 0, 600, 600, "Yes"),
+    row("24AABCM9876C1ZX", "Gujarat Polymers Co", "GP-2026-221", "12-04-2025", 206500, "Gujarat", 18, 175000, 31500, 0, 0, "No",
+      "POS and supplier state are same but recipient state is different"),
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const m = (r1: number, c1: number, r2: number, c2: number) => ({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 } });
+  ws["!merges"] = [
+    m(0, 0, 0, 21), m(2, 0, 2, 21),
+    m(4, 2, 4, 5), m(4, 10, 4, 13), // "Invoice details", "Tax Amount"
+    ...[0, 1, 6, 7, 8, 9, 14, 15, 16, 17, 18, 19, 20, 21].map((c) => m(4, c, 5, c)),
+  ];
+  return ws;
+}
+
+function portalWorkbookFile(): File {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ["Goods and Services Tax  - GSTR-2B"],
+    ["Field name", "Help text"],
+    ["GSTIN of supplier", "GSTIN of the supplier"],
+    ["Invoice number", "Invoice number"],
+  ]), "Read me");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ["FORM SUMMARY - ITC Available"],
+    ["S.no.", "Heading", "GSTR-3B table", "Integrated Tax (₹)", "Central Tax (₹)", "State/UT Tax (₹)"],
+    ["Part A", "ITC Available - Credit may be claimed in relevant headings in GSTR-3B", "", 45000, 14100, 14100],
+  ]), "ITC Available");
+  XLSX.utils.book_append_sheet(wb, portalB2BSheet(), "B2B");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ["Goods and Services Tax  - GSTR-2B"],
+    ["Amendments to previously filed invoices by supplier"],
+    ["Invoice number", "Invoice Date", "GSTIN of supplier"],
+    ["OLD-1", "01-03-2025", "27AABCT1332L1ZV"],
+  ]), "B2BA");
+  const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+  return new File([buf], "042025_27AAAAA0000A1Z5_GSTR2B_11052025.xlsx", {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}
+
+const EXPECTED_PORTAL = [
+  {
+    gstin: "27AABCT1332L1ZV", vendorName: "TechParts India Pvt Ltd",
+    rawInvoiceNumber: "INV/24-25/001", invoiceNumber: "INV2425001", invoiceDate: "2025-04-01",
+    taxableValue: 100000, igst: 0, cgst: 9000, sgst: 9000, totalTax: 18000,
+    itcAvailable: true, source: "gstr2b",
+  },
+  {
+    gstin: "29AADCS1234A1Z5", vendorName: "Bengaluru Steel Traders",
+    rawInvoiceNumber: "BST0881", invoiceNumber: "BST0881", invoiceDate: "2025-04-02", // Excel serial 45749
+    taxableValue: 250000, igst: 45000, cgst: 0, sgst: 0, totalTax: 45000,
+    itcAvailable: true, source: "gstr2b",
+  },
+  {
+    gstin: "07AAACP0505B1ZQ", vendorName: "Delhi Pack Solutions",
+    rawInvoiceNumber: "DPS-4491", invoiceNumber: "DPS4491", invoiceDate: "2025-04-08",
+    taxableValue: 60000, igst: 0, cgst: 5100, sgst: 5100, totalTax: 10200, // 18% + 12% rows merged
+    itcAvailable: true, source: "gstr2b",
+  },
+  {
+    gstin: "24AABCM9876C1ZX", vendorName: "Gujarat Polymers Co",
+    rawInvoiceNumber: "GP-2026-221", invoiceNumber: "GP2026221", invoiceDate: "2025-04-12",
+    taxableValue: 175000, igst: 31500, cgst: 0, sgst: 0, totalTax: 31500,
+    itcAvailable: false, source: "gstr2b", // ITC Availability = No is kept, flagged
+  },
+];
 
 async function main() {
   console.log("Unit helpers");
@@ -375,6 +475,72 @@ async function main() {
     console.log(
       `       samples: matched=${summary.matched} itc_at_risk=${summary.itcAtRisk} (₹${summary.itcAtRiskAmount.toLocaleString("en-IN")}) value_mismatch=${summary.valueMismatch} unclaimed=${summary.unclaimed}`
     );
+  });
+
+  console.log("GST portal GSTR-2B");
+
+  await test("pickGstr2bSheet picks B2B and ignores Read me / summary sheets", () => {
+    assert.equal(pickGstr2bSheet(["Read me", "ITC Available", "ITC not available", "B2B", "B2BA", "B2B-CDNR"]), "B2B");
+    assert.equal(pickGstr2bSheet(["Read me", " b2b "]), " b2b ");
+    assert.equal(pickGstr2bSheet(["Sheet1"]), null);
+  });
+
+  await test("flattenHeaderRows merges the two-row header (group + sub, falls back to sub)", () => {
+    const flat = flattenHeaderRows(PORTAL_TOP, PORTAL_SUB);
+    assert.deepEqual(flat.slice(0, 14), [
+      "gstin of supplier",
+      "trade legal name",
+      "invoice number",
+      "invoice type",
+      "invoice date",
+      "invoice value",
+      "place of supply",
+      "supply attract reverse charge",
+      "rate pct",
+      "taxable value",
+      "integrated tax",
+      "central tax",
+      "state ut tax",
+      "cess",
+    ]);
+    assert.equal(flat[16], "itc availability");
+  });
+
+  await test("portal GSTR-2B .xlsx: auto-picks B2B, 2-row header, serial date, merges rate rows, keeps ITC=No", async () => {
+    const res = await parseInvoiceFileDetailed(portalWorkbookFile(), "gstr2b");
+    assert.equal(res.detected, "gstr2b_portal");
+    assert.equal(res.headerRowIndex, 5);
+    assert.deepEqual(
+      res.invoices.map((i) => ({ ...slim([i])[0], itcAvailable: i.itcAvailable, source: i.source })),
+      EXPECTED_PORTAL
+    );
+  });
+
+  await test("portal B2B sheet saved as CSV (all text, serial as string) parses the same", async () => {
+    const csv = XLSX.utils.sheet_to_csv(portalB2BSheet());
+    const res = await parseInvoiceFileDetailed(new File([csv], "b2b.csv", { type: "text/csv" }), "gstr2b");
+    assert.equal(res.detected, "gstr2b_portal");
+    assert.deepEqual(
+      res.invoices.map((i) => ({ ...slim([i])[0], itcAvailable: i.itcAvailable, source: i.source })),
+      EXPECTED_PORTAL
+    );
+  });
+
+  await test("template books vs portal GSTR-2B reconcile (BST#0881 = BST0881)", async () => {
+    const books = await parseInvoiceFileDetailed(csvFile("fixtures/template-purchase-register.csv"), "books");
+    const g2b = await parseInvoiceFileDetailed(portalWorkbookFile(), "gstr2b");
+    const { results, summary } = reconcile(books.invoices, g2b.invoices);
+    assert.deepEqual(
+      results.map((r) => [r.invoiceNumber, r.category]),
+      [
+        ["INV/24-25/001", "matched"],
+        ["BST#0881", "matched"],
+        ["DPS-4491", "value_mismatch"], // 2B has an extra 12% line (tax 10,200 vs 9,000)
+        ["GP-2026-221", "unclaimed"],
+      ]
+    );
+    assert.equal(summary.matched, 2);
+    assert.equal(summary.itcAtRisk, 0);
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

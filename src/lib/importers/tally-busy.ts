@@ -19,7 +19,7 @@
 import { normalizeGstin, normalizeInvoiceNumber } from "../reconcile";
 import type { InvoiceRecord } from "../types";
 
-export type ImportSource = "tally" | "busy" | "template" | "generic";
+export type ImportSource = "tally" | "busy" | "template" | "generic" | "gstr2b_portal";
 
 export type ImportField =
   | "gstin"
@@ -46,6 +46,8 @@ export interface ImportDetection {
   /** normalised header cells */
   headers: string[];
   columns: ColumnMap;
+  /** header rows used (2 for the GST portal's merged header); data starts after headerRowIndex */
+  headerRowCount?: number;
 }
 
 /** How many leading rows to scan for the header row. */
@@ -255,7 +257,7 @@ export function normalizeHeader(raw: unknown): string {
     .trim();
 }
 
-function cellText(v: unknown): string {
+export function cellText(v: unknown): string {
   if (v == null) return "";
   if (v instanceof Date) return isNaN(v.getTime()) ? "" : v.toISOString();
   return String(v).trim();
@@ -334,6 +336,16 @@ export function mapColumns(headers: string[]): ColumnMap {
     }
   }
   return map;
+}
+
+/** True when a normalised header maps to an internal field (exact synonym or per-ledger tax column). */
+export function isKnownHeader(h: string): boolean {
+  return (exactField(h) ?? fuzzyTaxField(h)) !== null;
+}
+
+/** True when a normalised header is an exact synonym (no fuzzy matching). */
+export function isExactHeader(h: string): boolean {
+  return exactField(h) !== null;
 }
 
 function headerScore(headers: string[]): number {
@@ -544,11 +556,13 @@ export function isTotalRow(row: unknown[], columns: ColumnMap): boolean {
  * Convert the data rows below the detected header into InvoiceRecords.
  * Skips blank rows, repeated header rows (page breaks), total/subtotal rows,
  * cancelled vouchers and rows with neither a GSTIN nor an invoice/voucher number.
+ * `decorate` may enrich a record from its source row, or return null to drop it.
  */
 export function mapRegisterRows(
   rows: unknown[][],
   detection: ImportDetection,
-  recordSource: "books" | "gstr2b"
+  recordSource: "books" | "gstr2b",
+  decorate?: (record: InvoiceRecord, row: unknown[]) => InvoiceRecord | null
 ): InvoiceRecord[] {
   const { columns, headerRowIndex, headers } = detection;
   const out: InvoiceRecord[] = [];
@@ -572,7 +586,7 @@ export function mapRegisterRows(
     let totalTax = round2(sum(row, columns.totalTax));
     if (!totalTax) totalTax = round2(igst + cgst + sgst);
 
-    out.push({
+    const record: InvoiceRecord = {
       gstin: gstin || "UNKNOWN",
       vendorName: vendorRaw || "Unknown Vendor",
       invoiceNumber: normalizeInvoiceNumber(rawInv) || "UNKNOWN",
@@ -584,7 +598,9 @@ export function mapRegisterRows(
       sgst,
       totalTax,
       source: recordSource,
-    });
+    };
+    const final = decorate ? decorate(record, row) : record;
+    if (final) out.push(final);
   }
   return out;
 }
@@ -593,5 +609,6 @@ export function mapRegisterRows(
 export function describeImportSource(source: ImportSource): string | null {
   if (source === "tally") return "Detected Tally export";
   if (source === "busy") return "Detected Busy export";
+  if (source === "gstr2b_portal") return "Detected GSTR-2B (portal) export";
   return null;
 }

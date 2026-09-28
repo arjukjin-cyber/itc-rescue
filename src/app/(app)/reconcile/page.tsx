@@ -83,8 +83,12 @@ export default function ReconcilePage() {
     try {
       const booksParsed = await parseInvoiceFileDetailed(books, "books");
       const booksInv = booksParsed.invoices;
-      setBooksNote(describeImportSource(booksParsed.detected));
-      const gstrInv = await parseInvoiceFile(gstr, "gstr2b");
+      const gstrParsed = await parseInvoiceFileDetailed(gstr, "gstr2b");
+      const gstrInv = gstrParsed.invoices;
+      const notes = [booksParsed.detected, gstrParsed.detected]
+        .map(describeImportSource)
+        .filter(Boolean);
+      setBooksNote(notes.length ? notes.join(" · ") : null);
       if (!booksInv.length || !gstrInv.length) {
         setError(
           "Could not parse invoices. Check column headers (GSTIN, Invoice Number, Invoice Date, tax columns)."

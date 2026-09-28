@@ -18,6 +18,8 @@ export interface InvoiceRecord {
   totalTax: number;
   source: "books" | "gstr2b";
   rawInvoiceNumber?: string;
+  /** GST portal GSTR-2B "ITC Availability" (Yes/No); undefined when the file has no such column */
+  itcAvailable?: boolean;
 }
 
 export interface MatchResult {

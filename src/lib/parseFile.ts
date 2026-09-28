@@ -7,13 +7,18 @@ import {
   mapRegisterRows,
   type ImportSource,
 } from "./importers/tally-busy";
+import {
+  detectGstr2bPortal,
+  mapGstr2bPortalRows,
+  pickGstr2bSheet,
+} from "./importers/gstr2b-portal";
 import type { InvoiceRecord } from "./types";
 
 export type { ImportSource } from "./importers/tally-busy";
 
 export interface ParsedInvoiceFile {
   invoices: InvoiceRecord[];
-  /** Which export format was recognised: "tally" | "busy" | "template" | "generic" */
+  /** Which export format was recognised: "tally" | "busy" | "template" | "generic" | "gstr2b_portal" */
   detected: ImportSource;
   /** 0-based row of the header that was used */
   headerRowIndex: number;
@@ -38,6 +43,8 @@ export async function parseInvoiceFile(
  * - Tally / Busy exports, or any sheet whose header sits below title rows ->
  *   importers/tally-busy (header-row search, synonym mapping, total-row skipping,
  *   date/amount normalisation).
+ * - GST portal GSTR-2B workbook -> the B2B sheet is picked automatically and read
+ *   with importers/gstr2b-portal (two-row merged header).
  */
 export async function parseInvoiceFileDetailed(
   file: File,
@@ -58,7 +65,8 @@ export async function parseInvoiceFileDetailed(
   } else {
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: "array", cellDates: true, raw: false });
-    sheet = wb.Sheets[wb.SheetNames[0]];
+    // GST portal GSTR-2B workbooks start with "Read me"; invoices live in "B2B".
+    sheet = wb.Sheets[pickGstr2bSheet(wb.SheetNames) ?? wb.SheetNames[0]];
     rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
       defval: "",
       raw: false,
@@ -72,6 +80,16 @@ export async function parseInvoiceFileDetailed(
     raw: true,
     blankrows: true, // keep row indexes aligned with the sheet
   });
+
+  const portal = detectGstr2bPortal(grid);
+  if (portal) {
+    return {
+      invoices: mapGstr2bPortalRows(grid, portal, source),
+      detected: "gstr2b_portal",
+      headerRowIndex: portal.headerRowIndex,
+    };
+  }
+
   const detection = detectImport(grid);
 
   const useLegacy =
