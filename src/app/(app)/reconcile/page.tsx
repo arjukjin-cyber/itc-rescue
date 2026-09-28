@@ -14,7 +14,8 @@ import { Toast, useToast } from "@/components/Toast";
 import { getSettings, setTrialFromServer } from "@/lib/storage";
 import { useRouter } from "next/navigation";
 import { fetchChaseItems, fetchReconState, persistRecon } from "@/lib/api-data";
-import { parseInvoiceFile, fetchSampleAsFile } from "@/lib/parseFile";
+import { parseInvoiceFile, parseInvoiceFileDetailed, fetchSampleAsFile } from "@/lib/parseFile";
+import { describeImportSource } from "@/lib/importers/tally-busy";
 import { reconcile } from "@/lib/reconcile";
 import type { MatchResult, ReconSummary } from "@/lib/types";
 
@@ -34,6 +35,7 @@ export default function ReconcilePage() {
   const [filter, setFilter] = useState<TabKey>("action");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [booksNote, setBooksNote] = useState<string | null>(null);
   /** 402 toast — set only by a real run attempt (server still enforces the gate). */
   const [paywall, setPaywall] = useState<string | null>(null);
   /** Trial used → locked "Run again · Upgrade" button (no banner above results). */
@@ -112,8 +114,11 @@ export default function ReconcilePage() {
     }
 
     setLoading(true);
+    setBooksNote(null);
     try {
-      const booksInv = await parseInvoiceFile(books, "books");
+      const booksParsed = await parseInvoiceFileDetailed(books, "books");
+      const booksInv = booksParsed.invoices;
+      setBooksNote(describeImportSource(booksParsed.detected));
       const gstrInv = await parseInvoiceFile(gstr, "gstr2b");
       if (!booksInv.length || !gstrInv.length) {
         setError(
@@ -165,6 +170,7 @@ export default function ReconcilePage() {
       return;
     }
     setLoading(true);
+    setBooksNote(null);
     try {
       const books = await fetchSampleAsFile(
         "/samples/purchase-register.csv",
@@ -299,12 +305,14 @@ export default function ReconcilePage() {
           {error}
         </p>
       )}
+      {booksNote && (!summary || showUpload) && <ImportNote note={booksNote} />}
 
       {summary && (
         <>
           {!showUpload && (
             <div className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2">
               <FileName name={booksFile?.name} fallback="Purchase register" />
+              {booksNote && <ImportNote note={booksNote} />}
               <FileName name={gstrFile?.name} fallback="GSTR-2B" />
               <span className="muted">
                 {summary.totalBooks} books · {summary.totalGstr2b} in 2B
@@ -406,6 +414,16 @@ function LockedRun({ label, small = false }: { label: string; small?: boolean })
     >
       <Lock aria-hidden /> {label}
     </Link>
+  );
+}
+
+/** PR #24 import-source line ("Detected Tally export"), v1 style: muted text + ok check. */
+function ImportNote({ note }: { note: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+      <CircleCheck size={13} strokeWidth={1.75} style={{ color: "var(--color-ok)" }} aria-hidden />
+      {note}
+    </span>
   );
 }
 
