@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CircleCheck, Inbox, Send, SquareKanban, Upload } from "lucide-react";
+import { CircleCheck, Clock, Inbox, Send, SquareKanban, Upload } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { KpiStrip } from "@/components/KpiStrip";
 import { ActionTable, ResultTabs, atRiskTotal, filterByTab, useChaseRows, type TabKey } from "@/components/RiskTable";
 import { Toast, useToast } from "@/components/Toast";
 import { getSettings } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
-import { getGstr3bDue } from "@/lib/filing";
+import { getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
 import { formatIstTimestamp } from "@/lib/format";
 import { getLastReconAt } from "@/lib/ui-events";
 import type { MatchResult, ReconSummary } from "@/lib/types";
@@ -47,6 +47,12 @@ export default function DashboardPage() {
     };
   }, [router, setChase]);
 
+  // Sidebar "Filing" block links to /dashboard#filing; the cell only exists after load.
+  useEffect(() => {
+    if (!loaded || window.location.hash !== "#filing") return;
+    document.getElementById("filing")?.scrollIntoView({ block: "center" });
+  }, [loaded]);
+
   const rows = useMemo(() => filterByTab(results, tab), [results, tab]);
   const due = useMemo(() => getGstr3bDue(atRiskTotal(results)), [results]);
 
@@ -60,7 +66,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (!summary) return <DashboardEmpty />;
+  if (!summary) return <DashboardEmpty due={due} />;
 
   const chaseLabel = `Chase ${pendingCount} vendor${pendingCount === 1 ? "" : "s"} on WhatsApp`;
   const meta = [
@@ -142,7 +148,7 @@ export default function DashboardPage() {
 
 const STEPS = ["Purchase register", "GSTR-2B", "Recon run", "Chase vendors"];
 
-function DashboardEmpty() {
+function DashboardEmpty({ due }: { due: Gstr3bDue }) {
   return (
     <div className="space-y-3">
       <h1 className="page-title">Dashboard</h1>
@@ -161,6 +167,12 @@ function DashboardEmpty() {
             {s}
           </span>
         ))}
+        <div className="flex-1" />
+        <span id="filing" className="filing-target inline-flex items-center gap-1.5 rounded px-1 muted">
+          <Clock size={13} strokeWidth={1.75} aria-hidden />
+          GSTR-3B due {due.dueLabel} ·{" "}
+          {due.daysLeft < 0 ? `${Math.abs(due.daysLeft)} days overdue` : `${due.daysLeft} day${due.daysLeft === 1 ? "" : "s"}`}
+        </span>
       </div>
     </div>
   );

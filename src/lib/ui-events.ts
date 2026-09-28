@@ -6,6 +6,8 @@
  */
 export const CHASE_COUNT_EVENT = "itc:chase-count";
 export const TRIAL_EVENT = "itc:trial-changed";
+/** A new recon was saved: the sidebar re-reads ITC view counts + GSTR-3B ₹ blocked. */
+export const RECON_EVENT = "itc:recon-changed";
 
 export function emitChaseCount(pending: number) {
   if (typeof window === "undefined") return;
@@ -15,6 +17,11 @@ export function emitChaseCount(pending: number) {
 export function emitTrialChanged() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(TRIAL_EVENT));
+}
+
+export function emitReconChanged() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(RECON_EVENT));
 }
 
 /* "Last recon" stamp. GET /api/recon does not return the run's created_at, so we

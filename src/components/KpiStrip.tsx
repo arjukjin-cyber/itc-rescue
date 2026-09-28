@@ -66,7 +66,7 @@ export function KpiStrip({
         </div>
       </div>
       {due && (
-        <div className="kpi">
+        <div className="kpi" id="filing">
           <div className="kpi-l">
             <Clock size={13} strokeWidth={1.75} aria-hidden />
             GSTR-3B due

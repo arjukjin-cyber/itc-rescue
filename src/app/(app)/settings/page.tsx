@@ -82,10 +82,10 @@ export default function SettingsPage() {
         </button>
       </form>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div id="billing" className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-2">
           <CreditCard size={18} className="text-accent" />
-          <h2 className="font-semibold text-slate-900">Plan</h2>
+          <h2 className="font-semibold text-slate-900">Plan &amp; billing</h2>
         </div>
         <p className="mt-2 text-sm" style={{ color: "var(--color-text-secondary)" }}>
           Current plan:{" "}
