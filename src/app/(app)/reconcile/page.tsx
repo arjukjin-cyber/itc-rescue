@@ -11,7 +11,8 @@ import { StatCard } from "@/components/StatCard";
 import { isPaywalled, setTrialFromServer } from "@/lib/storage";
 import { useRouter } from "next/navigation";
 import { fetchReconState, persistRecon } from "@/lib/api-data";
-import { parseInvoiceFile, fetchSampleAsFile } from "@/lib/parseFile";
+import { parseInvoiceFile, parseInvoiceFileDetailed, fetchSampleAsFile } from "@/lib/parseFile";
+import { describeImportSource } from "@/lib/importers/tally-busy";
 import { formatINR, formatINRPrecise, reconcile } from "@/lib/reconcile";
 import type { MatchCategory, MatchResult, ReconSummary } from "@/lib/types";
 
@@ -32,6 +33,7 @@ export default function ReconcilePage() {
   const [filter, setFilter] = useState<MatchCategory | "all">("all");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [booksNote, setBooksNote] = useState<string | null>(null);
   const [paywall, setPaywall] = useState<string | null>(null);
   const [trialUsed, setTrialUsed] = useState(false);
 
@@ -77,8 +79,11 @@ export default function ReconcilePage() {
     }
 
     setLoading(true);
+    setBooksNote(null);
     try {
-      const booksInv = await parseInvoiceFile(books, "books");
+      const booksParsed = await parseInvoiceFileDetailed(books, "books");
+      const booksInv = booksParsed.invoices;
+      setBooksNote(describeImportSource(booksParsed.detected));
       const gstrInv = await parseInvoiceFile(gstr, "gstr2b");
       if (!booksInv.length || !gstrInv.length) {
         setError(
@@ -135,6 +140,7 @@ export default function ReconcilePage() {
       return;
     }
     setLoading(true);
+    setBooksNote(null);
     try {
       const books = await fetchSampleAsFile(
         "/samples/purchase-register.csv",
@@ -266,6 +272,7 @@ export default function ReconcilePage() {
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {booksNote && <p className="text-xs text-slate-500">{booksNote}</p>}
 
       {summary && (
         <>

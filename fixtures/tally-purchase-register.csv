@@ -1,0 +1,13 @@
+Sharma Trading Co Pvt Ltd
+"Plot 12, MIDC Bhosari, Pune"
+Purchase Register
+1-Apr-2025 to 30-Apr-2025
+
+Date,Particulars,Vch Type,Vch No.,Supplier Invoice No.,Supplier Invoice Date,Party GSTIN/UIN,Taxable Value,Integrated Tax Amount,Central Tax Amount,State Tax Amount,Gross Total
+1-Apr-2025,TechParts India Pvt Ltd,Purchase,1,INV/24-25/001,1-Apr-2025,27AABCT1332L1ZV,"1,00,000.00",,"9,000.00","9,000.00","1,18,000.00"
+3-Apr-2025,Bengaluru Steel Traders,Purchase,2,BST#0881,02/04/2025,29AADCS1234A1Z5,"2,50,000.00","45,000.00",,,"2,95,000.00"
+
+5-Apr-2025,(cancelled),Purchase,3,,,,,,,,
+8-Apr-2025,Delhi Pack Solutions,Purchase,4,DPS-4491,45755,07AAACP0505B1ZQ,"50,000.00",,"4,500.00","4,500.00","59,000.00"
+12-Apr-2025,Local Hardware Store,Purchase,5,,,,"10,000.00",,900.00,900.00,"11,800.00"
+,Grand Total,,,,,,"4,10,000.00","45,000.00","14,400.00","14,400.00","4,83,800.00"
