@@ -5,12 +5,12 @@ import type {
   ReconSummary,
 } from "./types";
 
-/** Normalize invoice numbers: strip spaces, dashes, slashes; uppercase */
+/** Normalize invoice numbers: strip spaces, dashes, slashes, dots, underscores, #; uppercase */
 export function normalizeInvoiceNumber(raw: string): string {
   return String(raw || "")
     .trim()
     .toUpperCase()
-    .replace(/[\s\-\/\._]/g, "");
+    .replace(/[\s\-\/\._#]/g, "");
 }
 
 export function normalizeGstin(raw: string): string {

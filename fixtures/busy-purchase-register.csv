@@ -1,0 +1,11 @@
+M/s Sharma Trading Co Pvt Ltd
+GST Purchase Register
+From 01-04-2025 To 30-04-2025
+,,,,,,,,,,,
+S.No.,Date,Vch No.,Party Name,GSTIN,Bill No.,Bill Date,Taxable Amt,IGST,CGST,SGST,Net Amt
+1,01-04-2025,P/001,TechParts India Pvt Ltd,27AABCT1332L1ZV,INV/24-25/001,01/04/2025,"1,00,000.00 Dr",0.00,"9,000.00 Dr","9,000.00 Dr","1,18,000.00 Cr"
+2,03-04-2025,P/002,Bengaluru Steel Traders,29AADCS1234A1Z5,BST#0881,1-Apr-2025,"2,50,000.00 Dr","45,000.00 Dr",0.00,0.00,"2,95,000.00 Cr"
+,,,,,,,,,,,
+3,09-04-2025,P/003,Gujarat Polymers Co,24aabcm9876c1zx,GP-2026-221,08.04.2025,"1,75,000.00","31,500.00 Dr",-,-,"2,06,500.00 Cr"
+,,,Sub Total,,,,"5,25,000.00 Dr","76,500.00 Dr","9,000.00 Dr","9,000.00 Dr","6,19,500.00 Cr"
+,,,Grand Total,,,,"5,25,000.00 Dr","76,500.00 Dr","9,000.00 Dr","9,000.00 Dr","6,19,500.00 Cr"

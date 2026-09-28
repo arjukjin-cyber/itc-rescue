@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "smoke:dod": "node scripts/dod-persist-smoke.mjs",
+    "test:importers": "npx --yes tsx scripts/test-importers.ts",
     "check:vendors": "npx -y tsx scripts/vendors-check.ts"
   },
   "dependencies": {
