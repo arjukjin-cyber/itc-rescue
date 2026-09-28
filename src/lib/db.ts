@@ -359,13 +359,15 @@ export async function saveReconForUser(
 }
 
 export async function getLatestReconForUser(userId: string): Promise<{
+  id: string;
+  createdAt: string;
   results: MatchResult[];
   summary: ReconSummary;
 } | null> {
   await ensureSchema();
   const sql = getSql();
   const rows = await sql`
-    SELECT summary, results FROM recon_runs
+    SELECT id, created_at, summary, results FROM recon_runs
     WHERE user_id = ${userId}
     ORDER BY created_at DESC
     LIMIT 1
@@ -373,6 +375,8 @@ export async function getLatestReconForUser(userId: string): Promise<{
   if (!rows.length) return null;
   const row = rows[0] as Record<string, unknown>;
   return {
+    id: String(row.id),
+    createdAt: new Date(row.created_at as string).toISOString(),
     summary: row.summary as ReconSummary,
     results: row.results as MatchResult[],
   };
