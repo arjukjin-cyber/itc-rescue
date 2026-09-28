@@ -20,6 +20,7 @@
  * Pure: works on a row grid (`sheet_to_json(..., { header: 1 })`), no XLSX/DOM.
  */
 
+import { mergeInvoiceRows } from "../reconcile";
 import type { InvoiceRecord } from "../types";
 import {
   cellText,
@@ -131,10 +132,6 @@ export function detectGstr2bPortal(rows: unknown[][]): ImportDetection | null {
   return null;
 }
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
 function parseYesNo(v: unknown): boolean | undefined {
   const t = cellText(v).toLowerCase();
   if (t === "yes" || t === "y") return true;
@@ -146,7 +143,8 @@ function parseYesNo(v: unknown): boolean | undefined {
  * Convert B2B data rows into InvoiceRecords.
  * - keeps "ITC Availability" = No rows (flagged via `itcAvailable: false`)
  * - drops GSTR-2A style "<invoice>-Total" summary rows
- * - merges the per-tax-rate rows of one invoice (same GSTIN + invoice no + date)
+ * - merges the per-tax-rate rows of one invoice (GSTIN + normalised invoice no,
+ *   the same key reconcile() uses for books)
  */
 export function mapGstr2bPortalRows(
   rows: unknown[][],
@@ -160,22 +158,6 @@ export function mapGstr2bPortalRows(
     return itc === undefined ? rec : { ...rec, itcAvailable: itc };
   });
 
-  const merged = new Map<string, InvoiceRecord>();
-  for (const rec of records) {
-    const key = `${rec.gstin}|${rec.invoiceNumber}|${rec.invoiceDate}`;
-    const prev = merged.get(key);
-    if (!prev) {
-      merged.set(key, rec);
-      continue;
-    }
-    prev.taxableValue = round2(prev.taxableValue + rec.taxableValue);
-    prev.igst = round2(prev.igst + rec.igst);
-    prev.cgst = round2(prev.cgst + rec.cgst);
-    prev.sgst = round2(prev.sgst + rec.sgst);
-    prev.totalTax = round2(prev.totalTax + rec.totalTax);
-    if (prev.itcAvailable !== undefined || rec.itcAvailable !== undefined) {
-      prev.itcAvailable = (prev.itcAvailable ?? true) && (rec.itcAvailable ?? true);
-    }
-  }
-  return [...merged.values()];
+  // Same key as the books side (GSTIN + normalised invoice no, no date).
+  return mergeInvoiceRows(records).records;
 }

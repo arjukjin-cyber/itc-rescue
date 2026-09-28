@@ -10,7 +10,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as XLSX from "xlsx";
 import { parseInvoiceFileDetailed } from "../src/lib/parseFile";
-import { normalizeInvoiceNumber, reconcile, rowToInvoice } from "../src/lib/reconcile";
+import {
+  DUPLICATE_BOOKS_NOTE,
+  deriveGstRate,
+  mergeInvoiceRows,
+  normalizeInvoiceNumber,
+  reconcile,
+  rowToInvoice,
+} from "../src/lib/reconcile";
 import {
   detectSourceFromHeaders,
   findHeaderRow,
@@ -541,6 +548,102 @@ async function main() {
     );
     assert.equal(summary.matched, 2);
     assert.equal(summary.itcAtRisk, 0);
+  });
+
+  console.log("Invoice merge (books + 2B)");
+
+  const inv = (
+    source: "books" | "gstr2b",
+    raw: string,
+    date: string,
+    taxable: number,
+    cgst: number,
+    sgst: number,
+    igst = 0
+  ): InvoiceRecord => ({
+    gstin: "07AAACP0505B1ZQ",
+    vendorName: "Delhi Pack Solutions",
+    rawInvoiceNumber: raw,
+    invoiceNumber: normalizeInvoiceNumber(raw),
+    invoiceDate: date,
+    taxableValue: taxable,
+    igst,
+    cgst,
+    sgst,
+    totalTax: igst + cgst + sgst,
+    source,
+  });
+
+  await test("deriveGstRate snaps tax/taxable to a standard GST rate", () => {
+    assert.equal(deriveGstRate(50000, 9000), 18);
+    assert.equal(deriveGstRate(10000, 1200), 12);
+    assert.equal(deriveGstRate(1000, 49.9), 5);
+    assert.equal(deriveGstRate(0, 0), 0);
+  });
+
+  await test("mergeInvoiceRows keys on GSTIN + normalised invoice no, keeps first raw no + date", () => {
+    const { records, possibleDuplicates } = mergeInvoiceRows([
+      inv("books", "DPS/4491", "2025-04-08", 50000, 4500, 4500),
+      inv("books", "DPS-4491", "2025-04-09", 10000, 600, 600), // same key, other date
+      inv("books", "DPS-4492", "2025-04-08", 1000, 90, 90),
+    ]);
+    assert.equal(records.length, 2);
+    assert.deepEqual(
+      [records[0].rawInvoiceNumber, records[0].invoiceDate, records[0].taxableValue, records[0].cgst, records[0].sgst, records[0].totalTax],
+      ["DPS/4491", "2025-04-08", 60000, 5100, 5100, 10200]
+    );
+    assert.equal(possibleDuplicates.size, 0);
+  });
+
+  await test("(a) split rates: books 18%+12% rows vs 2B 18%+12% rows -> matched, summed, no duplicate note", () => {
+    const books = [
+      inv("books", "DPS-4491", "2025-04-08", 50000, 4500, 4500),
+      inv("books", "DPS-4491", "2025-04-08", 10000, 600, 600),
+    ];
+    const g2b = [
+      inv("gstr2b", "DPS/4491", "2025-04-08", 50000, 4500, 4500),
+      inv("gstr2b", "DPS/4491", "2025-04-08", 10000, 600, 600),
+    ];
+    const { results, summary } = reconcile(books, g2b);
+    assert.equal(results.length, 1);
+    const r = results[0];
+    assert.equal(r.category, "matched");
+    assert.equal(r.invoiceNumber, "DPS-4491"); // first books row's raw number
+    assert.equal(r.booksTax, 10200);
+    assert.equal(r.gstr2bTax, 10200);
+    assert.equal(r.books?.taxableValue, 60000);
+    assert.equal(r.gstr2b?.taxableValue, 60000);
+    assert.equal(r.notes ?? "", "");
+    assert.deepEqual([summary.matched, summary.valueMismatch, summary.unclaimed, summary.itcAtRisk], [1, 0, 0, 0]);
+  });
+
+  await test("(b) duplicate: same invoice twice in books (same rate + amounts) vs once in 2B -> value_mismatch + note", () => {
+    const books = [
+      inv("books", "GP-2026-221", "2025-04-12", 175000, 0, 0, 31500),
+      inv("books", "GP-2026-221", "2025-04-12", 175000, 0, 0, 31500),
+    ];
+    const g2b = [inv("gstr2b", "GP-2026-221", "2025-04-12", 175000, 0, 0, 31500)];
+    const { results, summary } = reconcile(books, g2b);
+    assert.equal(results.length, 1);
+    const r = results[0];
+    assert.equal(r.category, "value_mismatch");
+    assert.equal(r.booksTax, 63000); // summed books tax
+    assert.equal(r.gstr2bTax, 31500);
+    assert.equal(r.taxDiff, 31500);
+    assert.ok(r.notes?.includes(DUPLICATE_BOOKS_NOTE), r.notes);
+    assert.equal(r.notes, `${DUPLICATE_BOOKS_NOTE} · Tax differs by ₹31500.00`);
+    assert.deepEqual([summary.matched, summary.valueMismatch, summary.unclaimed], [0, 1, 0]);
+  });
+
+  await test("duplicate note also lands on an ITC-at-risk invoice (books only)", () => {
+    const books = [
+      inv("books", "X-1", "2025-04-12", 1000, 90, 90),
+      inv("books", "X-1", "2025-04-12", 1000, 90, 90),
+    ];
+    const { results } = reconcile(books, []);
+    assert.equal(results[0].category, "itc_at_risk");
+    assert.equal(results[0].booksTax, 360);
+    assert.ok(results[0].notes?.startsWith(DUPLICATE_BOOKS_NOTE));
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

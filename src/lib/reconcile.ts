@@ -146,6 +146,90 @@ export function rowToInvoice(
   };
 }
 
+/** Standard GST rates (%) used to classify a row's effective rate. */
+const GST_RATES = [0, 0.1, 0.25, 1, 1.5, 3, 5, 6, 7.5, 12, 18, 28];
+
+/** Effective GST rate of a row (tax / taxable), snapped to the nearest standard rate. */
+export function deriveGstRate(taxable: number, tax: number): number {
+  if (!taxable) return 0;
+  const pct = (Math.abs(tax) / Math.abs(taxable)) * 100;
+  return GST_RATES.reduce((best, r) => (Math.abs(r - pct) < Math.abs(best - pct) ? r : best), 0);
+}
+
+export const DUPLICATE_BOOKS_NOTE = "Possible duplicate entry in books";
+
+/**
+ * Merge key: GSTIN + normalised invoice number (no date).
+ * Rows without an invoice number are never merged; unregistered suppliers
+ * (GSTIN "UNKNOWN") are additionally keyed on vendor name.
+ */
+export function invoiceMergeKey(inv: InvoiceRecord): string | null {
+  const no = normalizeInvoiceNumber(inv.invoiceNumber);
+  if (!no || no === "UNKNOWN") return null;
+  const party =
+    inv.gstin && inv.gstin !== "UNKNOWN"
+      ? inv.gstin
+      : `UNKNOWN:${String(inv.vendorName || "").trim().toUpperCase()}`;
+  return `${party}|${no}`;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Merge rows that belong to one invoice (e.g. one row per tax rate) into a single
+ * record: taxable value, IGST, CGST, SGST and total tax are summed; the FIRST row's
+ * raw invoice number, date and vendor are kept for display.
+ *
+ * `possibleDuplicates` holds merged records where 2+ source rows had the same
+ * effective rate AND identical taxable/tax amounts (they are still summed).
+ */
+export function mergeInvoiceRows(rows: InvoiceRecord[]): {
+  records: InvoiceRecord[];
+  possibleDuplicates: Set<InvoiceRecord>;
+} {
+  const records: InvoiceRecord[] = [];
+  const byKey = new Map<string, { merged: InvoiceRecord; seen: Set<string>; dup: boolean }>();
+
+  for (const row of rows) {
+    const key = invoiceMergeKey(row);
+    if (!key) {
+      records.push({ ...row });
+      continue;
+    }
+    const rate = deriveGstRate(row.taxableValue, row.totalTax);
+    const sig = [rate, row.taxableValue, row.igst, row.cgst, row.sgst, row.totalTax].join("|");
+    const group = byKey.get(key);
+    if (!group) {
+      const merged = { ...row };
+      byKey.set(key, { merged, seen: new Set([sig]), dup: false });
+      records.push(merged);
+      continue;
+    }
+    const m = group.merged;
+    if (group.seen.has(sig)) group.dup = true;
+    group.seen.add(sig);
+    m.taxableValue = round2(m.taxableValue + row.taxableValue);
+    m.igst = round2(m.igst + row.igst);
+    m.cgst = round2(m.cgst + row.cgst);
+    m.sgst = round2(m.sgst + row.sgst);
+    m.totalTax = round2(m.totalTax + row.totalTax);
+    if (m.itcAvailable !== undefined || row.itcAvailable !== undefined) {
+      m.itcAvailable = (m.itcAvailable ?? true) && (row.itcAvailable ?? true);
+    }
+  }
+
+  const possibleDuplicates = new Set<InvoiceRecord>();
+  for (const g of byKey.values()) if (g.dup) possibleDuplicates.add(g.merged);
+  return { records, possibleDuplicates };
+}
+
+/** Prepend so the note stays visible in the truncated Notes cell on /reconcile. */
+function withNote(existing: string | undefined, note: string): string {
+  return existing ? `${note} · ${existing}` : note;
+}
+
 function makeId(parts: string[]): string {
   return parts.join("|");
 }
@@ -154,13 +238,18 @@ const TAX_TOLERANCE = 1; // ₹1 tolerance for rounding
 
 /**
  * Match books vs GSTR-2B:
+ * - First, rows of the same invoice (GSTIN + normalised invoice#) are merged on
+ *   each side (see mergeInvoiceRows); identical repeated books rows get a
+ *   "Possible duplicate entry in books" note.
  * - Key: GSTIN + normalized invoice# + date (±1 day)
  * - Categories: matched, itc_at_risk (books only), unclaimed (2B only), value_mismatch
  */
 export function reconcile(
-  books: InvoiceRecord[],
-  gstr2b: InvoiceRecord[]
+  booksRows: InvoiceRecord[],
+  gstr2bRows: InvoiceRecord[]
 ): { results: MatchResult[]; summary: ReconSummary } {
+  const { records: books, possibleDuplicates } = mergeInvoiceRows(booksRows);
+  const { records: gstr2b } = mergeInvoiceRows(gstr2bRows);
   const used2b = new Set<number>();
   const results: MatchResult[] = [];
 
@@ -218,6 +307,12 @@ export function reconcile(
         taxDiff: book.totalTax,
         notes: "In books but missing from GSTR-2B — ITC claim may be blocked",
       });
+    }
+  }
+
+  for (const r of results) {
+    if (r.books && possibleDuplicates.has(r.books)) {
+      r.notes = withNote(r.notes, DUPLICATE_BOOKS_NOTE);
     }
   }
 

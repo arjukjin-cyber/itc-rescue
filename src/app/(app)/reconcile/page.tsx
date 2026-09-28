@@ -407,6 +407,7 @@ export default function ReconcilePage() {
                       <td
                         className="max-w-[200px] truncate px-4 py-3 text-xs"
                         style={{ color: "var(--color-text-muted)" }}
+                        title={r.notes || undefined}
                       >
                         {r.notes || "—"}
                       </td>
