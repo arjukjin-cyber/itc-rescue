@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as XLSX from "xlsx";
 import { parseInvoiceFileDetailed } from "../src/lib/parseFile";
-import { rowToInvoice } from "../src/lib/reconcile";
+import { normalizeInvoiceNumber, reconcile, rowToInvoice } from "../src/lib/reconcile";
 import {
   detectSourceFromHeaders,
   findHeaderRow,
@@ -172,7 +172,7 @@ async function main() {
         gstin: "29AADCS1234A1Z5",
         vendorName: "Bengaluru Steel Traders",
         rawInvoiceNumber: "BST#0881",
-        invoiceNumber: "BST#0881",
+        invoiceNumber: "BST0881",
         invoiceDate: "2025-04-02", // Supplier Invoice Date wins over voucher Date
         taxableValue: 250000,
         igst: 45000,
@@ -229,7 +229,7 @@ async function main() {
         gstin: "29AADCS1234A1Z5",
         vendorName: "Bengaluru Steel Traders",
         rawInvoiceNumber: "BST#0881",
-        invoiceNumber: "BST#0881",
+        invoiceNumber: "BST0881",
         invoiceDate: "2025-04-01",
         taxableValue: 250000,
         igst: 45000,
@@ -262,7 +262,7 @@ async function main() {
       res.invoices.map((i) => [i.rawInvoiceNumber, i.invoiceNumber, i.invoiceDate, i.totalTax]),
       [
         ["INV/24-25/001", "INV2425001", "2025-04-01", 18000],
-        ["BST#0881", "BST#0881", "2025-04-02", 45000],
+        ["BST#0881", "BST0881", "2025-04-02", 45000],
         ["DPS-4491", "DPS4491", "2025-04-07", 9000],
       ]
     );
@@ -319,6 +319,61 @@ async function main() {
         ["27AABCT1332L1ZV", "INV/24-25/001", "2025-04-01", 110000, 9600, 9600, 0, 19200],
         ["07AAACP0505B1ZQ", "4491", "2025-04-03", 50000, 4500, 4500, 0, 9000],
       ]
+    );
+  });
+
+  console.log("Reconcile");
+
+  await test("normalizeInvoiceNumber strips # (and / - . _ spaces)", () => {
+    assert.equal(normalizeInvoiceNumber("BST#0881"), "BST0881");
+    assert.equal(normalizeInvoiceNumber("BST#0881"), normalizeInvoiceNumber("BST0881"));
+    assert.equal(normalizeInvoiceNumber(" inv/24-25/001 "), "INV2425001");
+    assert.equal(normalizeInvoiceNumber("A.B_C #1"), "ABC1");
+  });
+
+  await test("BST#0881 in books matches BST0881 in GSTR-2B (raw number kept for display)", () => {
+    const base = {
+      gstin: "29AADCS1234A1Z5",
+      vendorName: "Bengaluru Steel Traders",
+      invoiceDate: "2025-04-02",
+      taxableValue: 250000,
+      igst: 45000,
+      cgst: 0,
+      sgst: 0,
+      totalTax: 45000,
+    };
+    const book: InvoiceRecord = {
+      ...base,
+      source: "books",
+      rawInvoiceNumber: "BST#0881",
+      invoiceNumber: normalizeInvoiceNumber("BST#0881"),
+    };
+    const g2b: InvoiceRecord = {
+      ...base,
+      source: "gstr2b",
+      rawInvoiceNumber: "BST0881",
+      invoiceNumber: normalizeInvoiceNumber("BST0881"),
+    };
+    const { results, summary } = reconcile([book], [g2b]);
+    assert.equal(results.length, 1);
+    assert.equal(results[0].category, "matched");
+    assert.equal(results[0].invoiceNumber, "BST#0881");
+    assert.equal(summary.matched, 1);
+    assert.equal(summary.itcAtRisk, 0);
+    assert.equal(summary.unclaimed, 0);
+  });
+
+  await test("public/samples reconcile to 8 matched / 3 at-risk (₹86,400) / 1 mismatch / 1 unclaimed", async () => {
+    const books = await parseInvoiceFileDetailed(csvFile("public/samples/purchase-register.csv"), "books");
+    const g2b = await parseInvoiceFileDetailed(csvFile("public/samples/gstr-2b.csv"), "gstr2b");
+    const { summary } = reconcile(books.invoices, g2b.invoices);
+    assert.equal(summary.matched, 8, "matched");
+    assert.equal(summary.itcAtRisk, 3, "itc_at_risk");
+    assert.equal(summary.itcAtRiskAmount, 86400, "itc_at_risk amount");
+    assert.equal(summary.valueMismatch, 1, "value_mismatch");
+    assert.equal(summary.unclaimed, 1, "unclaimed");
+    console.log(
+      `       samples: matched=${summary.matched} itc_at_risk=${summary.itcAtRisk} (₹${summary.itcAtRiskAmount.toLocaleString("en-IN")}) value_mismatch=${summary.valueMismatch} unclaimed=${summary.unclaimed}`
     );
   });
 
