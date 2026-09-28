@@ -17,6 +17,7 @@
  */
 
 import { normalizeGstin, normalizeInvoiceNumber } from "../reconcile";
+import { PHONE_HEADERS, normalizeIndianMobile } from "../phone";
 import type { InvoiceRecord } from "../types";
 
 export type ImportSource = "tally" | "busy" | "template" | "generic";
@@ -552,6 +553,7 @@ export function mapRegisterRows(
 ): InvoiceRecord[] {
   const { columns, headerRowIndex, headers } = detection;
   const out: InvoiceRecord[] = [];
+  const phoneCol = PHONE_HEADERS.map((h) => headers.indexOf(h)).find((i) => i >= 0) ?? -1;
 
   for (let r = headerRowIndex + 1; r < rows.length; r++) {
     const row = rows[r];
@@ -565,6 +567,9 @@ export function mapRegisterRows(
     const gstin = normalizeGstin(cellText(get(row, columns.gstin)));
     const rawInv = cellText(get(row, columns.invoiceNumber) ?? get(row, columns.voucherNumber));
     if (!gstin && !rawInv) continue;
+
+    // UX-04: vendor phone column (not an ImportField, so header detection is unchanged)
+    const phone = phoneCol >= 0 ? normalizeIndianMobile(row[phoneCol]) : null;
 
     const igst = round2(sum(row, columns.igst));
     const cgst = round2(sum(row, columns.cgst));
@@ -584,6 +589,7 @@ export function mapRegisterRows(
       sgst,
       totalTax,
       source: recordSource,
+      ...(phone ? { phone } : {}),
     });
   }
   return out;

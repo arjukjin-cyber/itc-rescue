@@ -4,6 +4,7 @@ import type {
   MatchResult,
   ReconSummary,
 } from "./types";
+import { PHONE_ALIASES, firstPhoneByGstin, normalizeIndianMobile } from "./phone";
 
 /** Normalize invoice numbers: strip spaces, dashes, slashes, dots, underscores, #; uppercase */
 export function normalizeInvoiceNumber(raw: string): string {
@@ -120,6 +121,16 @@ export function rowToInvoice(
     pick(row, ["taxable_value", "taxable", "taxable_amount", "net_amount", "amount"])
   );
 
+  // UX-04: first valid vendor mobile among the phone aliases, "91XXXXXXXXXX"
+  let phone: string | undefined;
+  for (const key of PHONE_ALIASES) {
+    const p = normalizeIndianMobile(pick(row, [key]));
+    if (p) {
+      phone = p;
+      break;
+    }
+  }
+
   return {
     gstin: gstin || "UNKNOWN",
     vendorName: String(
@@ -143,6 +154,7 @@ export function rowToInvoice(
     sgst,
     totalTax,
     source,
+    ...(phone ? { phone } : {}),
   };
 }
 
@@ -237,6 +249,15 @@ export function reconcile(
       taxDiff: g.totalTax,
       notes: "In GSTR-2B but not in books — possible missed ITC",
     });
+  }
+
+  // UX-04: carry the vendor phone onto every result for that GSTIN (first valid
+  // phone across register rows), so at-risk rows get it even if only another
+  // invoice of the same vendor had the number.
+  const phoneByGstin = firstPhoneByGstin(books);
+  for (const r of results) {
+    const phone = phoneByGstin.get(r.gstin) ?? normalizeIndianMobile(r.books?.phone);
+    if (phone) r.phone = phone;
   }
 
   const summary: ReconSummary = {

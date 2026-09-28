@@ -72,6 +72,7 @@ export function saveRecon(results: MatchResult[], summary: ReconSummary) {
       category: r.category,
       status: statusMap.get(r.id) || ("pending" as const),
       lastUpdated: new Date().toISOString(),
+      ...(r.phone ? { phone: r.phone } : {}), // UX-04
     }));
   lsSet(KEYS.chase, JSON.stringify(chase));
 

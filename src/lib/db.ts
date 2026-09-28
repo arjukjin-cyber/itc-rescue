@@ -1,6 +1,7 @@
 import { neon, NeonQueryFunction } from "@neondatabase/serverless";
 import bcrypt from "bcryptjs";
 import type { ChaseItem, ChaseStatus, MatchResult, ReconSummary } from "./types";
+import { attachPhones, firstPhoneByGstin } from "./phone";
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 let _schemaReady = false;
@@ -287,6 +288,7 @@ export async function saveReconForUser(
       category: r.category,
       status,
       lastUpdated,
+      ...(r.phone ? { phone: r.phone } : {}), // UX-04 (in-memory only; no chase_items column)
     });
   }
   const chase = Array.from(chaseById.values());
@@ -433,7 +435,47 @@ export async function listChaseForUser(userId: string): Promise<ChaseItem[]> {
     }
   }
 
+  // UX-04: chase_items has no phone column (no schema change). Look the vendor
+  // phone up by GSTIN from the latest recon's results JSON instead.
+  if (items.length) {
+    items = attachPhones(items, await latestPhoneByGstin(userId));
+  }
+
   return items;
+}
+
+/**
+ * GSTIN -> vendor phone ("91XXXXXXXXXX") from the latest recon_runs.results JSON,
+ * first valid phone in result order. Best-effort: any error -> empty map, so the
+ * chase list still loads (WhatsApp then opens without a recipient, as before).
+ */
+async function latestPhoneByGstin(userId: string): Promise<Map<string, string>> {
+  try {
+    const sql = getSql();
+    const rows = await sql`
+      SELECT t.e->>'gstin' AS gstin, t.e->>'phone' AS phone
+      FROM (
+        SELECT results FROM recon_runs
+        WHERE user_id = ${userId}
+        ORDER BY created_at DESC
+        LIMIT 1
+      ) r
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(r.results) = 'array' THEN r.results ELSE '[]'::jsonb END
+      ) WITH ORDINALITY AS t(e, ord)
+      WHERE COALESCE(t.e->>'phone', '') <> ''
+      ORDER BY t.ord
+    `;
+    return firstPhoneByGstin(
+      (rows as Record<string, unknown>[]).map((r) => ({
+        gstin: String(r.gstin || ""),
+        phone: r.phone == null ? null : String(r.phone),
+      }))
+    );
+  } catch (err) {
+    console.error("[chase] vendor phone lookup failed:", err instanceof Error ? err.message : err);
+    return new Map();
+  }
 }
 
 async function rebuildChaseFromResults(
