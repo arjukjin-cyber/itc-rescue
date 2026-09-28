@@ -35,7 +35,7 @@ import type { UserSession } from "@/lib/types";
 
 const PAGE_LABEL: Record<string, string> = {
   "/dashboard": "Dashboard",
-  "/reconcile": "Runs",
+  "/reconcile": "Reconcile · Runs",
   "/chase": "Chase queue",
   "/status": "Status board",
   "/settings": "Settings",

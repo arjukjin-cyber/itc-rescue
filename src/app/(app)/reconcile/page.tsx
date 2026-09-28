@@ -1,18 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Upload, Play, Loader2, Lock, Inbox, CircleCheck, Send } from "lucide-react";
+import { Upload, Play, Loader2, Lock, Inbox, CircleCheck, Send, Download, ChevronDown } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import * as XLSX from "xlsx";
 import { reconCsv, atRiskCsv, atRiskResults, downloadCsv, istDate } from "@/lib/csv-export";
 import { HelpTip } from "@/components/HelpTip";
 import { ActionTable, ResultTabs, filterByTab, useChaseRows, type TabKey } from "@/components/RiskTable";
 import { KpiStrip } from "@/components/KpiStrip";
-import { emitTrialChanged, setLastReconAt } from "@/lib/ui-events";
+import { emitReconChanged, emitTrialChanged, setLastReconAt } from "@/lib/ui-events";
+import { Dropdown, MenuItem, MenuLabel } from "@/components/Dropdown";
+import { parseView, viewDef } from "@/lib/views";
 import { Toast, useToast } from "@/components/Toast";
 import { getSettings, setTrialFromServer } from "@/lib/storage";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { fetchChaseItems, fetchReconState, persistRecon } from "@/lib/api-data";
 import { parseInvoiceFile, parseInvoiceFileDetailed, fetchSampleAsFile } from "@/lib/parseFile";
 import { describeImportSource } from "@/lib/importers/tally-busy";
@@ -25,8 +27,36 @@ function defaultFilter(results: MatchResult[]): TabKey {
   return results.some((r) => r.category === "itc_at_risk" || r.category === "value_mismatch") ? "action" : "all";
 }
 
+/** useSearchParams (ITC views, ?new=1) needs a Suspense boundary for prerendering. */
 export default function ReconcilePage() {
+  return (
+    <Suspense fallback={<ReconcileSkeleton />}>
+      <ReconcileInner />
+    </Suspense>
+  );
+}
+
+function ReconcileSkeleton() {
+  return (
+    <div className="space-y-4" aria-busy="true" aria-label="Loading reconciliation">
+      <div className="h-6 w-32 animate-pulse rounded" style={{ backgroundColor: "var(--color-line-2)" }} />
+      <div className="grid gap-3 md:grid-cols-2">
+        {[0, 1].map((i) => (
+          <div key={i} className="h-32 animate-pulse rounded-lg" style={{ backgroundColor: "var(--color-line-2)" }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReconcileInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  /** Sidebar ITC views: /reconcile?view=at_risk | mismatch | unclaimed | matched */
+  const view = parseView(searchParams.get("view"));
+  const def = view ? viewDef(view) : null;
+  /** Sidebar "New recon" → upload step */
+  const wantsNew = searchParams.get("new") === "1";
   const [loaded, setLoaded] = useState(false);
   const [booksFile, setBooksFile] = useState<File | null>(null);
   const [gstrFile, setGstrFile] = useState<File | null>(null);
@@ -80,7 +110,18 @@ export default function ReconcilePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router, setChase]);
 
+  useEffect(() => {
+    if (!wantsNew) return;
+    setShowUpload(true);
+    setError("");
+    router.replace("/reconcile", { scroll: false });
+  }, [wantsNew, router]);
+
   const filtered = useMemo(() => filterByTab(results, filter), [results, filter]);
+  const viewRows = useMemo(
+    () => (def ? results.filter((r) => r.category === def.category) : []),
+    [results, def]
+  );
 
   async function afterSaved(
     matched: MatchResult[],
@@ -92,6 +133,7 @@ export default function ReconcilePage() {
     }
     setLastReconAt();
     emitTrialChanged();
+    emitReconChanged();
     setResults(matched);
     setSummary(sum);
     setFilter(defaultFilter(matched));
@@ -207,29 +249,35 @@ export default function ReconcilePage() {
     }
   }
 
-  if (!loaded) {
-    return (
-      <div className="space-y-4" aria-busy="true" aria-label="Loading reconciliation">
-        <div className="h-6 w-32 animate-pulse rounded" style={{ backgroundColor: "var(--color-line-2)" }} />
-        <div className="grid gap-3 md:grid-cols-2">
-          {[0, 1].map((i) => (
-            <div key={i} className="h-32 animate-pulse rounded-lg" style={{ backgroundColor: "var(--color-line-2)" }} />
-          ))}
-        </div>
-      </div>
-    );
-  }
+  if (!loaded) return <ReconcileSkeleton />;
 
   const bothFiles = Boolean(booksFile && gstrFile);
+  const chaseBtn =
+    pendingCount > 0 ? (
+      <Link href="/chase" className="btn btn-pri">
+        <Send aria-hidden /> Chase {pendingCount} vendor{pendingCount === 1 ? "" : "s"}
+      </Link>
+    ) : null;
+  const uploadStep = !view && (!summary || showUpload);
 
   return (
     <div className="space-y-3">
-      <div>
-        <h1 className="page-title">Reconcile</h1>
-        <div className="helper-line">
-          <span>{summary ? "Match your books against GSTR-2B." : "Drop both files, then run the match."}</span>
-          <HelpTip label="Matching rule" text={MATCH_RULE} />
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <h1 className="page-title">{def ? def.title : "Reconcile"}</h1>
+          <div className="helper-line">
+            <span>
+              {def ? def.helper : summary ? "Match your books against GSTR-2B." : "Drop both files, then run the match."}
+            </span>
+            <HelpTip label="Matching rule" text={MATCH_RULE} />
+          </div>
         </div>
+        {summary && results.length > 0 && (
+          <div className="flex items-center gap-2">
+            {def && (view === "at_risk" || view === "mismatch") && viewRows.length > 0 && chaseBtn}
+            <ExportMenu results={results} />
+          </div>
+        )}
       </div>
 
       {paywall && (
@@ -250,7 +298,7 @@ export default function ReconcilePage() {
         </div>
       )}
 
-      {(!summary || showUpload) && (
+      {uploadStep && (
         <>
           <div className="grid gap-3 pt-1 md:grid-cols-2">
             <FileDrop
@@ -305,9 +353,32 @@ export default function ReconcilePage() {
           {error}
         </p>
       )}
-      {booksNote && (!summary || showUpload) && <ImportNote note={booksNote} />}
+      {booksNote && uploadStep && <ImportNote note={booksNote} />}
 
-      {summary && (
+      {def &&
+        (summary ? (
+          viewRows.length ? (
+            <ActionTable
+              rows={viewRows}
+              statusById={statusById}
+              busy={busy}
+              company={company}
+              onResolve={(id) => void resolve(id)}
+              onResolveMany={resolveMany}
+            />
+          ) : (
+            <EmptyState icon={Inbox} title={def.empty} actionLabel="Open latest run" actionHref="/reconcile" />
+          )
+        ) : (
+          <EmptyState
+            icon={Upload}
+            title="Run your first recon to see these invoices."
+            actionLabel="New recon"
+            actionHref="/reconcile?new=1"
+          />
+        ))}
+
+      {summary && !view && (
         <>
           {!showUpload && (
             <div className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2">
@@ -347,13 +418,7 @@ export default function ReconcilePage() {
               results={results}
               tab={filter}
               onTab={setFilter}
-              right={
-                pendingCount > 0 ? (
-                  <Link href="/chase" className="btn btn-pri">
-                    <Send aria-hidden /> Chase {pendingCount} vendor{pendingCount === 1 ? "" : "s"}
-                  </Link>
-                ) : null
-              }
+              right={chaseBtn}
             />
           </div>
 
@@ -374,28 +439,6 @@ export default function ReconcilePage() {
               onAction={() => setFilter("all")}
             />
           )}
-
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={() => exportResults(results)}
-              className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-            >
-              Export Excel
-            </button>
-            <button
-              onClick={() => downloadCsv(`itc-rescue-recon-${istDate()}.csv`, reconCsv(results))}
-              className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-            >
-              Download recon CSV
-            </button>
-            <button
-              onClick={() => downloadCsv(`itc-at-risk-${istDate()}.csv`, atRiskCsv(results))}
-              disabled={atRiskResults(results).length === 0}
-              className="rounded-xl border border-rose-300 bg-white px-5 py-2.5 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Download at-risk ITC CSV ({atRiskResults(results).length})
-            </button>
-          </div>
         </>
       )}
 
@@ -408,7 +451,7 @@ export default function ReconcilePage() {
 function LockedRun({ label, small = false }: { label: string; small?: boolean }) {
   return (
     <Link
-      href="/settings"
+      href="/settings#billing"
       className={`btn ${small ? "btn-sm" : "btn-lg"}`}
       title="Free trial used. Upgrade to run another reconciliation."
     >
@@ -492,6 +535,68 @@ function FileDrop({
   );
 }
 
+/**
+ * Header Export menu (replaces the three buttons #23 put under the results).
+ * Same #23 builders + download path and the same outputs: recon CSV (all rows),
+ * at-risk ITC CSV, Excel. Always exports the whole latest recon, whatever the view.
+ */
+function ExportMenu({ results }: { results: MatchResult[] }) {
+  const atRiskN = atRiskResults(results).length;
+  return (
+    <Dropdown
+      label="Export"
+      align="right"
+      menuClassName="w-[248px]"
+      trigger={({ open, toggle, id }) => (
+        <button
+          type="button"
+          className="btn"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={open ? id : undefined}
+          onClick={toggle}
+        >
+          <Download aria-hidden /> Export <ChevronDown aria-hidden />
+        </button>
+      )}
+    >
+      {(close) => (
+        <>
+          <MenuLabel>Latest recon · all views</MenuLabel>
+          <MenuItem
+            meta={`${results.length} rows`}
+            onSelect={() => {
+              close();
+              downloadCsv(`itc-rescue-recon-${istDate()}.csv`, reconCsv(results));
+            }}
+          >
+            Recon CSV
+          </MenuItem>
+          <MenuItem
+            meta={`${atRiskN} rows`}
+            disabled={atRiskN === 0}
+            onSelect={() => {
+              close();
+              downloadCsv(`itc-at-risk-${istDate()}.csv`, atRiskCsv(results));
+            }}
+          >
+            At-risk ITC CSV
+          </MenuItem>
+          <MenuItem
+            meta=".xlsx"
+            onSelect={() => {
+              close();
+              exportResults(results);
+            }}
+          >
+            Excel
+          </MenuItem>
+        </>
+      )}
+    </Dropdown>
+  );
+}
+
 function exportResults(results: MatchResult[]) {
   const rows = results.map((r) => ({
     Category: r.category,
@@ -507,5 +612,5 @@ function exportResults(results: MatchResult[]) {
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Recon");
-  XLSX.writeFile(wb, "itc-rescue-recon.xlsx");
+  XLSX.writeFile(wb, `itc-rescue-recon-${istDate()}.xlsx`);
 }
