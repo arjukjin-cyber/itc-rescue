@@ -60,7 +60,20 @@ Sample files live in `/public/samples/`:
 The purchase register upload also accepts Tally Prime / Tally ERP 9 and Busy
 exports as-is (title rows, totals rows, `1-Apr-2025` / `01/04/2025` / Excel
 serial dates, `1,23,456.00 Dr` amounts). See `src/lib/importers/tally-busy.ts`
-and the samples in `fixtures/`. Run the importer tests with:
+and the samples in `fixtures/`.
+
+Header synonyms recognised (case, punctuation and spacing are ignored):
+
+- **Tally** (based on Tally's own field names): `Particulars`, `Vch No.`,
+  `Vch Type`, `Party GSTIN/UIN` / `GSTIN/UIN`, `Supplier Invoice No.`,
+  `Supplier Invoice Date`, `Taxable Value`, `Integrated Tax Amount`,
+  `Central Tax Amount`, `State Tax Amount`, `Gross Total`, ledger columns such
+  as `Input CGST @9%` / `Purchase @18%`.
+- **Busy — unverified (assumed)** until checked against a real customer export:
+  `Party Name`, `GSTIN`, `Bill No.`, `Bill Date`, `Taxable Amt`, `IGST`,
+  `CGST`, `SGST` (and `IGST/CGST/SGST Amt`), `Tax Amt`, `Net Amt`, `Vch/Bill No`.
+
+Run the importer tests with:
 
 ```bash
 npm run test:importers   # = npx tsx scripts/test-importers.ts
