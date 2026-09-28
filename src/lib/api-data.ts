@@ -1,6 +1,7 @@
 "use client";
 
 import type { ChaseItem, ChaseStatus, MatchResult, ReconSummary } from "./types";
+import type { VendorSummary } from "./vendors";
 import {
   canRunRecon as localCanRun,
   clearLocalUser,
@@ -266,4 +267,83 @@ export async function persistChaseStatus(
     if (wantsAuth) return [];
   }
   return localUpdateChase(id, status);
+}
+
+/** GET /api/vendors — per-GSTIN vendor view, sorted by at-risk ₹ desc. No demo/localStorage fallback. */
+export async function fetchVendors(): Promise<{
+  persistence: "postgres" | "demo";
+  vendors: VendorSummary[];
+  authError?: string;
+  error?: string;
+}> {
+  const wantsAuth = expectsServerAuth();
+  try {
+    const res = await fetch("/api/vendors", { credentials: "include" });
+    if (res.status === 401) {
+      if (wantsAuth) {
+        return { persistence: "postgres", vendors: [], authError: authRequiredError() };
+      }
+      return { persistence: "demo", vendors: [] };
+    }
+    const data = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (res.ok && data.persistence === "postgres") {
+      return { persistence: "postgres", vendors: (data.vendors as VendorSummary[]) || [] };
+    }
+    if (res.ok && data.persistence === "demo" && !wantsAuth) {
+      return { persistence: "demo", vendors: [] };
+    }
+    return {
+      persistence: wantsAuth ? "postgres" : "demo",
+      vendors: [],
+      error: (data.error as string) || `Could not load vendors (${res.status})`,
+    };
+  } catch (e) {
+    return {
+      persistence: wantsAuth ? "postgres" : "demo",
+      vendors: [],
+      error: e instanceof Error ? e.message : "Network error",
+    };
+  }
+}
+
+/**
+ * PATCH /api/vendors/:gstin — save phone (Indian mobile; server normalises to
+ * +91XXXXXXXXXX, 400 on invalid). Pass `null` to clear. `name` optional override.
+ */
+export async function saveVendorPhone(
+  gstin: string,
+  phone: string | null,
+  name?: string | null
+): Promise<{
+  ok: boolean;
+  vendor?: VendorSummary | null;
+  vendors?: VendorSummary[];
+  error?: string;
+  authError?: string;
+}> {
+  try {
+    const body: Record<string, unknown> = { phone };
+    if (name !== undefined) body.name = name;
+    const res = await fetch(`/api/vendors/${encodeURIComponent(gstin)}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (res.status === 401) {
+      const msg = authRequiredError((data.error as string) || undefined);
+      return { ok: false, error: msg, authError: msg };
+    }
+    if (res.ok && data.persistence === "postgres") {
+      return {
+        ok: true,
+        vendor: (data.vendor as VendorSummary | null) ?? null,
+        vendors: (data.vendors as VendorSummary[]) || [],
+      };
+    }
+    return { ok: false, error: (data.error as string) || `Save failed (${res.status})` };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+  }
 }
