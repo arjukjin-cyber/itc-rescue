@@ -81,19 +81,7 @@ export default function LandingPage() {
               className="hero-subcopy mt-5 text-lg leading-relaxed sm:text-xl sm:leading-relaxed"
               style={{ color: "var(--color-text-secondary)" }}
             >
-              Upload your purchase register and GSTR-2B. ITC Rescue finds every mismatch,
-              drafts WhatsApp chases in English &amp; Hindi, and tracks who fixed it —
-              built for Indian MSMEs (₹50L–₹5cr).
-            </p>
-            <p
-              className="mt-4 text-sm"
-              style={{ color: "var(--color-text-secondary)" }}
-            >
-              <span className="font-semibold" style={{ color: "var(--color-text)" }}>
-                Waitlist open
-              </span>
-              <span aria-hidden> · </span>
-              Free trial: 1 reconciliation or 50 invoices · No government API needed
+              Find ITC at risk in GSTR-2B and chase vendors on WhatsApp in English &amp; Hindi.
             </p>
             {/* CTA strip — last in sticky containing block so mobile sticky never overlaps siblings */}
             <div
@@ -103,6 +91,7 @@ export default function LandingPage() {
             >
               <Link
                 href="/signup"
+                title="Free trial: 1 reconciliation or 50 invoices · No government API needed"
                 className="btn-accent inline-flex w-full items-center justify-center px-8 py-3.5 text-base font-semibold shadow-md sm:w-auto"
               >
                 Start free trial
@@ -287,12 +276,6 @@ export default function LandingPage() {
             >
               How it works
             </h2>
-            <p
-              className="mt-4 text-lg leading-relaxed"
-              style={{ color: "var(--color-text-secondary)" }}
-            >
-              Three steps. No GST portal login. Works offline with your Excel exports.
-            </p>
           </div>
           <div className="mt-10 grid gap-6 md:grid-cols-3 sm:mt-12 sm:gap-8">
             {[
@@ -300,19 +283,19 @@ export default function LandingPage() {
                 step: "01",
                 icon: Upload,
                 title: "Upload files",
-                desc: "Drop your purchase register and GSTR-2B (Excel/CSV). Sample files included so you can demo instantly.",
+                desc: "Purchase register + GSTR-2B, Excel or CSV.",
               },
               {
                 step: "02",
                 icon: GitCompareArrows,
                 title: "Smart match",
-                desc: "We normalize invoice numbers, match GSTIN + invoice# + date (±1 day), and classify: matched, ITC at risk, unclaimed, value mismatch.",
+                desc: "Matched, ITC at risk, value mismatch, unclaimed.",
               },
               {
                 step: "03",
                 icon: MessageCircle,
                 title: "Chase & track",
-                desc: "Copy English or Hindi WhatsApp messages. Move vendors across Pending → Fixed → Still blocked on your status board.",
+                desc: "WhatsApp in EN + HI, then Pending → Fixed.",
               },
             ].map((s) => (
               <div
@@ -375,12 +358,6 @@ export default function LandingPage() {
           >
             Simple MSME pricing
           </h2>
-          <p
-            className="mt-4 text-lg leading-relaxed"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            After your free recon, upgrade in Settings to keep going. Paid checkout (Razorpay) ships in the final pre-launch update.
-          </p>
         </div>
         <div className="mx-auto mt-10 grid max-w-4xl gap-6 md:grid-cols-2 sm:mt-12">
           <div
@@ -530,10 +507,6 @@ export default function LandingPage() {
           <h2 className="text-3xl font-bold text-white">
             Rescue your ITC before the next 3B due date
           </h2>
-          <p className="mt-3 text-base leading-relaxed text-white/90">
-            Sign up in 30 seconds. Run a recon with our sample files — no GSTN credentials
-            required.
-          </p>
           <Link
             href="/signup"
             className="mt-7 inline-flex px-8 py-3.5 text-base font-semibold shadow"

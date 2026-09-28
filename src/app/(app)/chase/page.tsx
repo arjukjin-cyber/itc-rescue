@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { getSettings } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
 import { formatINRPrecise } from "@/lib/reconcile";
-import { whatsappEnglish, whatsappHindi, emailSubject, emailBody } from "@/lib/templates";
+import { whatsappEnglish, whatsappHindi, emailSubject, emailBody, waLink } from "@/lib/templates";
 import type { ChaseItem, MatchResult } from "@/lib/types";
 
 export default function ChasePage() {
@@ -62,10 +62,6 @@ export default function ChasePage() {
     setCopied(key);
     // Brief check microfeedback — not an alert
     window.setTimeout(() => setCopied(null), 1200);
-  }
-
-  function waLink(text: string) {
-    return `https://wa.me/?text=${encodeURIComponent(text)}`;
   }
 
   if (!loaded) {
@@ -129,13 +125,12 @@ export default function ChasePage() {
       <div className="flex min-h-[min(28rem,70vh)] items-center justify-center px-2">
         <EmptyState
           icon={MessageCircle}
-          title={allFixed ? "Nothing left to chase" : "No vendors to chase"}
-          description={
+          title={
             allFixed
-              ? "All chase invoices are Fixed or cleared. Track them on the Status board."
-              : "Run a reconciliation first. ITC-at-risk and value-mismatch rows appear here."
+              ? "Every vendor is sorted, nothing left to chase."
+              : "Run a reconciliation to see which vendors to chase."
           }
-          actionLabel={allFixed ? "Open Status board" : "Go to Reconcile"}
+          actionLabel={allFixed ? "Open Status board" : "Run reconciliation"}
           actionHref={allFixed ? "/status" : "/reconcile"}
         />
       </div>

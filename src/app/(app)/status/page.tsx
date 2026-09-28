@@ -52,10 +52,13 @@ const COLUMNS: {
 
 export default function StatusPage() {
   const [items, setItems] = useState<ChaseItem[]>([]);
+  /** Hold EmptyState until first fetch settles (no empty-board flash on cold load) */
+  const [loaded, setLoaded] = useState(false);
 
   async function reload() {
     const { items: next } = await fetchChaseItems();
     setItems(next);
+    setLoaded(true);
   }
 
   useEffect(() => {
@@ -76,7 +79,13 @@ export default function StatusPage() {
 
   async function move(id: string, status: ChaseStatus) {
     const next = await persistChaseStatus(id, status);
-    setItems(next);
+    // Empty list = failed save (401 / server error): re-read instead of blanking the board
+    if (next.length) setItems(next);
+    else void reload();
+  }
+
+  if (!loaded) {
+    return <div className="mx-auto max-w-6xl" aria-busy="true" aria-label="Loading status board" />;
   }
 
   if (!items.length) {
@@ -84,9 +93,8 @@ export default function StatusPage() {
       <div className="flex min-h-[min(28rem,70vh)] items-center justify-center px-2">
         <EmptyState
           icon={Kanban}
-          title="Status board is empty"
-          description="After a reconciliation, at-risk invoices show up here so you can track vendor fixes."
-          actionLabel="Go to Reconcile"
+          title="Run a reconciliation to start tracking vendor fixes."
+          actionLabel="Run reconciliation"
           actionHref="/reconcile"
         />
       </div>
@@ -164,6 +172,7 @@ export default function StatusPage() {
                 ))}
                 {!colItems.length && (
                   <div
+                    title={col.emptyHint}
                     className="flex min-h-[8rem] flex-1 flex-col items-center justify-center rounded-[var(--radius-sm)] border border-dashed px-3 py-4 text-center"
                     style={{
                       borderColor: "var(--color-border-strong)",
@@ -184,9 +193,6 @@ export default function StatusPage() {
                       style={{ color: "var(--color-text)" }}
                     >
                       No items
-                    </p>
-                    <p className="mt-1 max-w-[13rem] text-meta leading-snug">
-                      {col.emptyHint}
                     </p>
                   </div>
                 )}
