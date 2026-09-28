@@ -69,12 +69,26 @@ export default function SignupPage() {
     }
   }
 
-  const fields: { key: keyof FormState; label: string; type: string; required: boolean }[] = [
-    { key: "name", label: "Your name", type: "text", required: true },
-    { key: "email", label: "Work email", type: "email", required: true },
-    { key: "password", label: "Password (min 6 characters)", type: "password", required: true },
-    { key: "companyName", label: "Company name", type: "text", required: false },
-    { key: "gstin", label: "Company GSTIN (optional)", type: "text", required: false },
+  const fields: {
+    key: keyof FormState;
+    label: string;
+    type: string;
+    required: boolean;
+    autoComplete: string;
+    minLength?: number;
+  }[] = [
+    { key: "name", label: "Your name", type: "text", required: true, autoComplete: "name" },
+    { key: "email", label: "Work email", type: "email", required: true, autoComplete: "email" },
+    {
+      key: "password",
+      label: "Password (min 6 characters)",
+      type: "password",
+      required: true,
+      autoComplete: "new-password",
+      minLength: 6,
+    },
+    { key: "companyName", label: "Company name", type: "text", required: false, autoComplete: "organization" },
+    { key: "gstin", label: "Company GSTIN (optional)", type: "text", required: false, autoComplete: "off" },
   ];
 
   return (
@@ -93,30 +107,26 @@ export default function SignupPage() {
             backgroundColor: "var(--color-bg)",
           }}
         >
-          <div
-            className="px-3 py-2 text-xs font-semibold uppercase tracking-wide"
-            style={{
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--color-accent-ring)",
-              backgroundColor: "var(--color-accent-soft)",
-              color: "var(--color-accent)",
-            }}
-          >
-            Waitlist · free trial
-          </div>
-          <h1 className="mt-3 text-2xl font-bold" style={{ color: "var(--color-text)" }}>
-            Join the waitlist &amp; start free
+          {/* UX-09: no waitlist on the pre-trial path — the waitlist only appears after the free run is used. */}
+          <h1 className="text-[18px] font-semibold" style={{ color: "var(--color-ink)" }}>
+            Create your account
           </h1>
-          <p className="mt-1 text-sm" style={{ color: "var(--color-text-secondary)" }}>
-            Work email gets you early access. Includes 1 free reconciliation (up to 50 invoices). No card needed.
+          <p className="mt-1 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+            1 free reconciliation · No card · No GST portal login
           </p>
           <form onSubmit={onSubmit} className="mt-8 space-y-4">
             {fields.map((field) => (
               <div key={field.key}>
-                <label className="block text-sm font-medium text-slate-700">{field.label}</label>
+                <label htmlFor={`signup-${field.key}`} className="block text-sm font-medium text-slate-700">
+                  {field.label}
+                </label>
                 <input
+                  id={`signup-${field.key}`}
+                  name={field.key}
                   type={field.type}
                   required={field.required}
+                  autoComplete={field.autoComplete}
+                  minLength={field.minLength}
                   value={form[field.key]}
                   onChange={(e) => setField(field.key, e.target.value)}
                   className="input-token mt-1 w-full px-3 py-2.5 text-sm"
@@ -131,9 +141,9 @@ export default function SignupPage() {
             <button
               type="submit"
               disabled={loading}
-              className="btn-accent w-full py-3 text-sm font-semibold disabled:opacity-60"
+              className="btn btn-pri btn-lg w-full disabled:opacity-60"
             >
-              {loading ? "Joining…" : "Join waitlist & start trial"}
+              {loading ? "Creating account…" : "Create account"}
             </button>
           </form>
           <p className="mt-6 text-center text-sm text-slate-600">

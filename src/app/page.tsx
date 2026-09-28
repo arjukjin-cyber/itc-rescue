@@ -33,25 +33,25 @@ export default function LandingPage() {
 
       {/* Hero: H1, one sub-line, one primary CTA, real product frame */}
       <section className="mx-auto max-w-6xl px-4 pb-16 pt-14 sm:px-6 sm:pt-20">
-        <div className="mx-auto max-w-3xl text-center">
+        {/* UX-08: approved H1, one sub-line, one Large Primary, meta line. No pill, no demo CTA. */}
+        <div className="mx-auto max-w-[640px] text-center">
           <h1
             className="text-[32px] font-semibold leading-[1.15] tracking-[-0.02em] sm:text-[40px]"
             style={{ color: "var(--color-ink)" }}
           >
-            Stop losing ITC because vendors didn&apos;t file GSTR-1
+            Catch the mismatch before the notice.
           </h1>
-          <p className="hero-subcopy mt-3 text-[15px]">
-            Find ITC at risk in GSTR-2B and chase vendors on WhatsApp in English &amp; Hindi.
+          <p className="mx-auto mt-3 max-w-[60ch] text-[16px]" style={{ color: "var(--color-text-2)" }}>
+            Match your purchase register with GSTR-2B and see which vendors to chase.
           </p>
           <div className="hero-cta-sticky mt-6 flex justify-center">
-            <Link
-              href="/signup"
-              className="btn btn-pri btn-lg w-full sm:w-auto"
-              title="Free trial: 1 reconciliation or 50 invoices · No government API needed"
-            >
-              Start free trial
+            <Link href="/signup" className="btn btn-pri btn-lg w-full sm:w-auto">
+              Start free
             </Link>
           </div>
+          <p className="mt-2 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+            1 free reconciliation · No card · No GST portal login
+          </p>
         </div>
 
         <figure className="mx-auto mt-12 max-w-5xl overflow-hidden rounded-lg border" style={{ borderColor: "var(--color-line)" }}>
