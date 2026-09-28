@@ -190,8 +190,12 @@ export function financialYear(isoDate: string | undefined | null): string | null
  * GST only requires invoice numbers to be unique per FY (many suppliers restart
  * at INV/001 every April), so the same number in two FYs stays two invoices.
  * Rows with a missing/unparseable date fall into a "no FY" bucket keyed on
- * GSTIN + invoice number only. Rows without an invoice number are never merged;
- * unregistered suppliers (GSTIN "UNKNOWN") are additionally keyed on vendor name.
+ * GSTIN + invoice number only. Rows without an invoice number are never merged.
+ *
+ * GSTIN "UNKNOWN" rows are additionally keyed on vendor name. In reconcile() this
+ * never applies to books: #32 drops no-GSTIN books rows *before* merging. It only
+ * keeps a 2B file with a missing GSTIN column (or a direct caller) from pooling
+ * different suppliers' same-numbered invoices.
  */
 export function invoiceMergeKey(inv: InvoiceRecord): string | null {
   const no = normalizeInvoiceNumber(inv.invoiceNumber);

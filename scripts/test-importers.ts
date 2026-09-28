@@ -19,6 +19,7 @@ import {
   reconcile,
   rowToInvoice,
 } from "../src/lib/reconcile";
+import { isMixedSampleRecon, isSampleRecon } from "../src/lib/recon-guard";
 import {
   detectSourceFromHeaders,
   findHeaderRow,
@@ -736,6 +737,36 @@ async function main() {
     const out = reconcile([u1, u2, a], []);
     assert.equal(out.results.length, 1);
     assert.equal(out.summary.unregisteredSkipped, 2);
+  });
+
+  await test("#32 unregistered skip runs before the merge: raw rows counted, never re-admitted", () => {
+    const reg = inv("books", "INV/9", "2025-04-08", 1000, 90, 90);
+    const noGst = (vendor: string, gstin: string) => ({
+      ...inv("books", "INV/9", "2025-04-08", 1000, 90, 90),
+      gstin,
+      vendorName: vendor,
+    });
+    // three raw no-GSTIN rows (two share vendor + invoice, so they'd merge into one)
+    const rows = [noGst("Local Shop", "UNKNOWN"), noGst("Local Shop", "UNKNOWN"), noGst("Other Shop", ""), reg];
+    const { results, summary } = reconcile(rows, [inv("gstr2b", "INV-9", "2025-04-08", 1000, 90, 90)]);
+    assert.equal(summary.unregisteredSkipped, 3); // raw rows, not merged groups
+    assert.equal(summary.totalBooks, 1);
+    assert.deepEqual(results.map((r) => [r.gstin, r.category]), [["07AAACP0505B1ZQ", "matched"]]);
+    assert.ok(results.every((r) => r.gstin !== "UNKNOWN"));
+  });
+
+  await test("samples still detected as a sample run (GSTIN + invoice pairs survive the # strip)", async () => {
+    const books = await parseInvoiceFileDetailed(csvFile("public/samples/purchase-register.csv"), "books");
+    const g2b = await parseInvoiceFileDetailed(csvFile("public/samples/gstr-2b.csv"), "gstr2b");
+    const { results, summary } = reconcile(books.invoices, g2b.invoices);
+    assert.equal(summary.unregisteredSkipped, undefined);
+    assert.equal(isSampleRecon(results), true);
+    assert.equal(isMixedSampleRecon(results), false);
+    // sample books + a real (audit) portal 2B -> mixed, so the API answers 422
+    const real = await parseInvoiceFileDetailed(fixtureFile("fixtures/ux-audit-gstr-2b-portal.json", "application/json"), "gstr2b");
+    const mixed = reconcile(books.invoices, real.invoices).results;
+    assert.equal(isSampleRecon(mixed), false);
+    assert.equal(isMixedSampleRecon(mixed), true);
   });
 
   console.log("UX-01: portal GSTR-2B JSON + file-specific errors");
