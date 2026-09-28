@@ -1,0 +1,101 @@
+{
+ "chksum": "x",
+ "data": {
+  "gstin": "27ZZZZZ9999Z1Z5",
+  "rtnprd": "082026",
+  "docdata": {
+   "b2b": [
+    {
+     "ctin": "27AAAAA1111A1ZW",
+     "trdnm": "Alpha Test Traders (FAKE)",
+     "inv": [
+      {
+       "inum": "UXA-001",
+       "dt": "03-08-2026",
+       "val": 118000,
+       "txval": 100000,
+       "igst": 0,
+       "cgst": 9000,
+       "sgst": 9000,
+       "cess": 0,
+       "typ": "R"
+      },
+      {
+       "inum": "UXA-002",
+       "dt": "11-08-2026",
+       "val": 59000,
+       "txval": 50000,
+       "igst": 0,
+       "cgst": 4500,
+       "sgst": 4500,
+       "cess": 0,
+       "typ": "R"
+      }
+     ]
+    },
+    {
+     "ctin": "29BBBBB2222B1ZD",
+     "trdnm": "Bravo Dummy Supplies (FAKE)",
+     "inv": [
+      {
+       "inum": "UXB-26-101",
+       "dt": "05-08-2026",
+       "val": 236000,
+       "txval": 200000,
+       "igst": 36000,
+       "cgst": 0,
+       "sgst": 0,
+       "cess": 0,
+       "typ": "R"
+      },
+      {
+       "inum": "UXB/26/140",
+       "dt": "28-08-2026",
+       "val": 35400,
+       "txval": 30000,
+       "igst": 5400,
+       "cgst": 0,
+       "sgst": 0,
+       "cess": 0,
+       "typ": "R"
+      }
+     ]
+    },
+    {
+     "ctin": "24DDDDD4444D1ZT",
+     "trdnm": "Delta Placeholder Packaging (FAKE)",
+     "inv": [
+      {
+       "inum": "UXD-55",
+       "dt": "14-08-2026",
+       "val": 69000,
+       "txval": 60000,
+       "igst": 0,
+       "cgst": 4500,
+       "sgst": 4500,
+       "cess": 0,
+       "typ": "R"
+      }
+     ]
+    },
+    {
+     "ctin": "09FFFFF6666F1ZR",
+     "trdnm": "Foxtrot Demo Logistics (FAKE)",
+     "inv": [
+      {
+       "inum": "UXF-3001",
+       "dt": "22-08-2026",
+       "val": 47200,
+       "txval": 40000,
+       "igst": 0,
+       "cgst": 3600,
+       "sgst": 3600,
+       "cess": 0,
+       "typ": "R"
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

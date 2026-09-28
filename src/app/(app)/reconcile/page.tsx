@@ -85,12 +85,15 @@ export default function ReconcilePage() {
     try {
       const booksParsed = await parseInvoiceFileDetailed(books, "books");
       const booksInv = booksParsed.invoices;
-      setBooksNote(describeImportSource(booksParsed.detected));
-      const gstrInv = await parseInvoiceFile(gstr, "gstr2b");
+      const gstrParsed = await parseInvoiceFileDetailed(gstr, "gstr2b");
+      const gstrInv = gstrParsed.invoices;
+      const notes = [booksParsed.detected, gstrParsed.detected]
+        .map(describeImportSource)
+        .filter(Boolean);
+      setBooksNote(notes.length ? notes.join(" · ") : null);
       if (!booksInv.length || !gstrInv.length) {
-        setError(
-          "Could not parse invoices. Check column headers (GSTIN, Invoice Number, Invoice Date, tax columns)."
-        );
+        // parseInvoiceFileDetailed normally throws a file-specific error first
+        setError(`${(!booksInv.length ? books : gstr).name}: no invoice rows found`);
         return;
       }
 
@@ -98,8 +101,9 @@ export default function ReconcilePage() {
       if (sum.unregisteredSkipped) {
         const n = sum.unregisteredSkipped;
         const skipNote = `${n} unregistered purchase${n === 1 ? "" : "s"} skipped (no GSTIN, so no ITC).`;
-        const base = describeImportSource(booksParsed.detected);
-        setBooksNote(base ? `${base} ${skipNote}` : skipNote);
+        // keep both files' detected-source notes (books + GSTR-2B) in front of the skip note
+        const base = notes.length ? notes.join(" · ") : null;
+        setBooksNote(base ? `${base} · ${skipNote}` : skipNote);
       }
       const saved = await persistRecon(matched, sum);
       if (!saved.ok) {
@@ -230,7 +234,7 @@ export default function ReconcilePage() {
         />
         <FileDrop
           label="GSTR-2B"
-          hint="Excel/CSV export from GST portal"
+          hint="From the GST portal · .json or .xlsx"
           file={gstrFile}
           onFile={setGstrFile}
         />
@@ -255,7 +259,7 @@ export default function ReconcilePage() {
         </button>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
       {booksNote && <p className="text-xs text-slate-500">{booksNote}</p>}
 
       {summary && (
@@ -387,6 +391,7 @@ export default function ReconcilePage() {
                       <td
                         className="max-w-[200px] truncate px-4 py-3 text-xs"
                         style={{ color: "var(--color-text-muted)" }}
+                        title={r.notes || undefined}
                       >
                         {r.notes || "—"}
                       </td>
@@ -472,7 +477,7 @@ function FileDrop({
       )}
       <input
         type="file"
-        accept=".csv,.xlsx,.xls"
+        accept=".csv,.xlsx,.xls,.json"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
