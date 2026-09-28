@@ -42,15 +42,20 @@ export default function SettingsPage() {
       <form onSubmit={onSave} className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="font-semibold text-slate-900">Company</h2>
         {[
-          { key: "companyName" as const, label: "Company name", type: "text" },
-          { key: "gstin" as const, label: "GSTIN", type: "text" },
-          { key: "email" as const, label: "Billing email", type: "email" },
-          { key: "phone" as const, label: "Phone (optional)", type: "tel" },
+          { key: "companyName" as const, label: "Company name", type: "text", autoComplete: "organization" },
+          { key: "gstin" as const, label: "GSTIN", type: "text", autoComplete: "off" },
+          { key: "email" as const, label: "Billing email", type: "email", autoComplete: "email" },
+          { key: "phone" as const, label: "Phone (optional)", type: "tel", autoComplete: "tel" },
         ].map((f) => (
           <div key={f.key}>
-            <label className="block text-sm font-medium text-slate-700">{f.label}</label>
+            <label htmlFor={`settings-${f.key}`} className="block text-sm font-medium text-slate-700">
+              {f.label}
+            </label>
             <input
+              id={`settings-${f.key}`}
+              name={f.key}
               type={f.type}
+              autoComplete={f.autoComplete}
               value={form[f.key] || ""}
               onChange={(e) => set(f.key, e.target.value)}
               className="input-token mt-1 w-full px-3 py-2 text-sm"
@@ -59,7 +64,7 @@ export default function SettingsPage() {
         ))}
         <button
           type="submit"
-          className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:bg-accent-hover"
+          className="btn btn-pri"
         >
           {saved ? (
             <>

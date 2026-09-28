@@ -442,7 +442,7 @@ export function ActionTable({
                               rel="noopener noreferrer"
                               className="btn btn-sm"
                               title="Chase on WhatsApp"
-                              aria-label={`Chase ${r.vendorName} on WhatsApp`}
+                              aria-label={`Chase on WhatsApp: ${r.vendorName} ${r.invoiceNumber}`}
                             >
                               <Send aria-hidden /> Chase
                             </a>
@@ -452,7 +452,7 @@ export function ActionTable({
                               disabled={Boolean(busy[r.id])}
                               onClick={() => onResolve(r.id)}
                               title="Mark resolved"
-                              aria-label={`Mark ${r.invoiceNumber} resolved`}
+                              aria-label={`Mark resolved: ${r.invoiceNumber}`}
                             >
                               <Check aria-hidden /> Resolve
                             </button>
@@ -462,8 +462,8 @@ export function ActionTable({
                           type="button"
                           className="btn btn-sm btn-quiet btn-icon"
                           onClick={() => exportRow(r)}
-                          title="Export row"
-                          aria-label={`Export ${r.invoiceNumber} as CSV`}
+                          title="Export this row as CSV"
+                          aria-label={`Export this row as CSV: ${r.invoiceNumber}`}
                         >
                           <Download aria-hidden />
                         </button>

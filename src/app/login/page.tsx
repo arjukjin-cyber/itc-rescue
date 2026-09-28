@@ -61,9 +61,14 @@ export default function LoginPage() {
           </p>
           <form onSubmit={onSubmit} className="mt-8 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700">Email</label>
+              <label htmlFor="login-email" className="block text-sm font-medium text-slate-700">
+                Email
+              </label>
               <input
+                id="login-email"
+                name="email"
                 type="email"
+                autoComplete="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -71,9 +76,14 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700">Password</label>
+              <label htmlFor="login-password" className="block text-sm font-medium text-slate-700">
+                Password
+              </label>
               <input
+                id="login-password"
+                name="password"
                 type="password"
+                autoComplete="current-password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -88,7 +98,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-md bg-accent py-3 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-60"
+              className="btn btn-pri btn-lg w-full disabled:opacity-60"
             >
               {loading ? "Signing in…" : "Log in"}
             </button>
