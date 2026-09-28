@@ -1,44 +1,64 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Upload, Play, Loader2, Lock, Filter } from "lucide-react";
+import { Upload, Play, Loader2, Lock, Filter, Check, Download, MessageCircle, ListChecks } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import * as XLSX from "xlsx";
 import { reconCsv, atRiskCsv, atRiskResults, downloadCsv, istDate } from "@/lib/csv-export";
-import { CategoryBadge } from "@/components/Badge";
-import { StatCard } from "@/components/StatCard";
-import { isPaywalled, setTrialFromServer } from "@/lib/storage";
+import { HelpTip } from "@/components/HelpTip";
+import { RiskTable, atRiskTotal, sortForAction, useChaseRows } from "@/components/RiskTable";
+import { Toast, useToast } from "@/components/Toast";
+import { getSettings, setTrialFromServer } from "@/lib/storage";
 import { useRouter } from "next/navigation";
-import { fetchReconState, persistRecon } from "@/lib/api-data";
+import { fetchChaseItems, fetchReconState, persistRecon } from "@/lib/api-data";
 import { parseInvoiceFile, fetchSampleAsFile } from "@/lib/parseFile";
-import { formatINR, formatINRPrecise, reconcile } from "@/lib/reconcile";
+import { formatINR, reconcile } from "@/lib/reconcile";
 import type { MatchCategory, MatchResult, ReconSummary } from "@/lib/types";
 
-const FILTERS: { key: MatchCategory | "all"; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "itc_at_risk", label: "ITC at risk" },
-  { key: "value_mismatch", label: "Value mismatch" },
+const MATCH_RULE = "Matched on GSTIN + invoice number + invoice date (±1 day).";
+
+type FilterKey = MatchCategory | "all";
+
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: "itc_at_risk", label: "At risk" },
+  { key: "value_mismatch", label: "Mismatch" },
   { key: "matched", label: "Matched" },
   { key: "unclaimed", label: "Unclaimed" },
+  { key: "all", label: "All" },
 ];
+
+function defaultFilter(results: MatchResult[]): FilterKey {
+  if (results.some((r) => r.category === "itc_at_risk")) return "itc_at_risk";
+  if (results.some((r) => r.category === "value_mismatch")) return "value_mismatch";
+  return "all";
+}
 
 export default function ReconcilePage() {
   const router = useRouter();
+  const [loaded, setLoaded] = useState(false);
   const [booksFile, setBooksFile] = useState<File | null>(null);
   const [gstrFile, setGstrFile] = useState<File | null>(null);
   const [results, setResults] = useState<MatchResult[]>([]);
   const [summary, setSummary] = useState<ReconSummary | null>(null);
-  const [filter, setFilter] = useState<MatchCategory | "all">("all");
+  const [filter, setFilter] = useState<FilterKey>("itc_at_risk");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  /** 402 toast — set only by a real run attempt (server still enforces the gate). */
   const [paywall, setPaywall] = useState<string | null>(null);
-  const [trialUsed, setTrialUsed] = useState(false);
+  /** Trial used → locked "Run again · Upgrade" button (no banner above results). */
+  const [locked, setLocked] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [company, setCompany] = useState("My Company");
+  const { toast, show, dismiss } = useToast();
+  const { setChase, statusById, pendingCount, resolve, busy } = useChaseRows(show);
+  const autoSampleDone = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
+    setCompany(getSettings().companyName || "My Company");
     (async () => {
-      const state = await fetchReconState();
+      const [state, chase] = await Promise.all([fetchReconState(), fetchChaseItems()]);
       if (cancelled) return;
       if (state.authError) {
         setError(state.authError);
@@ -48,23 +68,56 @@ export default function ReconcilePage() {
       if (state.results.length) {
         setResults(state.results);
         setSummary(state.summary);
+        setFilter(defaultFilter(state.results));
       }
-      if (!state.canRun) {
-        setTrialUsed(true);
-        setPaywall(state.reason || "Upgrade required");
-      } else {
-        setTrialUsed(isPaywalled() && state.persistence === "demo");
+      if (!chase.authError) setChase(chase.items);
+      setLocked(!state.canRun);
+      setLoaded(true);
+      // Dashboard "Try with sample files" deep link (/reconcile?sample=1)
+      if (new URLSearchParams(window.location.search).get("sample") === "1") {
+        router.replace("/reconcile");
+        if (state.canRun && !state.results.length && !autoSampleDone.current) {
+          autoSampleDone.current = true;
+          void loadSamples();
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router, setChase]);
 
-  const filtered = useMemo(() => {
-    if (filter === "all") return results;
-    return results.filter((r) => r.category === filter);
-  }, [results, filter]);
+  const counts = useMemo(() => {
+    const c: Record<MatchCategory, number> = { matched: 0, itc_at_risk: 0, unclaimed: 0, value_mismatch: 0 };
+    for (const r of results) c[r.category] += 1;
+    return c;
+  }, [results]);
+
+  const filtered = useMemo(
+    () => sortForAction(filter === "all" ? results : results.filter((r) => r.category === filter)),
+    [results, filter]
+  );
+
+  const riskAmount = useMemo(() => atRiskTotal(results), [results]);
+
+  async function afterSaved(
+    matched: MatchResult[],
+    sum: ReconSummary,
+    saved: { persistence: "postgres" | "demo"; reconCount?: number }
+  ) {
+    if (saved.persistence === "postgres" && typeof saved.reconCount === "number") {
+      setTrialFromServer(saved.reconCount);
+    }
+    setResults(matched);
+    setSummary(sum);
+    setFilter(defaultFilter(matched));
+    setShowUpload(false);
+    // Re-read gate + chase list so the locked button and "Chase N" are authoritative
+    const [state, chase] = await Promise.all([fetchReconState(), fetchChaseItems()]);
+    setLocked(!state.canRun);
+    if (!chase.authError) setChase(chase.items);
+  }
 
   async function runWithFiles(books: File, gstr: File) {
     setError("");
@@ -73,6 +126,7 @@ export default function ReconcilePage() {
     const state = await fetchReconState();
     if (!state.canRun) {
       setPaywall(state.reason || "Upgrade required");
+      setLocked(true);
       return;
     }
 
@@ -97,20 +151,14 @@ export default function ReconcilePage() {
         }
         if (saved.paywall) {
           setPaywall(saved.error || "Upgrade required");
-          setTrialUsed(true);
+          setLocked(true);
           return;
         }
         // Surface 500 / other server failures (do not silently pretend success)
         setError(saved.error || "Failed to save reconciliation");
         return;
       }
-      if (saved.persistence === "postgres" && typeof saved.reconCount === "number") {
-        setTrialFromServer(saved.reconCount);
-      }
-      setResults(matched);
-      setSummary(sum);
-      setFilter("itc_at_risk");
-      setTrialUsed(true);
+      await afterSaved(matched, sum, saved);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Reconciliation failed");
     } finally {
@@ -132,6 +180,7 @@ export default function ReconcilePage() {
     const state = await fetchReconState();
     if (!state.canRun) {
       setPaywall(state.reason || "Upgrade required");
+      setLocked(true);
       return;
     }
     setLoading(true);
@@ -156,20 +205,14 @@ export default function ReconcilePage() {
         }
         if (saved.paywall) {
           setPaywall(saved.error || "Upgrade required");
-          setTrialUsed(true);
+          setLocked(true);
           return;
         }
         // Surface 500 / other server failures (do not silently pretend success)
         setError(saved.error || "Failed to save reconciliation");
         return;
       }
-      if (saved.persistence === "postgres" && typeof saved.reconCount === "number") {
-        setTrialFromServer(saved.reconCount);
-      }
-      setResults(matched);
-      setSummary(sum);
-      setFilter("itc_at_risk");
-      setTrialUsed(true);
+      await afterSaved(matched, sum, saved);
     } catch {
       setError("Failed to load sample files");
     } finally {
@@ -177,13 +220,30 @@ export default function ReconcilePage() {
     }
   }
 
+  if (!loaded) {
+    return (
+      <div className="mx-auto max-w-5xl space-y-4" aria-busy="true" aria-label="Loading reconciliation">
+        <div className="h-8 w-40 animate-pulse rounded-[var(--radius-sm)]" style={{ backgroundColor: "var(--color-bg-subtle)" }} />
+        <div className="grid gap-4 md:grid-cols-2">
+          {[0, 1].map((i) => (
+            <div key={i} className="card h-32 animate-pulse" style={{ backgroundColor: "var(--color-bg-subtle)" }} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const bothFiles = Boolean(booksFile && gstrFile);
+  const chaseLabel = `Chase ${pendingCount} vendor${pendingCount === 1 ? "" : "s"}`;
+
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-4">
       <div>
         <h1 className="page-title">Reconcile</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Match purchase register vs GSTR-2B · GSTIN + invoice# + date (±1 day)
-        </p>
+        <div className="helper-line">
+          <span>{summary ? "Match your books against GSTR-2B." : "Drop both files, then run the match."}</span>
+          <HelpTip label="Matching rule" text={MATCH_RULE} />
+        </div>
       </div>
 
       {paywall && (
@@ -204,232 +264,170 @@ export default function ReconcilePage() {
         </div>
       )}
 
-      {!paywall && trialUsed && summary && (
-        <div
-          className="px-4 py-3 text-sm"
-          style={{
-            borderRadius: "var(--radius-lg)",
-            border: "1px solid var(--color-accent-ring)",
-            backgroundColor: "var(--color-accent-soft)",
-            color: "var(--color-text)",
-          }}
-        >
-          <span className="font-semibold" style={{ color: "var(--color-accent)" }}>
-            Trial recon used.
-          </span>{" "}
-          <span style={{ color: "var(--color-text-secondary)" }}>
-            Chase vendors below on this result. Next upload needs a paid plan —{" "}
-          </span>
-          <Link
-            href="/settings"
-            className="font-semibold underline"
-            style={{ color: "var(--color-accent)" }}
-          >
-            see Starter / Growth
-          </Link>
-          .
-        </div>
+      {(!summary || showUpload) && (
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <FileDrop
+              label="Purchase register"
+              hint="Tally, Zoho or Excel · .csv / .xlsx"
+              file={booksFile}
+              onFile={setBooksFile}
+            />
+            <FileDrop
+              label="GSTR-2B"
+              hint="From the GST portal · .csv / .xlsx"
+              file={gstrFile}
+              onFile={setGstrFile}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            {locked ? (
+              <LockedRun large label={summary ? "Run again · Upgrade" : "Run recon · Upgrade"} />
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onRun}
+                  disabled={loading || !bothFiles}
+                  className="btn btn-pri btn-lg"
+                >
+                  {loading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+                  Run recon
+                </button>
+                <button
+                  type="button"
+                  onClick={loadSamples}
+                  disabled={loading}
+                  className="link-accent text-sm disabled:opacity-50"
+                >
+                  Try with sample files
+                </button>
+              </>
+            )}
+            {summary && (
+              <button type="button" className="btn btn-sm btn-quiet" onClick={() => setShowUpload(false)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <FileDrop
-          label="Purchase register (books)"
-          hint="Excel or CSV from Tally / Zoho / Excel"
-          file={booksFile}
-          onFile={setBooksFile}
-        />
-        <FileDrop
-          label="GSTR-2B"
-          hint="Excel/CSV export from GST portal"
-          file={gstrFile}
-          onFile={setGstrFile}
-        />
-      </div>
-
-      <div className="flex flex-wrap gap-3">
-        <button
-          onClick={onRun}
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-60"
-        >
-          {loading ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-          Run reconciliation
-        </button>
-        <button
-          onClick={loadSamples}
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
-        >
-          <Upload size={16} />
-          Load sample files
-        </button>
-      </div>
-
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <p className="text-sm" style={{ color: "var(--color-status-risk-fg)" }}>
+          {error}
+        </p>
+      )}
 
       {summary && (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              label="Matched"
-              value={summary.matched}
-              tone="success"
-              sub={formatINR(summary.matchedAmount)}
-            />
-            <StatCard
-              label="ITC at risk"
-              value={summary.itcAtRisk}
-              tone="danger"
-              sub={formatINR(summary.itcAtRiskAmount)}
-            />
-            <StatCard label="Value mismatch" value={summary.valueMismatch} tone="warn" />
-            <StatCard label="Unclaimed" value={summary.unclaimed} tone="info" />
-          </div>
-
-          {summary.itcAtRiskAmount > 0 && (
-            <div
-              className="px-4 py-3 text-sm font-medium sm:px-5"
-              style={{
-                borderRadius: "var(--radius-md)",
-                border: "1px solid color-mix(in srgb, var(--color-status-risk-fg) 28%, transparent)",
-                backgroundColor: "var(--color-status-risk-bg)",
-                color: "var(--color-status-risk-fg)",
-              }}
-            >
-              <strong className="font-bold tabular-nums">
-                {formatINR(summary.itcAtRiskAmount)} ITC at risk
-              </strong>
-              {" — "}
-              {summary.itcAtRisk} invoice{summary.itcAtRisk === 1 ? "" : "s"} missing from
-              GSTR-2B. Chase vendors before filing GSTR-3B.
+          {!showUpload && (
+            <div className="card flex flex-wrap items-center gap-4 px-4 py-3">
+              <FilePill name={booksFile?.name} fallback="Purchase register" />
+              <FilePill name={gstrFile?.name} fallback="GSTR-2B" />
+              <span className="text-[0.8125rem]" style={{ color: "var(--color-text-secondary)" }}>
+                {summary.totalBooks} books · {summary.totalGstr2b} in 2B
+              </span>
+              <div className="ml-auto flex items-center gap-2">
+                {locked ? (
+                  <LockedRun label="Run again · Upgrade" />
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="link-accent text-[0.8125rem]"
+                      onClick={() => setShowUpload(true)}
+                    >
+                      Replace files
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={loading}
+                      onClick={() => (bothFiles ? void onRun() : setShowUpload(true))}
+                    >
+                      {loading ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                      Run again
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2">
-            {FILTERS.map((f) => (
+          {/* Hero: ₹ = ITC-at-risk rows only (matches the at-risk CSV total) */}
+          <section className="card flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="hero-label">ITC at risk</div>
+              <div className="hero-amount mt-1">{formatINR(riskAmount)}</div>
+              <div className="mt-1 text-sm" style={{ color: "var(--color-text-muted)" }}>
+                {counts.itc_at_risk} invoice{counts.itc_at_risk === 1 ? "" : "s"} missing from GSTR-2B ·{" "}
+                {counts.value_mismatch} value mismatch{counts.value_mismatch === 1 ? "" : "es"}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
               <button
-                key={f.key}
-                onClick={() => setFilter(f.key)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                  filter === f.key
-                    ? "bg-teal-700 text-white"
-                    : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
-                }`}
+                type="button"
+                className="btn btn-lg"
+                disabled={counts.itc_at_risk === 0}
+                onClick={() => downloadCsv(`itc-at-risk-${istDate()}.csv`, atRiskCsv(results))}
               >
-                {f.label}
-                {f.key !== "all" &&
-                  ` (${results.filter((r) => r.category === f.key).length})`}
+                <Download size={16} aria-hidden /> At-risk CSV ({counts.itc_at_risk})
               </button>
-            ))}
+              {pendingCount > 0 ? (
+                <Link href="/chase" className="btn btn-pri btn-lg">
+                  <MessageCircle size={16} aria-hidden /> {chaseLabel}
+                </Link>
+              ) : (
+                <Link href="/status" className="btn btn-lg">
+                  <ListChecks size={16} aria-hidden /> Open status board
+                </Link>
+              )}
+            </div>
+          </section>
+
+          <div className="flex flex-wrap gap-2 pt-2" role="tablist" aria-label="Filter results">
+            {FILTERS.map((f) => {
+              const n = f.key === "all" ? results.length : counts[f.key];
+              return (
+                <button
+                  key={f.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={filter === f.key}
+                  data-active={filter === f.key ? "true" : undefined}
+                  onClick={() => setFilter(f.key)}
+                  className="tab-pill"
+                >
+                  {f.label} · {n}
+                  {f.key === "matched" && summary.matchedAmount > 0 && (
+                    <span style={{ opacity: 0.7 }}>{formatINR(summary.matchedAmount)}</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
-          <div
-            className="overflow-hidden shadow-sm"
-            style={{
-              borderRadius: "var(--radius-lg)",
-              border: "1px solid var(--color-border)",
-              backgroundColor: "var(--color-bg)",
-            }}
-          >
-            <div className="table-scroll overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead
-                  className="text-xs uppercase tracking-wide"
-                  style={{ color: "var(--color-text-muted)" }}
-                >
-                  <tr>
-                    <th className="px-4 py-3 font-semibold">Status</th>
-                    <th className="px-4 py-3 font-semibold">Vendor</th>
-                    <th className="px-4 py-3 font-semibold">GSTIN</th>
-                    <th className="px-4 py-3 font-semibold">Invoice</th>
-                    <th className="px-4 py-3 font-semibold">Date</th>
-                    <th className="px-4 py-3 font-semibold text-right">Books tax</th>
-                    <th className="px-4 py-3 font-semibold text-right">2B tax</th>
-                    <th className="px-4 py-3 font-semibold">Notes</th>
-                  </tr>
-                </thead>
-                <tbody style={{ borderColor: "var(--color-border)" }} className="divide-y divide-slate-100">
-                  {filtered.map((r) => (
-                    <tr key={r.id} className="recon-row">
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <CategoryBadge category={r.category} />
-                      </td>
-                      <td
-                        className="max-w-[160px] truncate px-4 py-3 font-medium"
-                        style={{ color: "var(--color-text)" }}
-                      >
-                        {r.vendorName}
-                      </td>
-                      <td
-                        className="whitespace-nowrap px-4 py-3 font-mono"
-                        style={{
-                          fontSize: "0.8125rem",
-                          lineHeight: "1.125rem",
-                          color: "var(--color-text-secondary)",
-                          fontFamily: "var(--font-mono), ui-monospace, monospace",
-                        }}
-                      >
-                        {r.gstin}
-                      </td>
-                      <td
-                        className="whitespace-nowrap px-4 py-3 font-mono"
-                        style={{
-                          fontSize: "0.8125rem",
-                          color: "var(--color-text)",
-                          fontFamily: "var(--font-mono), ui-monospace, monospace",
-                        }}
-                      >
-                        {r.invoiceNumber}
-                      </td>
-                      <td
-                        className="whitespace-nowrap px-4 py-3"
-                        style={{ color: "var(--color-text-secondary)" }}
-                      >
-                        {r.invoiceDate}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
-                        {r.booksTax ? formatINRPrecise(r.booksTax) : "—"}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
-                        {r.gstr2bTax ? formatINRPrecise(r.gstr2bTax) : "—"}
-                      </td>
-                      <td
-                        className="max-w-[200px] truncate px-4 py-3 text-xs"
-                        style={{ color: "var(--color-text-muted)" }}
-                      >
-                        {r.notes || "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {!filtered.length && (
-              <div className="border-t px-3 py-4" style={{ borderColor: "var(--color-border)" }}>
-                <EmptyState
-                  icon={Filter}
-                  title="No rows in this filter"
-                  description="Nothing matches the selected category. Switch filter or show all invoices from this recon."
-                  actionLabel="Show all rows"
-                  onAction={() => setFilter("all")}
-                />
-              </div>
-            )}
-          </div>
+          {filtered.length ? (
+            <RiskTable
+              rows={filtered}
+              statusById={statusById}
+              busy={busy}
+              company={company}
+              showDate
+              showAllPills={filter === "all"}
+              onResolve={resolve}
+            />
+          ) : (
+            <EmptyState
+              icon={Filter}
+              title="No rows in this filter."
+              actionLabel="Show all rows"
+              onAction={() => setFilter("all")}
+            />
+          )}
 
           <div className="flex flex-wrap gap-3">
-            <Link
-              href="/chase"
-              className="rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800"
-            >
-              Chase vendors →
-            </Link>
-            <Link
-              href="/status"
-              className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-            >
-              Open status board
-            </Link>
             <button
               onClick={() => exportResults(results)}
               className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
@@ -452,7 +450,31 @@ export default function ReconcilePage() {
           </div>
         </>
       )}
+
+      <Toast toast={toast} onDismiss={dismiss} />
     </div>
+  );
+}
+
+/** Trial gate: locked button + sidebar meter replace the old red banner. */
+function LockedRun({ label, large = false }: { label: string; large?: boolean }) {
+  return (
+    <Link
+      href="/settings"
+      className={`btn ${large ? "btn-lg" : "btn-sm"}`}
+      title="Free trial used. Upgrade to run another reconciliation."
+    >
+      <Lock size={14} aria-hidden /> {label}
+    </Link>
+  );
+}
+
+function FilePill({ name, fallback }: { name?: string; fallback: string }) {
+  return (
+    <span className="pill pill-ok">
+      <Check size={12} aria-hidden />
+      <span className={name ? "mono-sm" : undefined}>{name || fallback}</span>
+    </span>
   );
 }
 
@@ -467,14 +489,47 @@ function FileDrop({
   file: File | null;
   onFile: (f: File) => void;
 }) {
+  const [over, setOver] = useState(false);
   return (
-    <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-8 transition hover:border-teal-400 hover:bg-teal-50/30">
-      <Upload className="text-teal-700" size={28} />
-      <span className="mt-3 text-sm font-semibold text-slate-900">{label}</span>
-      <span className="mt-1 text-xs text-slate-500">{hint}</span>
+    <label
+      className="flex cursor-pointer flex-col items-center justify-center px-4 py-8 text-center transition"
+      style={{
+        borderRadius: "var(--radius-lg)",
+        border: `1.5px dashed ${over ? "var(--color-accent)" : "var(--color-border-strong)"}`,
+        backgroundColor: over ? "var(--color-accent-soft)" : "var(--color-bg)",
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        const f = e.dataTransfer.files?.[0];
+        if (f) onFile(f);
+      }}
+    >
+      <span
+        className="grid h-10 w-10 place-items-center"
+        style={{
+          borderRadius: "var(--radius-md)",
+          backgroundColor: "var(--color-accent-soft)",
+          color: "var(--color-accent)",
+        }}
+      >
+        <Upload size={20} aria-hidden />
+      </span>
+      <span className="mt-3 text-sm font-semibold" style={{ color: "var(--color-text)" }}>
+        {label}
+      </span>
+      <span className="mt-0.5 text-[0.8125rem]" style={{ color: "var(--color-text-muted)" }}>
+        {hint}
+      </span>
       {file && (
-        <span className="mt-3 rounded-full bg-teal-50 px-3 py-1 text-xs font-medium text-teal-800">
-          {file.name}
+        <span className="pill pill-ok mt-3">
+          <Check size={12} aria-hidden />
+          <span className="mono-sm">{file.name}</span>
         </span>
       )}
       <input

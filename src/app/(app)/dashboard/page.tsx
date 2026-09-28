@@ -1,200 +1,226 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import {
-  Upload,
-  GitCompareArrows,
-  MessageSquare,
-  Kanban,
-  FileSpreadsheet,
-} from "lucide-react";
-import { StatCard } from "@/components/StatCard";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Check, MessageCircle, Upload, ListChecks } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
-import { getLocalUser, getSettings } from "@/lib/storage";
+import { HelpTip } from "@/components/HelpTip";
+import { RiskTable, atRiskTotal, isActionable, sortForAction, useChaseRows } from "@/components/RiskTable";
+import { Toast, useToast } from "@/components/Toast";
+import { getSettings } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
 import { formatINR } from "@/lib/reconcile";
-import type { ReconSummary } from "@/lib/types";
+import type { MatchResult, ReconSummary } from "@/lib/types";
 
 export default function DashboardPage() {
-  const [name, setName] = useState("there");
+  const router = useRouter();
+  const [loaded, setLoaded] = useState(false);
   const [summary, setSummary] = useState<ReconSummary | null>(null);
-  const [pending, setPending] = useState(0);
-  const [company, setCompany] = useState("");
+  const [results, setResults] = useState<MatchResult[]>([]);
+  const [company, setCompany] = useState("My Company");
+  const { toast, show, dismiss } = useToast();
+  const { setChase, statusById, pendingCount, resolve, busy } = useChaseRows(show);
 
   useEffect(() => {
-    const u = getLocalUser();
-    if (u) setName(u.name?.split(" ")[0] || "there");
-    setCompany(getSettings().companyName);
+    let cancelled = false;
+    setCompany(getSettings().companyName || "My Company");
     (async () => {
       const [recon, chase] = await Promise.all([fetchReconState(), fetchChaseItems()]);
+      if (cancelled) return;
+      if (recon.authError) {
+        router.replace("/login");
+        return;
+      }
       setSummary(recon.summary);
-      setPending(chase.items.filter((c) => c.status === "pending").length);
+      setResults(recon.results);
+      if (!chase.authError) setChase(chase.items);
+      setLoaded(true);
     })();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [router, setChase]);
+
+  const actionRows = useMemo(() => sortForAction(results.filter(isActionable)), [results]);
+  const riskAmount = useMemo(() => atRiskTotal(results), [results]);
+
+  if (!loaded) {
+    return (
+      <div className="mx-auto max-w-5xl space-y-4" aria-busy="true" aria-label="Loading dashboard">
+        <div className="card h-36 animate-pulse" style={{ backgroundColor: "var(--color-bg-subtle)" }} />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="card h-24 animate-pulse" style={{ backgroundColor: "var(--color-bg-subtle)" }} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!summary) return <DashboardEmpty />;
+
+  const atRiskCount = results.filter((r) => r.category === "itc_at_risk").length;
+  const mismatchCount = results.filter((r) => r.category === "value_mismatch").length;
+  const chaseLabel = `Chase ${pendingCount} vendor${pendingCount === 1 ? "" : "s"}`;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4">
-      <div className="welcome-strip">
-        <div className="min-w-0 flex-1">
-          <h1 className="page-title">
-            Namaste, {name} 👋
-          </h1>
-          <p
-            className="mt-1 text-sm leading-relaxed"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            {company ? `${company} · ` : ""}
-            Unblock ITC before your next GSTR-3B filing.
-          </p>
+    <div className="mx-auto max-w-5xl space-y-4">
+      {/* Hero: ₹ ITC at risk (at-risk rows only) + one primary action */}
+      <section className="card flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+        <div className="min-w-0">
+          <div className="hero-label">ITC at risk</div>
+          <div className="hero-amount mt-1">{formatINR(riskAmount)}</div>
+          <div className="helper-line">
+            <span>
+              {atRiskCount} invoice{atRiskCount === 1 ? "" : "s"} missing from GSTR-2B · {mismatchCount} value
+              mismatch{mismatchCount === 1 ? "" : "es"}
+            </span>
+            <HelpTip text="Total of ITC-at-risk invoices only, same as the at-risk CSV. Value mismatches are listed below but not added to this number." />
+          </div>
         </div>
-        <Link
-          href={summary ? "/chase" : "/reconcile"}
-          className="btn-accent inline-flex shrink-0 items-center justify-center px-4 py-2 text-sm font-semibold"
-        >
-          {summary ? "Chase vendors →" : "Start reconciling →"}
+        {pendingCount > 0 ? (
+          <Link href="/chase" className="btn btn-pri btn-lg shrink-0">
+            <MessageCircle size={16} aria-hidden /> {chaseLabel}
+          </Link>
+        ) : (
+          <Link href="/status" className="btn btn-lg shrink-0">
+            <ListChecks size={16} aria-hidden /> Open status board
+          </Link>
+        )}
+      </section>
+
+      {/* Action steps */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StepDone title="Upload purchase register" sub={`${summary.totalBooks} invoices`} action="Replace" />
+        <StepDone title="Upload GSTR-2B" sub={`${summary.totalGstr2b} invoices`} action="Replace" />
+        <StepDone title="Run recon" sub={`${summary.totalBooks} books · ${summary.totalGstr2b} in 2B`} action="Run again" />
+        <Link href="/chase" className={`card block p-4 transition hover:shadow-sm ${pendingCount > 0 ? "card-accent" : ""}`}>
+          <div className="flex items-center justify-between">
+            {pendingCount > 0 ? (
+              <span className="pill pill-risk">{pendingCount} pending</span>
+            ) : (
+              <span className="pill pill-ok">
+                <Check size={12} aria-hidden /> All chased
+              </span>
+            )}
+          </div>
+          <div className="mt-3 font-semibold" style={{ color: "var(--color-accent)" }}>
+            {pendingCount > 0 ? chaseLabel : "Vendor chase"}
+          </div>
+          <div className="mt-0.5 text-sm" style={{ color: "var(--color-text-secondary)" }}>
+            WhatsApp · EN + HI
+          </div>
         </Link>
       </div>
 
-      {summary ? (
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Matched" value={summary.matched} tone="success" sub={formatINR(summary.matchedAmount)} />
-          <StatCard
-            label="ITC at risk"
-            value={summary.itcAtRisk}
-            tone="danger"
-            sub={formatINR(summary.itcAtRiskAmount)}
-          />
-          <StatCard label="Value mismatch" value={summary.valueMismatch} tone="warn" />
-          <StatCard label="Unclaimed (2B only)" value={summary.unclaimed} tone="info" />
+      {/* At-risk rows, then value-mismatch rows, with inline actions */}
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-4">
+        <h2 className="text-base font-semibold" style={{ color: "var(--color-text)" }}>
+          At-risk invoices
+        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="pill pill-ok">Matched {summary.matched}</span>
+          <span className="pill pill-warn">Mismatch {summary.valueMismatch}</span>
+          <span className="pill pill-info">Unclaimed {summary.unclaimed}</span>
+          <Link href="/reconcile" className="link-accent ml-2 text-sm">
+            View all →
+          </Link>
         </div>
+      </div>
+      {actionRows.length ? (
+        <RiskTable rows={actionRows} statusById={statusById} busy={busy} company={company} onResolve={resolve} />
       ) : (
         <EmptyState
-          icon={FileSpreadsheet}
-          title="No reconciliation yet"
-          description="Upload purchase register + GSTR-2B, or load our sample files for a 30-second demo."
-          actionLabel="Start reconciling"
+          icon={Check}
+          title="No invoices need chasing in this recon."
+          actionLabel="View all results"
           actionHref="/reconcile"
         />
       )}
 
-      {/* Next-action cards — matching next step is sole primary tile; rest ghost */}
-      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-4">
-        {[
-          {
-            id: "reconcile",
-            href: "/reconcile",
-            icon: Upload,
-            title: "Upload & reconcile",
-            desc: "Match books vs GSTR-2B",
-          },
-          {
-            id: "results",
-            href: "/reconcile",
-            icon: GitCompareArrows,
-            title: "View results",
-            desc: summary
-              ? `${summary.totalBooks} books · ${summary.totalGstr2b} in 2B`
-              : "Run a recon first",
-          },
-          {
-            id: "chase",
-            href: "/chase",
-            icon: MessageSquare,
-            title: "Vendor chase",
-            desc: pending
-              ? `${pending} pending follow-ups`
-              : "WhatsApp EN + HI templates",
-          },
-          {
-            id: "status",
-            href: "/status",
-            icon: Kanban,
-            title: "Status board",
-            desc: "Pending · Fixed · Still blocked",
-          },
-        ].map((card) => {
-          const isPrimary = summary ? card.id === "chase" : card.id === "reconcile";
+      <Toast toast={toast} onDismiss={dismiss} />
+    </div>
+  );
+}
+
+function StepDone({ title, sub, action }: { title: string; sub: string; action: string }) {
+  return (
+    <div className="card p-4">
+      <div className="flex items-center justify-between">
+        <span className="pill pill-ok">
+          <Check size={12} aria-hidden /> Done
+        </span>
+        <Link href="/reconcile" className="link-accent text-[0.8125rem]">
+          {action}
+        </Link>
+      </div>
+      <div className="mt-3 font-semibold" style={{ color: "var(--color-text)" }}>
+        {title}
+      </div>
+      <div className="mt-0.5 text-sm" style={{ color: "var(--color-text-secondary)" }}>
+        {sub}
+      </div>
+    </div>
+  );
+}
+
+const STEPS: [string, string][] = [
+  ["Upload purchase register", "Tally, Zoho or Excel"],
+  ["Upload GSTR-2B", "From the GST portal"],
+  ["Run recon", "One click"],
+  ["Chase vendors", "WhatsApp · EN + HI"],
+];
+
+function DashboardEmpty() {
+  return (
+    <div className="mx-auto max-w-5xl space-y-4">
+      <section className="card px-6 py-12 text-center sm:px-8 sm:py-14">
+        <div
+          className="mx-auto grid h-12 w-12 place-items-center"
+          style={{ borderRadius: "var(--radius-md)", backgroundColor: "var(--color-accent-soft)", color: "var(--color-accent)" }}
+        >
+          <Upload size={22} aria-hidden />
+        </div>
+        <h1 className="mt-4 text-xl font-semibold" style={{ color: "var(--color-text)" }}>
+          Upload your purchase register to see how much ITC is at risk.
+        </h1>
+        <div className="mt-6">
+          <Link href="/reconcile" className="btn btn-pri btn-lg">
+            <Upload size={16} aria-hidden /> Upload purchase register
+          </Link>
+        </div>
+        <div className="mt-4 text-[0.8125rem]">
+          <Link href="/reconcile?sample=1" className="link-accent">
+            Try with sample files
+          </Link>
+        </div>
+      </section>
+      <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {STEPS.map(([title, sub], i) => {
+          const on = i === 0;
           return (
-            <Link
-              key={card.title}
-              href={card.href}
-              className={
-                isPrimary
-                  ? "group rounded-[var(--radius-md)] border p-3 shadow-sm transition hover:shadow-md"
-                  : "group btn-ghost rounded-[var(--radius-md)] border p-3 transition"
-              }
-              style={
-                isPrimary
-                  ? {
-                      borderColor: "var(--color-accent-ring)",
-                      backgroundColor: "var(--color-accent-soft)",
-                    }
-                  : {
-                      borderColor: "var(--color-border)",
-                      backgroundColor: "transparent",
-                    }
-              }
-            >
-              <card.icon
-                style={{
-                  color: isPrimary
-                    ? "var(--color-accent)"
-                    : "var(--color-text-muted)",
-                }}
-                size={20}
-              />
+            <li key={title} className={`card p-4 ${on ? "card-accent" : ""}`} style={on ? undefined : { opacity: 0.6 }}>
               <div
-                className="mt-2 text-sm font-semibold group-hover:opacity-90"
-                style={{
-                  color: isPrimary
-                    ? "var(--color-accent)"
-                    : "var(--color-text-secondary)",
-                }}
+                className="grid h-6 w-6 place-items-center rounded-full text-xs font-semibold"
+                style={
+                  on
+                    ? { backgroundColor: "var(--color-accent)", color: "#fff" }
+                    : { backgroundColor: "var(--color-bg-subtle)", color: "var(--color-text-muted)" }
+                }
               >
-                {card.title}
+                {i + 1}
               </div>
-              <div className="mt-0.5 text-meta">{card.desc}</div>
-            </Link>
+              <div className="mt-3 font-semibold" style={{ color: on ? "var(--color-accent)" : "var(--color-text)" }}>
+                {title}
+              </div>
+              <div className="mt-0.5 text-sm" style={{ color: "var(--color-text-secondary)" }}>
+                {sub}
+              </div>
+            </li>
           );
         })}
-      </div>
-
-      {/* Compact sample-files row */}
-      <div
-        className="flex flex-col gap-2 rounded-[var(--radius-md)] border px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"
-        style={{
-          borderColor: "var(--color-border)",
-          backgroundColor: "var(--color-bg)",
-        }}
-      >
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>
-            Sample files (offline demo)
-          </h3>
-          <p className="mt-0.5 text-meta">
-            Download, then upload on Reconcile — or use &quot;Load sample files&quot; there.
-          </p>
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
-          <a
-            href="/samples/purchase-register.csv"
-            className="btn-ghost inline-flex items-center gap-1.5 px-3 py-1.5 text-sm"
-            download
-          >
-            <FileSpreadsheet size={14} />
-            purchase-register.csv
-          </a>
-          <a
-            href="/samples/gstr-2b.csv"
-            className="btn-ghost inline-flex items-center gap-1.5 px-3 py-1.5 text-sm"
-            download
-          >
-            <FileSpreadsheet size={14} />
-            gstr-2b.csv
-          </a>
-        </div>
-      </div>
+      </ol>
     </div>
   );
 }
