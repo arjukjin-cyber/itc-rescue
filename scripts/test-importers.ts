@@ -720,6 +720,22 @@ async function main() {
     assert.deepEqual(out.results.map((r) => r.category), ["matched"]);
   });
 
+  await test("merge keeps the first valid vendor phone (UX-04) and it rides on the match result", () => {
+    const a = { ...inv("books", "DPS-4491", "2025-04-08", 50000, 4500, 4500), phone: "not-a-phone" };
+    const b = { ...inv("books", "DPS-4491", "2025-04-08", 10000, 600, 600), phone: "919876543210" };
+    const c = { ...inv("books", "DPS-4491", "2025-04-08", 1000, 90, 90), phone: "919000000001" };
+    const { records } = mergeInvoiceRows([a, b, c]);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].phone, "919876543210");
+    const { results } = reconcile([a, b, c], []);
+    assert.equal(results.length, 1);
+    assert.equal(results[0].phone, "919876543210");
+    // unregistered supplier: no GSTIN lookup, phone comes from the merged books row
+    const u1 = { ...inv("books", "B-1", "2025-04-08", 100, 9, 9), gstin: "UNKNOWN", vendorName: "Local Shop" };
+    const u2 = { ...u1, phone: "919812345678" };
+    assert.equal(reconcile([u1, u2], []).results[0].phone, "919812345678");
+  });
+
   console.log("UX-01: portal GSTR-2B JSON + file-specific errors");
 
   const jsonFile = (obj: unknown, name = "gstr2b.json") =>
