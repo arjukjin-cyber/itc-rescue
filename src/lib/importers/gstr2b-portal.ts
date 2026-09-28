@@ -143,7 +143,7 @@ function parseYesNo(v: unknown): boolean | undefined {
  * Convert B2B data rows into InvoiceRecords.
  * - keeps "ITC Availability" = No rows (flagged via `itcAvailable: false`)
  * - drops GSTR-2A style "<invoice>-Total" summary rows
- * - merges the per-tax-rate rows of one invoice (GSTIN + normalised invoice no,
+ * - merges the per-tax-rate rows of one invoice (GSTIN + normalised invoice no + FY,
  *   the same key reconcile() uses for books)
  */
 export function mapGstr2bPortalRows(
@@ -158,6 +158,6 @@ export function mapGstr2bPortalRows(
     return itc === undefined ? rec : { ...rec, itcAvailable: itc };
   });
 
-  // Same key as the books side (GSTIN + normalised invoice no, no date).
+  // Same key as the books side (GSTIN + normalised invoice no + financial year).
   return mergeInvoiceRows(records).records;
 }

@@ -159,9 +159,27 @@ export function deriveGstRate(taxable: number, tax: number): number {
 export const DUPLICATE_BOOKS_NOTE = "Possible duplicate entry in books";
 
 /**
- * Merge key: GSTIN + normalised invoice number (no date).
- * Rows without an invoice number are never merged; unregistered suppliers
- * (GSTIN "UNKNOWN") are additionally keyed on vendor name.
+ * Indian financial year (April–March) of a YYYY-MM-DD date, e.g.
+ * 2025-03-31 -> "2024-25", 2025-04-01 -> "2025-26". Null if the date is missing
+ * or not an ISO date.
+ */
+export function financialYear(isoDate: string | undefined | null): string | null {
+  const m = String(isoDate ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const month = Number(m[2]);
+  if (month < 1 || month > 12) return null;
+  const start = month >= 4 ? y : y - 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
+}
+
+/**
+ * Merge key: GSTIN + normalised invoice number + financial year.
+ * GST only requires invoice numbers to be unique per FY (many suppliers restart
+ * at INV/001 every April), so the same number in two FYs stays two invoices.
+ * Rows with a missing/unparseable date fall into a "no FY" bucket keyed on
+ * GSTIN + invoice number only. Rows without an invoice number are never merged;
+ * unregistered suppliers (GSTIN "UNKNOWN") are additionally keyed on vendor name.
  */
 export function invoiceMergeKey(inv: InvoiceRecord): string | null {
   const no = normalizeInvoiceNumber(inv.invoiceNumber);
@@ -170,7 +188,7 @@ export function invoiceMergeKey(inv: InvoiceRecord): string | null {
     inv.gstin && inv.gstin !== "UNKNOWN"
       ? inv.gstin
       : `UNKNOWN:${String(inv.vendorName || "").trim().toUpperCase()}`;
-  return `${party}|${no}`;
+  return `${party}|${no}|${financialYear(inv.invoiceDate) ?? "no-fy"}`;
 }
 
 function round2(n: number): number {
@@ -238,10 +256,11 @@ const TAX_TOLERANCE = 1; // ₹1 tolerance for rounding
 
 /**
  * Match books vs GSTR-2B:
- * - First, rows of the same invoice (GSTIN + normalised invoice#) are merged on
+ * - First, rows of the same invoice (GSTIN + normalised invoice# + FY) are merged on
  *   each side (see mergeInvoiceRows); identical repeated books rows get a
  *   "Possible duplicate entry in books" note.
- * - Key: GSTIN + normalized invoice# + date (±1 day)
+ * - Key: GSTIN + normalized invoice# + date (±1 day) + same financial year
+ *   (FY only checked when both dates parse).
  * - Categories: matched, itc_at_risk (books only), unclaimed (2B only), value_mismatch
  */
 export function reconcile(
@@ -254,6 +273,7 @@ export function reconcile(
   const results: MatchResult[] = [];
 
   for (const book of books) {
+    const bookFy = financialYear(book.invoiceDate);
     let bestIdx = -1;
     let bestScore = Infinity;
 
@@ -264,6 +284,10 @@ export function reconcile(
       if (book.invoiceNumber !== g.invoiceNumber) continue;
       const dd = dayDiff(book.invoiceDate, g.invoiceDate);
       if (dd > 1) continue;
+      // Same invoice no. in another financial year is a different invoice, even
+      // across the 31-Mar / 01-Apr boundary. Only applied when both FYs are known.
+      const gFy = financialYear(g.invoiceDate);
+      if (bookFy && gFy && bookFy !== gFy) continue;
       if (dd < bestScore) {
         bestScore = dd;
         bestIdx = i;

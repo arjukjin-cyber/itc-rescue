@@ -13,6 +13,7 @@ import { parseInvoiceFileDetailed } from "../src/lib/parseFile";
 import {
   DUPLICATE_BOOKS_NOTE,
   deriveGstRate,
+  financialYear,
   mergeInvoiceRows,
   normalizeInvoiceNumber,
   reconcile,
@@ -644,6 +645,67 @@ async function main() {
     assert.equal(results[0].category, "itc_at_risk");
     assert.equal(results[0].booksTax, 360);
     assert.ok(results[0].notes?.startsWith(DUPLICATE_BOOKS_NOTE));
+  });
+
+  console.log("Financial year in merge + match");
+
+  await test("financialYear: Indian April–March, boundary dates", () => {
+    assert.equal(financialYear("2025-03-31"), "2024-25");
+    assert.equal(financialYear("2025-04-01"), "2025-26");
+    assert.equal(financialYear("2026-03-31"), "2025-26");
+    assert.equal(financialYear("2000-01-15"), "1999-00");
+    assert.equal(financialYear("2099-12-31"), "2099-00");
+    assert.equal(financialYear(""), null);
+    assert.equal(financialYear("31/03/2025"), null); // unparsed text
+    assert.equal(financialYear(undefined), null);
+  });
+
+  const fyInv = (source: "books" | "gstr2b", date: string, taxable: number, gstin = "27AABCT1332L1ZV") =>
+    ({ ...inv(source, "INV/001", date, taxable, taxable * 0.09, taxable * 0.09), gstin });
+
+  await test("same invoice no. + GSTIN in FY 24-25 and FY 25-26 stays two invoices on both sides", () => {
+    const books = [fyInv("books", "2024-06-10", 10000), fyInv("books", "2025-06-10", 20000)];
+    const g2b = [fyInv("gstr2b", "2025-06-10", 20000), fyInv("gstr2b", "2024-06-10", 10000)];
+    assert.equal(mergeInvoiceRows(books).records.length, 2);
+    assert.equal(mergeInvoiceRows(g2b).records.length, 2);
+    const { results, summary } = reconcile(books, g2b);
+    assert.deepEqual([summary.matched, summary.valueMismatch, summary.itcAtRisk, summary.unclaimed], [2, 0, 0, 0]);
+    for (const r of results) {
+      assert.equal(r.books?.invoiceDate, r.gstr2b?.invoiceDate); // each paired with its own FY
+      assert.equal(r.booksTax, r.gstr2bTax);
+    }
+    assert.deepEqual(results.map((r) => r.booksTax), [1800, 3600]);
+  });
+
+  await test("FY boundary: 31-Mar-2025 and 01-Apr-2025 rows of one invoice no. are not merged", () => {
+    const { records } = mergeInvoiceRows([fyInv("books", "2025-03-31", 10000), fyInv("books", "2025-04-01", 10000)]);
+    assert.equal(records.length, 2);
+    assert.deepEqual(records.map((r) => financialYear(r.invoiceDate)), ["2024-25", "2025-26"]);
+  });
+
+  await test("missing date falls back to merging on GSTIN + invoice no. (no-FY bucket)", () => {
+    const { records } = mergeInvoiceRows([
+      fyInv("books", "", 10000),
+      fyInv("books", "", 5000),
+      fyInv("books", "2025-06-10", 1000), // dated row stays in its FY bucket
+    ]);
+    assert.equal(records.length, 2);
+    assert.equal(records[0].invoiceDate, "");
+    assert.equal(records[0].taxableValue, 15000);
+    assert.equal(records[0].totalTax, 2700);
+    assert.equal(records[1].taxableValue, 1000);
+  });
+
+  await test("match step never pairs a FY 24-25 book row with a FY 25-26 2B row", () => {
+    // a year apart
+    let out = reconcile([fyInv("books", "2024-06-10", 10000)], [fyInv("gstr2b", "2025-06-10", 10000)]);
+    assert.deepEqual(out.results.map((r) => r.category), ["itc_at_risk", "unclaimed"]);
+    // across the boundary, even though the dates are only 1 day apart
+    out = reconcile([fyInv("books", "2025-03-31", 10000)], [fyInv("gstr2b", "2025-04-01", 10000)]);
+    assert.deepEqual(out.results.map((r) => r.category), ["itc_at_risk", "unclaimed"]);
+    // ±1 day inside one FY still matches
+    out = reconcile([fyInv("books", "2025-04-01", 10000)], [fyInv("gstr2b", "2025-04-02", 10000)]);
+    assert.deepEqual(out.results.map((r) => r.category), ["matched"]);
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);
