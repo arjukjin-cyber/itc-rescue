@@ -631,7 +631,7 @@ async function main() {
     assert.equal(r.gstr2bTax, 31500);
     assert.equal(r.taxDiff, 31500);
     assert.ok(r.notes?.includes(DUPLICATE_BOOKS_NOTE), r.notes);
-    assert.equal(r.notes, `${DUPLICATE_BOOKS_NOTE} · Tax differs by ₹31500.00`);
+    assert.equal(r.notes, `${DUPLICATE_BOOKS_NOTE} · Tax differs by ₹31,500.00`); // main (#29) formats with formatINRPrecise
     assert.deepEqual([summary.matched, summary.valueMismatch, summary.unclaimed], [0, 1, 0]);
   });
 
