@@ -9,6 +9,7 @@
     "lint": "eslint",
     "smoke:dod": "node scripts/dod-persist-smoke.mjs",
     "test:importers": "npx --yes tsx scripts/test-importers.ts",
+    "check:phone": "npx --yes tsx scripts/test-phone.ts",
     "check:vendors": "npx -y tsx scripts/vendors-check.ts"
   },
   "dependencies": {

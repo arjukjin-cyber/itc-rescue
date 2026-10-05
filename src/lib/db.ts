@@ -12,6 +12,7 @@ import {
   type VendorSummary,
 } from "./vendors";
 import { QA_FAIL_VENDORS_MESSAGE } from "./qa-flags";
+import { attachPhones, firstPhoneByGstin } from "./phone";
 
 let _sql: NeonQueryFunction<false, false> | null = null;
 let _schemaReady = false;
@@ -357,6 +358,7 @@ export async function saveReconForUser(
       category: r.category,
       status,
       lastUpdated,
+      ...(r.phone ? { phone: r.phone } : {}), // UX-04 (in-memory only; no chase_items column)
     });
   }
   const chase = Array.from(chaseById.values());
@@ -480,13 +482,15 @@ export async function recordVendorOffensesForRun(
 }
 
 export async function getLatestReconForUser(userId: string): Promise<{
+  id: string;
+  createdAt: string;
   results: MatchResult[];
   summary: ReconSummary;
 } | null> {
   await ensureSchema();
   const sql = getSql();
   const rows = await sql`
-    SELECT summary, results FROM recon_runs
+    SELECT id, created_at, summary, results FROM recon_runs
     WHERE user_id = ${userId}
     ORDER BY created_at DESC
     LIMIT 1
@@ -494,6 +498,8 @@ export async function getLatestReconForUser(userId: string): Promise<{
   if (!rows.length) return null;
   const row = rows[0] as Record<string, unknown>;
   return {
+    id: String(row.id),
+    createdAt: new Date(row.created_at as string).toISOString(),
     summary: row.summary as ReconSummary,
     results: row.results as MatchResult[],
   };
@@ -550,7 +556,47 @@ export async function listChaseForUser(userId: string): Promise<ChaseItem[]> {
     }
   }
 
+  // UX-04: chase_items has no phone column (no schema change). Look the vendor
+  // phone up by GSTIN from the latest recon's results JSON instead.
+  if (items.length) {
+    items = attachPhones(items, await latestPhoneByGstin(userId));
+  }
+
   return items;
+}
+
+/**
+ * GSTIN -> vendor phone ("91XXXXXXXXXX") from the latest recon_runs.results JSON,
+ * first valid phone in result order. Best-effort: any error -> empty map, so the
+ * chase list still loads (WhatsApp then opens without a recipient, as before).
+ */
+async function latestPhoneByGstin(userId: string): Promise<Map<string, string>> {
+  try {
+    const sql = getSql();
+    const rows = await sql`
+      SELECT t.e->>'gstin' AS gstin, t.e->>'phone' AS phone
+      FROM (
+        SELECT results FROM recon_runs
+        WHERE user_id = ${userId}
+        ORDER BY created_at DESC
+        LIMIT 1
+      ) r
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(r.results) = 'array' THEN r.results ELSE '[]'::jsonb END
+      ) WITH ORDINALITY AS t(e, ord)
+      WHERE COALESCE(t.e->>'phone', '') <> ''
+      ORDER BY t.ord
+    `;
+    return firstPhoneByGstin(
+      (rows as Record<string, unknown>[]).map((r) => ({
+        gstin: String(r.gstin || ""),
+        phone: r.phone == null ? null : String(r.phone),
+      }))
+    );
+  } catch (err) {
+    console.error("[chase] vendor phone lookup failed:", err instanceof Error ? err.message : err);
+    return new Map();
+  }
 }
 
 async function rebuildChaseFromResults(
@@ -631,8 +677,7 @@ export async function canUserRunRecon(
   // when shouldBypassTrial(email) (VERCEL_ENV=preview && QA_HOOKS=1 && "qa." email).
   if (opts.bypassTrial) return { ok: true };
 
-  const trialReason =
-    "Free trial allows 1 reconciliation. Upgrade to Starter (₹999/mo) or Growth (₹2,499/mo) to continue.";
+  const trialReason = "Free trial used. We'll email you when more runs open.";
 
   if (Number(row.recon_count || 0) >= 1) {
     return { ok: false, reason: trialReason };

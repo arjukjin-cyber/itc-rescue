@@ -7,6 +7,7 @@
  * Computed at read time from the latest recon: at-risk ₹, mismatch count/₹.
  */
 import { normalizeGstin } from "./reconcile";
+import { normalizeIndianMobile as digits91 } from "./phone";
 import type { ChaseItem, MatchResult } from "./types";
 
 export class VendorValidationError extends Error {
@@ -29,22 +30,29 @@ export function normalizeVendorGstin(raw: unknown): string {
 }
 
 /**
- * Normalise an Indian mobile number to `+91XXXXXXXXXX`.
- * Accepts 10 digits starting 6–9, optionally prefixed with +91, 91 or 0.
- * Spaces, dashes, dots and parentheses are ignored. Throws VendorValidationError otherwise.
+ * Normalise an Indian mobile to `+91XXXXXXXXXX` for the vendors table.
+ * Reuses the shared rules in `src/lib/phone.ts` (UX-04 / #30) so chase WhatsApp
+ * and vendor storage stay in sync on validation; the only difference is the
+ * stored form: phone.ts keeps digits-only `91…` for wa.me, vendors stores
+ * E.164-ish `+91…`. Throws VendorValidationError (400) on invalid input.
  */
 export function normalizeIndianMobile(raw: unknown): string {
   if (typeof raw !== "string" && typeof raw !== "number") {
     throw new VendorValidationError("Phone must be a string");
   }
-  const compact = String(raw).trim().replace(/[\s\-().]/g, "");
-  const m = compact.match(/^(?:\+91|91|0)?([6-9][0-9]{9})$/);
-  if (!m) {
+  // Reject blank / whitespace-only explicitly (digits91 would also return null).
+  if (!String(raw).trim()) {
     throw new VendorValidationError(
       "Invalid Indian mobile number: expected 10 digits starting 6–9, optional +91/0 prefix"
     );
   }
-  return `+91${m[1]}`;
+  const n = digits91(raw);
+  if (!n) {
+    throw new VendorValidationError(
+      "Invalid Indian mobile number: expected 10 digits starting 6–9, optional +91/0 prefix"
+    );
+  }
+  return `+${n}`; // n is "91XXXXXXXXXX"
 }
 
 /** Rows that make a GSTIN an "offender" in a recon run. */

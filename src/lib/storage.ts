@@ -72,6 +72,7 @@ export function saveRecon(results: MatchResult[], summary: ReconSummary) {
       category: r.category,
       status: statusMap.get(r.id) || ("pending" as const),
       lastUpdated: new Date().toISOString(),
+      ...(r.phone ? { phone: r.phone } : {}), // UX-04
     }));
   lsSet(KEYS.chase, JSON.stringify(chase));
 
@@ -194,7 +195,7 @@ export function canRunRecon(): { ok: boolean; reason?: string } {
     return {
       ok: false,
       reason:
-        "Free trial allows 1 reconciliation. Upgrade to Starter (₹999/mo) or Growth (₹2,499/mo) to continue.",
+        "Free trial used. We'll email you when more runs open.",
     };
   }
   return { ok: true };

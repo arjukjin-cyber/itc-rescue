@@ -36,6 +36,7 @@ export default function ReconcilePage() {
   const [booksNote, setBooksNote] = useState<string | null>(null);
   const [paywall, setPaywall] = useState<string | null>(null);
   const [trialUsed, setTrialUsed] = useState(false);
+  const [isSample, setIsSample] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +72,7 @@ export default function ReconcilePage() {
   async function runWithFiles(books: File, gstr: File) {
     setError("");
     setPaywall(null);
+    setIsSample(false);
 
     const state = await fetchReconState();
     if (!state.canRun) {
@@ -83,16 +85,26 @@ export default function ReconcilePage() {
     try {
       const booksParsed = await parseInvoiceFileDetailed(books, "books");
       const booksInv = booksParsed.invoices;
-      setBooksNote(describeImportSource(booksParsed.detected));
-      const gstrInv = await parseInvoiceFile(gstr, "gstr2b");
+      const gstrParsed = await parseInvoiceFileDetailed(gstr, "gstr2b");
+      const gstrInv = gstrParsed.invoices;
+      const notes = [booksParsed.detected, gstrParsed.detected]
+        .map(describeImportSource)
+        .filter(Boolean);
+      setBooksNote(notes.length ? notes.join(" · ") : null);
       if (!booksInv.length || !gstrInv.length) {
-        setError(
-          "Could not parse invoices. Check column headers (GSTIN, Invoice Number, Invoice Date, tax columns)."
-        );
+        // parseInvoiceFileDetailed normally throws a file-specific error first
+        setError(`${(!booksInv.length ? books : gstr).name}: no invoice rows found`);
         return;
       }
 
       const { results: matched, summary: sum } = reconcile(booksInv, gstrInv);
+      if (sum.unregisteredSkipped) {
+        const n = sum.unregisteredSkipped;
+        const skipNote = `${n} unregistered purchase${n === 1 ? "" : "s"} skipped (no GSTIN, so no ITC).`;
+        // keep both files' detected-source notes (books + GSTR-2B) in front of the skip note
+        const base = notes.length ? notes.join(" · ") : null;
+        setBooksNote(base ? `${base} · ${skipNote}` : skipNote);
+      }
       const saved = await persistRecon(matched, sum);
       if (!saved.ok) {
         if (saved.authError) {
@@ -107,6 +119,13 @@ export default function ReconcilePage() {
         }
         // Surface 500 / other server failures (do not silently pretend success)
         setError(saved.error || "Failed to save reconciliation");
+        return;
+      }
+      if (saved.persistence === "sample") {
+        setResults(matched);
+        setSummary(sum);
+        setFilter("itc_at_risk");
+        setIsSample(true);
         return;
       }
       if (saved.persistence === "postgres" && typeof saved.reconCount === "number") {
@@ -132,13 +151,9 @@ export default function ReconcilePage() {
   }
 
   async function loadSamples() {
+    // Sample runs are shown in-page only: never saved, never counted against the trial.
     setError("");
     setPaywall(null);
-    const state = await fetchReconState();
-    if (!state.canRun) {
-      setPaywall(state.reason || "Upgrade required");
-      return;
-    }
     setLoading(true);
     setBooksNote(null);
     try {
@@ -147,35 +162,16 @@ export default function ReconcilePage() {
         "purchase-register.csv"
       );
       const gstr = await fetchSampleAsFile("/samples/gstr-2b.csv", "gstr-2b.csv");
-      setBooksFile(books);
-      setGstrFile(gstr);
-      // parse inline so loading spinner stays until done
+      // Leave the upload zones empty so a sample file can never be mixed into a real run.
+      setBooksFile(null);
+      setGstrFile(null);
       const booksInv = await parseInvoiceFile(books, "books");
       const gstrInv = await parseInvoiceFile(gstr, "gstr2b");
       const { results: matched, summary: sum } = reconcile(booksInv, gstrInv);
-      const saved = await persistRecon(matched, sum);
-      if (!saved.ok) {
-        if (saved.authError) {
-          setError(saved.authError);
-          router.replace("/login");
-          return;
-        }
-        if (saved.paywall) {
-          setPaywall(saved.error || "Upgrade required");
-          setTrialUsed(true);
-          return;
-        }
-        // Surface 500 / other server failures (do not silently pretend success)
-        setError(saved.error || "Failed to save reconciliation");
-        return;
-      }
-      if (saved.persistence === "postgres" && typeof saved.reconCount === "number") {
-        setTrialFromServer(saved.reconCount);
-      }
       setResults(matched);
       setSummary(sum);
       setFilter("itc_at_risk");
-      setTrialUsed(true);
+      setIsSample(true);
     } catch {
       setError("Failed to load sample files");
     } finally {
@@ -197,20 +193,20 @@ export default function ReconcilePage() {
           <div className="flex min-w-0 items-start gap-2 text-sm">
             <Lock size={18} className="mt-0.5 shrink-0" aria-hidden />
             <div className="min-w-0">
-              <p className="toast-risk-title">Free trial used — upgrade to continue</p>
-              <p className="toast-risk-body">{paywall}</p>
+              <p className="toast-risk-title">Free trial used</p>
+              <p className="toast-risk-body">We&apos;ll email you when more runs open.</p>
             </div>
           </div>
-          <Link
-            href="/settings"
-            className="btn-accent shrink-0 px-4 py-2 text-center text-sm font-semibold"
-          >
-            Upgrade in Settings
-          </Link>
         </div>
       )}
 
-      {!paywall && trialUsed && summary && (
+      {isSample && summary && (
+        <p className="font-mono text-xs" style={{ color: "var(--color-text-secondary)" }}>
+          purchase-register.csv · gstr-2b.csv · Sample data · not saved
+        </p>
+      )}
+
+      {!paywall && !isSample && trialUsed && summary && (
         <div
           className="px-4 py-3 text-sm"
           style={{
@@ -224,16 +220,8 @@ export default function ReconcilePage() {
             Trial recon used.
           </span>{" "}
           <span style={{ color: "var(--color-text-secondary)" }}>
-            Chase vendors below on this result. Next upload needs a paid plan —{" "}
+            Chase vendors on this result. We&apos;ll email you when more runs open.
           </span>
-          <Link
-            href="/settings"
-            className="font-semibold underline"
-            style={{ color: "var(--color-accent)" }}
-          >
-            see Starter / Growth
-          </Link>
-          .
         </div>
       )}
 
@@ -246,7 +234,7 @@ export default function ReconcilePage() {
         />
         <FileDrop
           label="GSTR-2B"
-          hint="Excel/CSV export from GST portal"
+          hint="From the GST portal · .json or .xlsx"
           file={gstrFile}
           onFile={setGstrFile}
         />
@@ -267,11 +255,11 @@ export default function ReconcilePage() {
           className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
         >
           <Upload size={16} />
-          Load sample files
+          Try with sample files (not saved)
         </button>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
       {booksNote && <p className="text-xs text-slate-500">{booksNote}</p>}
 
       {summary && (
@@ -403,6 +391,7 @@ export default function ReconcilePage() {
                       <td
                         className="max-w-[200px] truncate px-4 py-3 text-xs"
                         style={{ color: "var(--color-text-muted)" }}
+                        title={r.notes || undefined}
                       >
                         {r.notes || "—"}
                       </td>
@@ -425,12 +414,14 @@ export default function ReconcilePage() {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <Link
-              href="/chase"
-              className="rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800"
-            >
-              Chase vendors →
-            </Link>
+            {!isSample && (
+              <Link
+                href="/chase"
+                className="rounded-xl bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-teal-800"
+              >
+                Chase vendors →
+              </Link>
+            )}
             <Link
               href="/status"
               className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50"
@@ -486,7 +477,7 @@ function FileDrop({
       )}
       <input
         type="file"
-        accept=".csv,.xlsx,.xls"
+        accept=".csv,.xlsx,.xls,.json"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];

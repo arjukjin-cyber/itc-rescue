@@ -118,7 +118,7 @@ export async function persistRecon(
   ok: boolean;
   error?: string;
   chase?: ChaseItem[];
-  persistence: "postgres" | "demo";
+  persistence: "postgres" | "demo" | "sample";
   reconCount?: number;
   authError?: string;
   paywall?: boolean;
@@ -141,6 +141,10 @@ export async function persistRecon(
         persistence: "postgres",
         reconCount: (data.trial as { reconCount?: number } | undefined)?.reconCount,
       };
+    }
+    if (res.ok && data.persistence === "sample") {
+      // Sample data: shown only, never saved or counted.
+      return { ok: true, persistence: "sample" };
     }
     if (res.status === 402) {
       return {

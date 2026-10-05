@@ -291,7 +291,7 @@ export default function LandingPage() {
               className="mt-4 text-lg leading-relaxed"
               style={{ color: "var(--color-text-secondary)" }}
             >
-              Three steps. No GST portal login. Works offline with your Excel exports.
+              Three steps. No GST portal login. Works with your Excel and CSV exports.
             </p>
           </div>
           <div className="mt-10 grid gap-6 md:grid-cols-3 sm:mt-12 sm:gap-8">
@@ -361,143 +361,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing — muted zebra band */}
-      <section
-        id="pricing"
-        className="landing-section py-16 sm:py-16"
-        style={{ backgroundColor: "var(--color-bg-muted)" }}
-      >
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <div className="mx-auto max-w-2xl text-center">
-          <h2
-            className="text-3xl font-bold sm:text-4xl"
-            style={{ color: "var(--color-text)" }}
-          >
-            Simple MSME pricing
-          </h2>
-          <p
-            className="mt-4 text-lg leading-relaxed"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            After your free recon, upgrade in Settings to keep going. Paid checkout (Razorpay) ships in the final pre-launch update.
-          </p>
-        </div>
-        <div className="mx-auto mt-10 grid max-w-4xl gap-6 md:grid-cols-2 sm:mt-12">
-          <div
-            className="p-8 shadow-sm"
-            style={{
-              borderRadius: "var(--radius-lg)",
-              border: "1.5px solid var(--color-border-strong)",
-              backgroundColor: "var(--color-bg)",
-            }}
-          >
-            <div
-              className="text-sm font-semibold uppercase tracking-wide"
-              style={{ color: "var(--color-text-secondary)" }}
-            >
-              Starter
-            </div>
-            <div className="mt-2 flex items-baseline gap-1">
-              <span className="text-4xl font-extrabold" style={{ color: "var(--color-text)" }}>
-                ₹999
-              </span>
-              <span style={{ color: "var(--color-text-secondary)" }}>/mo</span>
-            </div>
-            <ul
-              className="mt-6 space-y-3 text-sm"
-              style={{ color: "var(--color-text-secondary)" }}
-            >
-              {[
-                "Unlimited reconciliations",
-                "Up to 500 invoices / month",
-                "WhatsApp EN + HI templates",
-                "Status board",
-                "Email support",
-              ].map((f) => (
-                <li key={f} className="flex items-start gap-2">
-                  <CheckCircle2
-                    size={16}
-                    className="mt-0.5 shrink-0"
-                    style={{ color: "var(--color-accent)" }}
-                  />
-                  {f}
-                </li>
-              ))}
-            </ul>
-            <Link
-              href="/signup"
-              className="mt-8 block py-3 text-center text-sm font-semibold"
-              style={{
-                borderRadius: "var(--radius-md)",
-                border: "1.5px solid var(--color-border-strong)",
-                backgroundColor: "var(--color-bg)",
-                color: "var(--color-text)",
-              }}
-            >
-              Start free trial
-            </Link>
-          </div>
-          <div
-            className="relative p-8 shadow-md"
-            style={{
-              borderRadius: "var(--radius-lg)",
-              border: "2px solid var(--color-accent)",
-              backgroundColor: "var(--color-accent-soft)",
-            }}
-          >
-            <div
-              className="absolute -top-3 right-6 px-3 py-0.5 text-xs font-bold text-white"
-              style={{
-                borderRadius: "9999px",
-                backgroundColor: "var(--color-accent)",
-              }}
-            >
-              Popular
-            </div>
-            <div
-              className="text-sm font-semibold uppercase tracking-wide"
-              style={{ color: "var(--color-accent)" }}
-            >
-              Growth
-            </div>
-            <div className="mt-2 flex items-baseline gap-1">
-              <span className="text-4xl font-extrabold" style={{ color: "var(--color-text)" }}>
-                ₹2,499
-              </span>
-              <span style={{ color: "var(--color-text-secondary)" }}>/mo</span>
-            </div>
-            <ul
-              className="mt-6 space-y-3 text-sm"
-              style={{ color: "var(--color-text-secondary)" }}
-            >
-              {[
-                "Everything in Starter",
-                "Unlimited invoices",
-                "Multi-GSTIN (coming soon)",
-                "Priority chase reminders",
-                "Priority support",
-              ].map((f) => (
-                <li key={f} className="flex items-start gap-2">
-                  <CheckCircle2
-                    size={16}
-                    className="mt-0.5 shrink-0"
-                    style={{ color: "var(--color-accent)" }}
-                  />
-                  {f}
-                </li>
-              ))}
-            </ul>
-            <Link
-              href="/signup"
-              className="btn-accent mt-8 block py-3 text-center text-sm font-semibold"
-            >
-              Start free trial
-            </Link>
-          </div>
-        </div>
-        </div>
-      </section>
-
       {/* Trust — white zebra band */}
       <section
         className="border-t py-12"
@@ -511,15 +374,18 @@ export default function LandingPage() {
             className="flex items-center gap-2 text-sm"
             style={{ color: "var(--color-text-secondary)" }}
           >
-            <Shield size={18} style={{ color: "var(--color-accent)" }} /> Your files stay
-            in-browser for MVP
+            <Shield size={18} style={{ color: "var(--color-accent)" }} /> Files are read in your
+            browser. Only match results (GSTIN, invoice no., tax) are saved to your account.{" "}
+            <Link href="/privacy" className="underline">
+              Privacy
+            </Link>
           </div>
           <div
             className="flex items-center gap-2 text-sm"
             style={{ color: "var(--color-text-secondary)" }}
           >
-            <Zap size={18} style={{ color: "var(--color-accent)" }} /> Demo works offline with
-            sample CSVs
+            <Zap size={18} style={{ color: "var(--color-accent)" }} /> Try it with sample files
+            first. Sample runs are never saved
           </div>
         </div>
       </section>

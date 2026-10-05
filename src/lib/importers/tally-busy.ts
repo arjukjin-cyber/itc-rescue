@@ -17,9 +17,16 @@
  */
 
 import { normalizeGstin, normalizeInvoiceNumber } from "../reconcile";
+import { PHONE_HEADERS, normalizeIndianMobile } from "../phone";
 import type { InvoiceRecord } from "../types";
 
-export type ImportSource = "tally" | "busy" | "template" | "generic";
+export type ImportSource =
+  | "tally"
+  | "busy"
+  | "template"
+  | "generic"
+  | "gstr2b_portal"
+  | "gstr2b_portal_json";
 
 export type ImportField =
   | "gstin"
@@ -46,6 +53,8 @@ export interface ImportDetection {
   /** normalised header cells */
   headers: string[];
   columns: ColumnMap;
+  /** header rows used (2 for the GST portal's merged header); data starts after headerRowIndex */
+  headerRowCount?: number;
 }
 
 /** How many leading rows to scan for the header row. */
@@ -255,7 +264,7 @@ export function normalizeHeader(raw: unknown): string {
     .trim();
 }
 
-function cellText(v: unknown): string {
+export function cellText(v: unknown): string {
   if (v == null) return "";
   if (v instanceof Date) return isNaN(v.getTime()) ? "" : v.toISOString();
   return String(v).trim();
@@ -334,6 +343,16 @@ export function mapColumns(headers: string[]): ColumnMap {
     }
   }
   return map;
+}
+
+/** True when a normalised header maps to an internal field (exact synonym or per-ledger tax column). */
+export function isKnownHeader(h: string): boolean {
+  return (exactField(h) ?? fuzzyTaxField(h)) !== null;
+}
+
+/** True when a normalised header is an exact synonym (no fuzzy matching). */
+export function isExactHeader(h: string): boolean {
+  return exactField(h) !== null;
 }
 
 function headerScore(headers: string[]): number {
@@ -544,14 +563,17 @@ export function isTotalRow(row: unknown[], columns: ColumnMap): boolean {
  * Convert the data rows below the detected header into InvoiceRecords.
  * Skips blank rows, repeated header rows (page breaks), total/subtotal rows,
  * cancelled vouchers and rows with neither a GSTIN nor an invoice/voucher number.
+ * `decorate` may enrich a record from its source row, or return null to drop it.
  */
 export function mapRegisterRows(
   rows: unknown[][],
   detection: ImportDetection,
-  recordSource: "books" | "gstr2b"
+  recordSource: "books" | "gstr2b",
+  decorate?: (record: InvoiceRecord, row: unknown[]) => InvoiceRecord | null
 ): InvoiceRecord[] {
   const { columns, headerRowIndex, headers } = detection;
   const out: InvoiceRecord[] = [];
+  const phoneCol = PHONE_HEADERS.map((h) => headers.indexOf(h)).find((i) => i >= 0) ?? -1;
 
   for (let r = headerRowIndex + 1; r < rows.length; r++) {
     const row = rows[r];
@@ -566,13 +588,16 @@ export function mapRegisterRows(
     const rawInv = cellText(get(row, columns.invoiceNumber) ?? get(row, columns.voucherNumber));
     if (!gstin && !rawInv) continue;
 
+    // UX-04: vendor phone column (not an ImportField, so header detection is unchanged)
+    const phone = phoneCol >= 0 ? normalizeIndianMobile(row[phoneCol]) : null;
+
     const igst = round2(sum(row, columns.igst));
     const cgst = round2(sum(row, columns.cgst));
     const sgst = round2(sum(row, columns.sgst));
     let totalTax = round2(sum(row, columns.totalTax));
     if (!totalTax) totalTax = round2(igst + cgst + sgst);
 
-    out.push({
+    const record: InvoiceRecord = {
       gstin: gstin || "UNKNOWN",
       vendorName: vendorRaw || "Unknown Vendor",
       invoiceNumber: normalizeInvoiceNumber(rawInv) || "UNKNOWN",
@@ -584,14 +609,69 @@ export function mapRegisterRows(
       sgst,
       totalTax,
       source: recordSource,
-    });
+      ...(phone ? { phone } : {}),
+    };
+    const final = decorate ? decorate(record, row) : record;
+    if (final) out.push(final);
   }
   return out;
+}
+
+/** Display names of the columns every register/2B file needs. */
+export const REQUIRED_COLUMN_LABELS = {
+  gstin: "GSTIN",
+  invoiceNumber: "Invoice number",
+  invoiceDate: "Invoice date",
+} as const;
+
+/** Required columns (GSTIN, invoice number, invoice date) missing from a column map. */
+export function missingRequiredColumns(columns: ColumnMap): string[] {
+  const missing: string[] = [];
+  if (!columns.gstin) missing.push(REQUIRED_COLUMN_LABELS.gstin);
+  if (!columns.invoiceNumber && !columns.voucherNumber) missing.push(REQUIRED_COLUMN_LABELS.invoiceNumber);
+  if (!columns.invoiceDate && !columns.voucherDate) missing.push(REQUIRED_COLUMN_LABELS.invoiceDate);
+  return missing;
+}
+
+/**
+ * Header labels as written in the file (for error messages). With a two-row
+ * header, the sub-header wins over the group label for each column.
+ */
+export function headerLabels(rows: unknown[][], headerRowIndex: number, headerRowCount = 1): string[] {
+  const bottom = rows[headerRowIndex] ?? [];
+  const top = headerRowCount > 1 ? rows[headerRowIndex - 1] ?? [] : [];
+  const width = Math.max(bottom.length, top.length);
+  const out: string[] = [];
+  for (let i = 0; i < width; i++) {
+    const label = cellText(bottom[i]) || cellText(top[i]);
+    if (label && !out.includes(label)) out.push(label);
+  }
+  return out;
+}
+
+/** Best guess at the header row when detection failed: first row with a known header. */
+export function guessHeaderRow(rows: unknown[][], maxScan = HEADER_SCAN_ROWS): number {
+  const limit = Math.min(rows.length, maxScan);
+  let firstNonBlank = -1;
+  for (let i = 0; i < limit; i++) {
+    if (isBlankRow(rows[i])) continue;
+    if (firstNonBlank < 0) firstNonBlank = i;
+    if (rows[i].some((c) => isKnownHeader(normalizeHeader(c)))) return i;
+  }
+  return firstNonBlank;
+}
+
+/** "file.xlsx: couldn't find columns: A, B. Found: x, y, z, …" (at most 6 found headers). */
+export function missingColumnsMessage(fileName: string, missing: string[], found: string[]): string {
+  const shown = found.slice(0, 6).join(", ") + (found.length > 6 ? ", …" : "");
+  return `${fileName}: couldn't find columns: ${missing.join(", ")}. Found: ${found.length ? shown : "no header row"}`;
 }
 
 /** One-line UI note for a detected source, or null when nothing is worth saying. */
 export function describeImportSource(source: ImportSource): string | null {
   if (source === "tally") return "Detected Tally export";
   if (source === "busy") return "Detected Busy export";
+  if (source === "gstr2b_portal") return "Detected GSTR-2B (portal) export";
+  if (source === "gstr2b_portal_json") return "Detected GSTR-2B (portal JSON)";
   return null;
 }
