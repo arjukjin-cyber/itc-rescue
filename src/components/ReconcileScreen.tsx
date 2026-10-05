@@ -350,7 +350,7 @@ export function ReconcileScreen() {
           )}
           <div className="flex flex-wrap items-center gap-4">
             {locked ? (
-              <LockedRun onClick={lockedToast} />
+              <LockedRun />
             ) : isSample && !bothFiles ? null : (
               // After a sample run Run stays hidden until both real files are picked (no
               // "select both files" error over a valid sample result).
@@ -456,7 +456,7 @@ export function ReconcileScreen() {
                     Run again
                   </button>
                 ) : locked ? (
-                  <LockedRun small onClick={lockedToast} />
+                  <LockedRun small />
                 ) : (
                   <button
                     type="button"
@@ -513,19 +513,15 @@ export function ReconcileScreen() {
 
 /**
  * Trial gate: locked "Run again" (tooltip "Free trial used") + sidebar meter replace the old
- * red banner. No upgrade path exists (#29); clicking explains via the trial toast text.
+ * red banner. No upgrade path exists (#29); natively disabled after trial used.
  */
-function LockedRun({ small = false, onClick }: { small?: boolean; onClick: () => void }) {
+function LockedRun({ small = false }: { small?: boolean }) {
   return (
-    <button
-      type="button"
-      className={`btn ${small ? "btn-sm" : "btn-lg"}`}
-      aria-disabled="true"
-      title="Free trial used"
-      onClick={onClick}
-    >
-      <Lock aria-hidden /> Run again
-    </button>
+    <span title="Free trial used" className="inline-flex" tabIndex={0} aria-label="Run again, free trial used">
+      <button type="button" disabled className={`btn ${small ? "btn-sm" : "btn-lg"}`}>
+        <Lock aria-hidden /> Run again
+      </button>
+    </span>
   );
 }
 
