@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Upload, Play, Loader2, Lock, Inbox, CircleCheck, Send, Download, ChevronDown } from "lucide-react";
+import { Upload, Play, Loader2, Lock, Inbox, CircleCheck, Info, Send, Download, ChevronDown } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import * as XLSX from "xlsx";
 import { reconCsv, atRiskCsv, atRiskResults, downloadCsv, istDate } from "@/lib/csv-export";
@@ -24,6 +24,13 @@ import { reconcile } from "@/lib/reconcile";
 import type { MatchResult, ReconSummary } from "@/lib/types";
 
 const MATCH_RULE = "Matched on GSTIN + invoice number + invoice date (±1 day).";
+
+/** #32: books rows with no GSTIN (unregistered dealer) are left out of the recon. */
+function skippedNote(sum: ReconSummary | null): string | null {
+  const n = sum?.unregisteredSkipped;
+  if (!n) return null;
+  return `${n} unregistered purchase${n === 1 ? "" : "s"} skipped (no GSTIN, so no ITC).`;
+}
 
 function defaultFilter(results: MatchResult[]): TabKey {
   return results.some((r) => r.category === "itc_at_risk" || r.category === "value_mismatch") ? "action" : "all";
@@ -63,6 +70,8 @@ export function ReconcileScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [booksNote, setBooksNote] = useState<string | null>(null);
+  /** #32 "N unregistered purchase(s) skipped" from the last parse (kept even if the save fails). */
+  const [skipNote, setSkipNote] = useState<string | null>(null);
   /** 402 toast — set only by a real run attempt (server still enforces the gate). */
   const [paywall, setPaywall] = useState<string | null>(null);
   /** Trial used → locked "Run again" button (no banner above results). */
@@ -183,6 +192,7 @@ export function ReconcileScreen() {
 
     setLoading(true);
     setBooksNote(null);
+    setSkipNote(null);
     try {
       const booksParsed = await parseInvoiceFileDetailed(books, "books");
       const booksInv = booksParsed.invoices;
@@ -196,6 +206,7 @@ export function ReconcileScreen() {
       }
 
       const { results: matched, summary: sum } = reconcile(booksInv, gstrInv);
+      setSkipNote(skippedNote(sum));
       const saved = await persistRecon(matched, sum);
       if (!saved.ok) {
         if (saved.authError) {
@@ -238,6 +249,7 @@ export function ReconcileScreen() {
     setPaywall(null);
     setLoading(true);
     setBooksNote(null);
+    setSkipNote(null);
     try {
       const books = await fetchSampleAsFile(
         "/samples/purchase-register.csv",
@@ -269,6 +281,7 @@ export function ReconcileScreen() {
       </Link>
     ) : null;
   const uploadStep = !view && (!summary || showUpload);
+  const skipLine = skipNote ?? (isSample ? null : skippedNote(summary));
 
   return (
     <div className="space-y-3">
@@ -355,7 +368,12 @@ export function ReconcileScreen() {
           {error}
         </p>
       )}
-      {booksNote && uploadStep && <ImportNote note={booksNote} />}
+      {uploadStep && (booksNote || skipNote) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {booksNote && <ImportNote note={booksNote} />}
+          {skipNote && <SkipNote note={skipNote} />}
+        </div>
+      )}
 
       {isSample && summary && !uploadStep && (
         <p className="status" style={{ color: "var(--color-text-2)" }}>
@@ -405,6 +423,7 @@ export function ReconcileScreen() {
             <div className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2">
               <FileName name={booksFile?.name ?? (isSample ? sampleFiles?.[0] : undefined)} fallback="Purchase register" />
               {booksNote && <ImportNote note={booksNote} />}
+              {skipLine && <SkipNote note={skipLine} />}
               <FileName name={gstrFile?.name ?? (isSample ? sampleFiles?.[1] : undefined)} fallback="GSTR-2B" />
               <span className="muted">
                 {summary.totalBooks} books · {summary.totalGstr2b} in 2B
@@ -502,6 +521,16 @@ function ImportNote({ note }: { note: string }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--color-text-3)" }}>
       <CircleCheck size={13} strokeWidth={1.75} style={{ color: "var(--color-ok)" }} aria-hidden />
+      {note}
+    </span>
+  );
+}
+
+/** #32 skipped-rows note, v3 style: muted 12px + info icon (informational, not an error). */
+function SkipNote({ note }: { note: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+      <Info size={13} strokeWidth={1.75} aria-hidden />
       {note}
     </span>
   );
