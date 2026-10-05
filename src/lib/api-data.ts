@@ -122,6 +122,8 @@ export async function persistRecon(
   chase?: ChaseItem[];
   persistence: "postgres" | "demo" | "sample";
   reconCount?: number;
+  /** POST /api/recon → trial.canRun (false once the free run is used). */
+  canRun?: boolean;
   authError?: string;
   paywall?: boolean;
 }> {
@@ -142,6 +144,7 @@ export async function persistRecon(
         chase: data.chase as ChaseItem[] | undefined,
         persistence: "postgres",
         reconCount: (data.trial as { reconCount?: number } | undefined)?.reconCount,
+        canRun: (data.trial as { canRun?: boolean } | undefined)?.canRun,
       };
     }
     if (res.ok && data.persistence === "sample") {

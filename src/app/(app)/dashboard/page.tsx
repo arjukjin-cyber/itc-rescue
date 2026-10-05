@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CircleCheck, Clock, Inbox, Send, SquareKanban, Upload } from "lucide-react";
+import { CircleCheck, Clock, Inbox, Lock, Plus, Send, SquareKanban, Upload } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { KpiStrip } from "@/components/KpiStrip";
 import { ActionTable, ResultTabs, filterByTab, useChaseRows, type TabKey } from "@/components/RiskTable";
@@ -12,6 +12,7 @@ import { getSettings } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
 import { daysText, getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
 import { formatIstTimestamp } from "@/lib/format";
+import { TRIAL_USED_MESSAGE } from "@/lib/recon-guard";
 import type { MatchResult, ReconSummary } from "@/lib/types";
 
 export default function DashboardPage() {
@@ -22,6 +23,8 @@ export default function DashboardPage() {
   const [company, setCompany] = useState("My Company");
   const [tab, setTab] = useState<TabKey>("action");
   const [lastRecon, setLastRecon] = useState<string | null>(null);
+  /** Trial used → header "New recon" shown locked (v3 frame). */
+  const [canRun, setCanRun] = useState(true);
   const { toast, show, dismiss } = useToast();
   const { setChase, statusById, pendingCount, resolve, resolveMany, busy } = useChaseRows(show);
 
@@ -40,6 +43,7 @@ export default function DashboardPage() {
       if (!chaseRes.authError) setChase(chaseRes.items);
       // "Last recon" = the saved run's created_at from GET /api/recon (#28), shown in IST.
       setLastRecon(recon.summary ? recon.createdAt ?? null : null);
+      setCanRun(recon.canRun);
       setLoaded(true);
     })();
     return () => {
@@ -70,18 +74,38 @@ export default function DashboardPage() {
 
   const chaseLabel = `Chase ${pendingCount} vendor${pendingCount === 1 ? "" : "s"} on WhatsApp`;
   const meta = [
+    due.kind !== "none" ? `${due.period} return period` : null,
     lastRecon ? `Last recon ${formatIstTimestamp(lastRecon)}` : null,
-    `${summary.totalBooks} invoices in books`,
-    `${summary.totalGstr2b} in GSTR-2B`,
+    `${summary.totalBooks} invoices in books, ${summary.totalGstr2b} in GSTR-2B`,
   ]
     .filter(Boolean)
     .join(" · ");
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h1 className="page-title">Dashboard</h1>
-        <span className="muted">{meta}</span>
+      {/* v3 page header: H1 + one text-3 sub-line; page actions right of the H1. No greeting (v3 frame). */}
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <h1 className="page-title">Dashboard</h1>
+          <div className="helper-line">
+            <span>{meta}</span>
+          </div>
+        </div>
+        {canRun ? (
+          <Link href="/reconcile?new=1" className="btn">
+            <Plus aria-hidden /> New recon
+          </Link>
+        ) : (
+          <button
+            type="button"
+            className="btn"
+            aria-disabled="true"
+            title="Free trial used"
+            onClick={() => show({ text: TRIAL_USED_MESSAGE })}
+          >
+            <Lock aria-hidden /> New recon
+          </button>
+        )}
       </div>
 
       <div className="pt-1">

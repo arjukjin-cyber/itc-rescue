@@ -14,9 +14,13 @@ export function emitChaseCount(pending: number) {
   window.dispatchEvent(new CustomEvent<number>(CHASE_COUNT_EVENT, { detail: pending }));
 }
 
-export function emitTrialChanged() {
+/**
+ * Trial usage changed. Pass the authoritative count (POST /api/recon → trial.reconCount) so the
+ * sidebar meter updates in the same tick, with no navigation, reload or extra request.
+ */
+export function emitTrialChanged(reconCount?: number) {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new Event(TRIAL_EVENT));
+  window.dispatchEvent(new CustomEvent<number | undefined>(TRIAL_EVENT, { detail: reconCount }));
 }
 
 /** Recon changed (saved run, or an unsaved sample run shown in-page): the sidebar re-reads counts. */

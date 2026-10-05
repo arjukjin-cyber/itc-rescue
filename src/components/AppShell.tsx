@@ -174,6 +174,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   /** null = no recon yet (or not loaded): ITC counts and the period picker are hidden. */
   const [recon, setRecon] = useState<ReconSnap | null>(null);
   const [reconTick, setReconTick] = useState(0);
+  /** Deployed commit from GET /api/version (CPO DoD checks); shown as 7 chars in the sidebar foot. */
+  const [sha, setSha] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/version", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { sha?: string } | null) => {
+        if (!cancelled && d?.sha) setSha(d.sha);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -207,7 +222,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             if (user.companyName) setCompany(user.companyName);
             if (user.gstin) setGstin(user.gstin);
             if (data.persistence === "postgres") setTrialFromServer(user.reconCount ?? 0);
-            setReconUsed(data.persistence === "postgres" ? user.reconCount ?? 0 : getTrialUsage().reconCount);
+            const used = data.persistence === "postgres" ? user.reconCount ?? 0 : getTrialUsage().reconCount;
+            // Never step back: a /me request started before a run can land after the POST
+            // response already moved the meter (recon_count only grows).
+            setReconUsed((n) => Math.max(n, used));
             return;
           }
         }
@@ -216,7 +234,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
       if (cancelled) return;
       setPlan(getSettings().plan);
-      setReconUsed(getTrialUsage().reconCount);
+      setReconUsed((n) => Math.max(n, getTrialUsage().reconCount));
     })();
     return () => {
       cancelled = true;
@@ -255,7 +273,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const onCount = (e: Event) => setPending((e as CustomEvent<number>).detail);
-    const onTrial = () => setReconUsed(getTrialUsage().reconCount);
+    // F-9: the event carries trial.reconCount from the POST /api/recon response → meter moves at once.
+    const onTrial = (e: Event) => {
+      const n = (e as CustomEvent<number | undefined>).detail;
+      setReconUsed(typeof n === "number" ? n : getTrialUsage().reconCount);
+    };
     const onRecon = () => setReconTick((t) => t + 1);
     window.addEventListener(CHASE_COUNT_EVENT, onCount);
     window.addEventListener(TRIAL_EVENT, onTrial);
@@ -317,7 +339,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <SideNavWithParams pathname={pathname} recon={recon} pending={pending} onNavigate={onNavigate} />
         </Suspense>
       </div>
-      <TrialMeter plan={plan} reconUsed={reconUsed} />
+      <div className="v3-foot">
+        <TrialMeter plan={plan} reconUsed={reconUsed} />
+        <VersionTag sha={sha} />
+      </div>
     </div>
   );
 
@@ -370,6 +395,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <CrumbWithParams company={companyName} pathname={pathname} period={period} />
           </Suspense>
           <div className="flex-1" />
+          {/* F-9 / R-7: trial meter stays visible on mobile without opening the menu */}
+          <TrialMeter plan={plan} reconUsed={reconUsed} compact />
           {period && <PeriodPicker period={period} />}
           {period && <div className="v3-vr hidden sm:block" aria-hidden />}
           {/* Notifications bell: no backend in v1 (IA Q7), so it's hidden rather than a dead control. */}
@@ -526,26 +553,52 @@ function SideNav({
   );
 }
 
-/** F-9 / v3 foot: "Free trial · N of 1 recon used" + 4px ink meter; same in the mobile drawer. */
-function TrialMeter({ plan, reconUsed }: { plan: string; reconUsed: number }) {
+/**
+ * F-9 / v3 foot: "Free trial · N of 1 recon used" + 4px ink meter (sidebar + mobile drawer).
+ * `compact` = the same meter in the mobile top bar (hidden on lg, where the sidebar shows it).
+ */
+function TrialMeter({ plan, reconUsed, compact = false }: { plan: string; reconUsed: number; compact?: boolean }) {
   if (plan !== "trial") return null;
   const used = Math.min(reconUsed, 1);
+  const bar = (
+    <div
+      className="v3-bar"
+      role="progressbar"
+      aria-label="Free recons used"
+      aria-valuemin={0}
+      aria-valuemax={1}
+      aria-valuenow={used}
+      data-trial-used={used >= 1 ? "true" : "false"}
+    >
+      <i style={{ width: `${used * 100}%` }} />
+    </div>
+  );
+  if (compact) {
+    return (
+      <div className="v3-trial-compact lg:hidden" title={`Free trial · ${used} of 1 recon used`}>
+        <span>{used} of 1 free recon</span>
+        {bar}
+      </div>
+    );
+  }
   return (
-    <div className="v3-foot">
+    <div className="v3-trial">
       <div className="flex items-center justify-between gap-2">
         <span>Free trial</span>
         <span>{used} of 1 recon used</span>
       </div>
-      <div
-        className="v3-bar"
-        role="progressbar"
-        aria-label="Free recons used"
-        aria-valuemin={0}
-        aria-valuemax={1}
-        aria-valuenow={used}
-      >
-        <i style={{ width: `${used * 100}%` }} />
-      </div>
+      {bar}
+    </div>
+  );
+}
+
+/** Build stamp for DoD checks: short sha from GET /api/version ("dev" locally). */
+function VersionTag({ sha }: { sha: string | null }) {
+  if (!sha) return null;
+  const short = sha === "dev" ? "dev" : sha.slice(0, 7);
+  return (
+    <div className="v3-ver" title={sha === "dev" ? "Local build" : `Build ${sha}`}>
+      Build <span className="v3-mono">{short}</span>
     </div>
   );
 }

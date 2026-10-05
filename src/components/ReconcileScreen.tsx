@@ -2,12 +2,12 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Upload, Play, Loader2, Lock, Inbox, CircleCheck, Info, Send, Download, ChevronDown } from "lucide-react";
+import { Upload, Play, Loader2, Lock, Inbox, CircleCheck, Send, Download, ChevronDown } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import * as XLSX from "xlsx";
 import { reconCsv, atRiskCsv, atRiskResults, downloadCsv, istDate } from "@/lib/csv-export";
 import { HelpTip } from "@/components/HelpTip";
-import { ActionTable, ResultTabs, filterByTab, sortForAction, useChaseRows, type TabKey } from "@/components/RiskTable";
+import { ActionTable, ResultTabs, atRiskTotal, filterByTab, sortForAction, useChaseRows, type TabKey } from "@/components/RiskTable";
 import { TRIAL_USED_MESSAGE } from "@/lib/recon-guard";
 import { KpiStrip } from "@/components/KpiStrip";
 import { emitReconChanged, emitTrialChanged } from "@/lib/ui-events";
@@ -29,11 +29,16 @@ const MATCH_RULE = "Matched on GSTIN + invoice number + invoice date (±1 day)."
 function skippedNote(sum: ReconSummary | null): string | null {
   const n = sum?.unregisteredSkipped;
   if (!n) return null;
-  return `${n} unregistered purchase${n === 1 ? "" : "s"} skipped (no GSTIN, so no ITC).`;
+  return `${n} unregistered purchase${n === 1 ? "" : "s"} skipped`;
 }
+const SKIPPED_WHY = "No GSTIN on these rows (unregistered dealer), so no ITC can be claimed. They were left out of the match.";
 
+/**
+ * Runs default tab: "Needs action" only when there is ₹ at risk; with ₹0 at risk open on All
+ * rather than a near-empty tab. Explicit ITC views (?view=at-risk) are unaffected.
+ */
 function defaultFilter(results: MatchResult[]): TabKey {
-  return results.some((r) => r.category === "itc_at_risk" || r.category === "value_mismatch") ? "action" : "all";
+  return atRiskTotal(results) > 0 ? "action" : "all";
 }
 
 export function ReconcileSkeleton() {
@@ -72,8 +77,6 @@ export function ReconcileScreen() {
   const [booksNote, setBooksNote] = useState<string | null>(null);
   /** #32 "N unregistered purchase(s) skipped" from the last parse (kept even if the save fails). */
   const [skipNote, setSkipNote] = useState<string | null>(null);
-  /** 402 toast — set only by a real run attempt (server still enforces the gate). */
-  const [paywall, setPaywall] = useState<string | null>(null);
   /** Trial used → locked "Run again" button (no banner above results). */
   const [locked, setLocked] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
@@ -144,14 +147,18 @@ export function ReconcileScreen() {
   async function afterSaved(
     matched: MatchResult[],
     sum: ReconSummary,
-    saved: { persistence: "postgres" | "demo" | "sample"; reconCount?: number }
+    saved: { persistence: "postgres" | "demo" | "sample"; reconCount?: number; canRun?: boolean }
   ) {
     setIsSample(false);
+    setSampleFiles(null);
     clearSampleRun();
-    if (saved.persistence === "postgres" && typeof saved.reconCount === "number") {
-      setTrialFromServer(saved.reconCount);
-    }
-    emitTrialChanged();
+    // F-9: trial state straight from the POST /api/recon response, in this tick: sidebar meter
+    // (event detail = trial.reconCount), locked Run and disabled drop zones. No reload/navigation.
+    const serverCount =
+      saved.persistence === "postgres" && typeof saved.reconCount === "number" ? saved.reconCount : undefined;
+    if (serverCount !== undefined) setTrialFromServer(serverCount);
+    emitTrialChanged(serverCount);
+    if (saved.canRun === false) setLocked(true);
     emitReconChanged();
     setResults(matched);
     setSummary(sum);
@@ -159,7 +166,7 @@ export function ReconcileScreen() {
     setShowUpload(false);
     // Re-read gate + chase list so the locked button and "Chase N" are authoritative
     const [state, chase] = await Promise.all([fetchReconState(), fetchChaseItems()]);
-    setLocked(!state.canRun);
+    if (!state.authError) setLocked(saved.canRun === false || !state.canRun);
     if (!chase.authError) setChase(chase.items);
   }
 
@@ -179,14 +186,22 @@ export function ReconcileScreen() {
     show({ text: TRIAL_USED_MESSAGE });
   }
 
+  /**
+   * 402 handler (server gate) + pre-run gate: lock Run and the drop zones, show the v1 ink toast
+   * "Free trial used. We'll email you when more runs open." (no action link, T-08).
+   */
+  function onPaywall() {
+    setLocked(true);
+    setShowUpload(false);
+    show({ text: TRIAL_USED_MESSAGE });
+  }
+
   async function runWithFiles(books: File, gstr: File) {
     setError("");
-    setPaywall(null);
 
     const state = await fetchReconState();
     if (!state.canRun) {
-      setPaywall(state.reason || "Upgrade required");
-      setLocked(true);
+      onPaywall();
       return;
     }
 
@@ -215,8 +230,7 @@ export function ReconcileScreen() {
           return;
         }
         if (saved.paywall) {
-          setPaywall(saved.error || "Upgrade required");
-          setLocked(true);
+          onPaywall();
           return;
         }
         // Surface 500 / other server failures (do not silently pretend success)
@@ -236,8 +250,13 @@ export function ReconcileScreen() {
   }
 
   async function onRun() {
+    if (locked) {
+      lockedToast();
+      return;
+    }
     if (!booksFile || !gstrFile) {
-      setError("Please select both purchase register and GSTR-2B files.");
+      // Run is hidden/disabled until both files are picked; never stack this over a sample result.
+      if (!isSample) setError("Please select both purchase register and GSTR-2B files.");
       return;
     }
     await runWithFiles(booksFile, gstrFile);
@@ -246,7 +265,6 @@ export function ReconcileScreen() {
   async function loadSamples() {
     // Sample runs are shown in-page only: never saved, never counted against the trial.
     setError("");
-    setPaywall(null);
     setLoading(true);
     setBooksNote(null);
     setSkipNote(null);
@@ -303,18 +321,6 @@ export function ReconcileScreen() {
         )}
       </div>
 
-      {paywall && (
-        <div className="toast-risk" role="alert">
-          <div className="flex min-w-0 items-start gap-2 text-sm">
-            <Lock size={18} className="mt-0.5 shrink-0" aria-hidden />
-            <div className="min-w-0">
-              <p className="toast-risk-title">Free trial used</p>
-              <p className="toast-risk-body">We&apos;ll email you when more runs open.</p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {uploadStep && (
         <>
           <div className="grid gap-3 pt-1 md:grid-cols-2">
@@ -323,18 +329,28 @@ export function ReconcileScreen() {
               hint="Tally, Zoho or Excel · .csv / .xlsx"
               file={booksFile}
               onFile={setBooksFile}
+              disabled={locked}
             />
             <FileDrop
               label="GSTR-2B"
               hint="From the GST portal · .csv / .xlsx"
               file={gstrFile}
               onFile={setGstrFile}
+              disabled={locked}
             />
           </div>
+          {locked && (
+            <p className="helper-line" data-trial-used="true">
+              <Lock size={13} strokeWidth={1.75} aria-hidden />
+              <span>1 of 1 free recon used. Sample files still run in your browser and are never saved.</span>
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-4">
             {locked ? (
               <LockedRun onClick={lockedToast} />
-            ) : (
+            ) : isSample && !bothFiles ? null : (
+              // After a sample run Run stays hidden until both real files are picked (no
+              // "select both files" error over a valid sample result).
               <button
                 type="button"
                 onClick={onRun}
@@ -368,12 +384,7 @@ export function ReconcileScreen() {
           {error}
         </p>
       )}
-      {uploadStep && (booksNote || skipNote) && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          {booksNote && <ImportNote note={booksNote} />}
-          {skipNote && <SkipNote note={skipNote} />}
-        </div>
-      )}
+      {uploadStep && (booksNote || skipNote) && <ImportNote source={booksNote} skipped={skipNote} />}
 
       {isSample && summary && !uploadStep && (
         <p className="status" style={{ color: "var(--color-text-2)" }}>
@@ -422,8 +433,7 @@ export function ReconcileScreen() {
           {!showUpload && (
             <div className="card flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2">
               <FileName name={booksFile?.name ?? (isSample ? sampleFiles?.[0] : undefined)} fallback="Purchase register" />
-              {booksNote && <ImportNote note={booksNote} />}
-              {skipLine && <SkipNote note={skipLine} />}
+              {(booksNote || skipLine) && <ImportNote source={booksNote} skipped={skipLine} />}
               <FileName name={gstrFile?.name ?? (isSample ? sampleFiles?.[1] : undefined)} fallback="GSTR-2B" />
               <span className="muted">
                 {summary.totalBooks} books · {summary.totalGstr2b} in 2B
@@ -516,22 +526,24 @@ function LockedRun({ small = false, onClick }: { small?: boolean; onClick: () =>
   );
 }
 
-/** PR #24 import-source line ("Detected Tally export"), v1 style: muted text + ok check. */
-function ImportNote({ note }: { note: string }) {
+/**
+ * Import note, v3 style (muted 12px + ok check): PR #24 source ("Detected Tally export") and
+ * #32 skipped rows, joined by a middle dot: "Detected Tally export · 1 unregistered purchase skipped".
+ */
+function ImportNote({ source, skipped }: { source: string | null; skipped: string | null }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--color-text-3)" }}>
+    <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--color-text-3)" }} data-import-note>
       <CircleCheck size={13} strokeWidth={1.75} style={{ color: "var(--color-ok)" }} aria-hidden />
-      {note}
-    </span>
-  );
-}
-
-/** #32 skipped-rows note, v3 style: muted 12px + info icon (informational, not an error). */
-function SkipNote({ note }: { note: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--color-text-3)" }}>
-      <Info size={13} strokeWidth={1.75} aria-hidden />
-      {note}
+      <span>
+        {source}
+        {source && skipped ? " · " : null}
+        {skipped && (
+          <span title={SKIPPED_WHY} style={{ cursor: "help" }}>
+            {skipped}
+            <span className="sr-only"> ({SKIPPED_WHY})</span>
+          </span>
+        )}
+      </span>
     </span>
   );
 }
@@ -550,11 +562,14 @@ function FileDrop({
   hint,
   file,
   onFile,
+  disabled = false,
 }: {
   label: string;
   hint: string;
   file: File | null;
   onFile: (f: File) => void;
+  /** Trial used: zone is inert (45%, no drop, input disabled). */
+  disabled?: boolean;
 }) {
   const [over, setOver] = useState(false);
   const uid = useId();
@@ -566,15 +581,19 @@ function FileDrop({
     <label
       htmlFor={inputId}
       className="dropzone"
-      data-over={over ? "true" : undefined}
+      data-over={over && !disabled ? "true" : undefined}
+      data-disabled={disabled ? "true" : undefined}
+      aria-disabled={disabled ? "true" : undefined}
+      title={disabled ? "Free trial used" : undefined}
       onDragOver={(e) => {
         e.preventDefault();
-        setOver(true);
+        if (!disabled) setOver(true);
       }}
       onDragLeave={() => setOver(false)}
       onDrop={(e) => {
         e.preventDefault();
         setOver(false);
+        if (disabled) return;
         const f = e.dataTransfer.files?.[0];
         if (f) onFile(f);
       }}
@@ -599,6 +618,7 @@ function FileDrop({
         type="file"
         accept=".csv,.xlsx,.xls"
         aria-describedby={hintId}
+        disabled={disabled}
         className="sr-only"
         onChange={(e) => {
           const f = e.target.files?.[0];
