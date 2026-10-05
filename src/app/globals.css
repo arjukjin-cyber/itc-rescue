@@ -374,6 +374,26 @@ html { scroll-behavior: smooth; }
 .dt .vn { font-weight: 500; color: var(--color-ink); }
 .dt tr[data-resolved="true"] .vn { color: var(--color-text-3); }
 .dt .acts { display: flex; justify-content: flex-end; gap: 2px; }
+/*
+ * Narrow tables (content area < ~1040px, i.e. 1024–1366px viewports with the 240px sidebar):
+ * tighter cell padding + truncating vendor names so the row fits from 1280px up; below that the
+ * middle columns scroll inside .table-scroll while the actions cell (Chase · Resolve · Export)
+ * stays pinned on the right, so all three 32px row actions are always visible (never clipped).
+ */
+.table-scroll { container-type: inline-size; }
+@container (max-width: 1040px) {
+  .dt th, .dt td { padding-left: 7px; padding-right: 7px; }
+  .dt .vn { display: block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+  .dt thead th:last-child,
+  .dt tbody td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    background-color: var(--color-surface);
+    box-shadow: inset 1px 0 0 var(--color-line-2);
+  }
+  .dt .acts { flex-wrap: nowrap; }
+}
 
 /* ── Drop zone ──────────────────────────────────────────────────────────── */
 .dropzone {
