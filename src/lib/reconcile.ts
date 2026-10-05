@@ -158,6 +158,118 @@ export function rowToInvoice(
   };
 }
 
+/** Standard GST rates (%) used to classify a row's effective rate. */
+const GST_RATES = [0, 0.1, 0.25, 1, 1.5, 3, 5, 6, 7.5, 12, 18, 28];
+
+/** Effective GST rate of a row (tax / taxable), snapped to the nearest standard rate. */
+export function deriveGstRate(taxable: number, tax: number): number {
+  if (!taxable) return 0;
+  const pct = (Math.abs(tax) / Math.abs(taxable)) * 100;
+  return GST_RATES.reduce((best, r) => (Math.abs(r - pct) < Math.abs(best - pct) ? r : best), 0);
+}
+
+export const DUPLICATE_BOOKS_NOTE = "Possible duplicate entry in books";
+
+/**
+ * Indian financial year (April–March) of a YYYY-MM-DD date, e.g.
+ * 2025-03-31 -> "2024-25", 2025-04-01 -> "2025-26". Null if the date is missing
+ * or not an ISO date.
+ */
+export function financialYear(isoDate: string | undefined | null): string | null {
+  const m = String(isoDate ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const month = Number(m[2]);
+  if (month < 1 || month > 12) return null;
+  const start = month >= 4 ? y : y - 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
+}
+
+/**
+ * Merge key: GSTIN + normalised invoice number + financial year.
+ * GST only requires invoice numbers to be unique per FY (many suppliers restart
+ * at INV/001 every April), so the same number in two FYs stays two invoices.
+ * Rows with a missing/unparseable date fall into a "no FY" bucket keyed on
+ * GSTIN + invoice number only. Rows without an invoice number are never merged.
+ *
+ * GSTIN "UNKNOWN" rows are additionally keyed on vendor name. In reconcile() this
+ * never applies to books: #32 drops no-GSTIN books rows *before* merging. It only
+ * keeps a 2B file with a missing GSTIN column (or a direct caller) from pooling
+ * different suppliers' same-numbered invoices.
+ */
+export function invoiceMergeKey(inv: InvoiceRecord): string | null {
+  const no = normalizeInvoiceNumber(inv.invoiceNumber);
+  if (!no || no === "UNKNOWN") return null;
+  const party =
+    inv.gstin && inv.gstin !== "UNKNOWN"
+      ? inv.gstin
+      : `UNKNOWN:${String(inv.vendorName || "").trim().toUpperCase()}`;
+  return `${party}|${no}|${financialYear(inv.invoiceDate) ?? "no-fy"}`;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Merge rows that belong to one invoice (e.g. one row per tax rate) into a single
+ * record: taxable value, IGST, CGST, SGST and total tax are summed; the FIRST row's
+ * raw invoice number, date and vendor are kept for display, plus the first valid
+ * vendor phone among the rows.
+ *
+ * `possibleDuplicates` holds merged records where 2+ source rows had the same
+ * effective rate AND identical taxable/tax amounts (they are still summed).
+ */
+export function mergeInvoiceRows(rows: InvoiceRecord[]): {
+  records: InvoiceRecord[];
+  possibleDuplicates: Set<InvoiceRecord>;
+} {
+  const records: InvoiceRecord[] = [];
+  const byKey = new Map<string, { merged: InvoiceRecord; seen: Set<string>; dup: boolean }>();
+
+  for (const row of rows) {
+    const key = invoiceMergeKey(row);
+    if (!key) {
+      records.push({ ...row });
+      continue;
+    }
+    const rate = deriveGstRate(row.taxableValue, row.totalTax);
+    const sig = [rate, row.taxableValue, row.igst, row.cgst, row.sgst, row.totalTax].join("|");
+    const group = byKey.get(key);
+    if (!group) {
+      const merged = { ...row };
+      byKey.set(key, { merged, seen: new Set([sig]), dup: false });
+      records.push(merged);
+      continue;
+    }
+    const m = group.merged;
+    if (group.seen.has(sig)) group.dup = true;
+    group.seen.add(sig);
+    m.taxableValue = round2(m.taxableValue + row.taxableValue);
+    m.igst = round2(m.igst + row.igst);
+    m.cgst = round2(m.cgst + row.cgst);
+    m.sgst = round2(m.sgst + row.sgst);
+    m.totalTax = round2(m.totalTax + row.totalTax);
+    if (m.itcAvailable !== undefined || row.itcAvailable !== undefined) {
+      m.itcAvailable = (m.itcAvailable ?? true) && (row.itcAvailable ?? true);
+    }
+    // UX-04: keep the first valid vendor phone among the merged rows
+    if (!normalizeIndianMobile(m.phone)) {
+      const p = normalizeIndianMobile(row.phone);
+      if (p) m.phone = p;
+    }
+  }
+
+  const possibleDuplicates = new Set<InvoiceRecord>();
+  for (const g of byKey.values()) if (g.dup) possibleDuplicates.add(g.merged);
+  return { records, possibleDuplicates };
+}
+
+/** Prepend so the note stays visible in the truncated Notes cell on /reconcile. */
+function withNote(existing: string | undefined, note: string): string {
+  return existing ? `${note} · ${existing}` : note;
+}
+
 function makeId(parts: string[]): string {
   return parts.join("|");
 }
@@ -166,22 +278,30 @@ const TAX_TOLERANCE = 1; // ₹1 tolerance for rounding
 
 /**
  * Match books vs GSTR-2B:
- * - Key: GSTIN + normalized invoice# + date (±1 day)
+ * - First, rows of the same invoice (GSTIN + normalised invoice# + FY) are merged on
+ *   each side (see mergeInvoiceRows); identical repeated books rows get a
+ *   "Possible duplicate entry in books" note.
+ * - Key: GSTIN + normalized invoice# + date (±1 day) + same financial year
+ *   (FY only checked when both dates parse).
  * - Categories: matched, itc_at_risk (books only), unclaimed (2B only), value_mismatch
  */
 export function reconcile(
   allBooks: InvoiceRecord[],
-  gstr2b: InvoiceRecord[]
+  gstr2bRows: InvoiceRecord[]
 ): { results: MatchResult[]; summary: ReconSummary } {
   // Purchases from unregistered dealers have no GSTIN and carry no ITC, so they
   // can't be matched against GSTR-2B. Leave them out and report the count.
   const isUnregistered = (b: InvoiceRecord) => !b.gstin || b.gstin === "UNKNOWN";
-  const books = allBooks.filter((b) => !isUnregistered(b));
-  const unregisteredSkipped = allBooks.length - books.length;
+  const booksRows = allBooks.filter((b) => !isUnregistered(b));
+  const unregisteredSkipped = allBooks.length - booksRows.length;
+  // Then merge the rows of each invoice (GSTIN + invoice no + FY) on both sides.
+  const { records: books, possibleDuplicates } = mergeInvoiceRows(booksRows);
+  const { records: gstr2b } = mergeInvoiceRows(gstr2bRows);
   const used2b = new Set<number>();
   const results: MatchResult[] = [];
 
   for (const book of books) {
+    const bookFy = financialYear(book.invoiceDate);
     let bestIdx = -1;
     let bestScore = Infinity;
 
@@ -192,6 +312,10 @@ export function reconcile(
       if (book.invoiceNumber !== g.invoiceNumber) continue;
       const dd = dayDiff(book.invoiceDate, g.invoiceDate);
       if (dd > 1) continue;
+      // Same invoice no. in another financial year is a different invoice, even
+      // across the 31-Mar / 01-Apr boundary. Only applied when both FYs are known.
+      const gFy = financialYear(g.invoiceDate);
+      if (bookFy && gFy && bookFy !== gFy) continue;
       if (dd < bestScore) {
         bestScore = dd;
         bestIdx = i;
@@ -238,6 +362,12 @@ export function reconcile(
     }
   }
 
+  for (const r of results) {
+    if (r.books && possibleDuplicates.has(r.books)) {
+      r.notes = withNote(r.notes, DUPLICATE_BOOKS_NOTE);
+    }
+  }
+
   for (let i = 0; i < gstr2b.length; i++) {
     if (used2b.has(i)) continue;
     const g = gstr2b[i];
@@ -259,7 +389,8 @@ export function reconcile(
   // UX-04: carry the vendor phone onto every result for that GSTIN (first valid
   // phone across register rows), so at-risk rows get it even if only another
   // invoice of the same vendor had the number.
-  const phoneByGstin = firstPhoneByGstin(books);
+  // Built from the raw register rows (before the per-invoice merge), in file order.
+  const phoneByGstin = firstPhoneByGstin(booksRows);
   for (const r of results) {
     const phone = phoneByGstin.get(r.gstin) ?? normalizeIndianMobile(r.books?.phone);
     if (phone) r.phone = phone;

@@ -209,14 +209,17 @@ export function ReconcileScreen() {
     setBooksNote(null);
     setSkipNote(null);
     try {
+      // #27: both files go through the detailed parser (GST portal 2B .xlsx / .json detection);
+      // it throws a file-specific InvoiceParseError, surfaced in the role="alert" error line.
       const booksParsed = await parseInvoiceFileDetailed(books, "books");
       const booksInv = booksParsed.invoices;
-      setBooksNote(describeImportSource(booksParsed.detected));
-      const gstrInv = await parseInvoiceFile(gstr, "gstr2b");
+      const gstrParsed = await parseInvoiceFileDetailed(gstr, "gstr2b");
+      const gstrInv = gstrParsed.invoices;
+      const notes = [booksParsed.detected, gstrParsed.detected].map(describeImportSource).filter(Boolean);
+      setBooksNote(notes.length ? notes.join(" · ") : null);
       if (!booksInv.length || !gstrInv.length) {
-        setError(
-          "Could not parse invoices. Check column headers (GSTIN, Invoice Number, Invoice Date, tax columns)."
-        );
+        // parseInvoiceFileDetailed normally throws a file-specific error first
+        setError(`${(!booksInv.length ? books : gstr).name}: no invoice rows found`);
         return;
       }
 
@@ -333,7 +336,7 @@ export function ReconcileScreen() {
             />
             <FileDrop
               label="GSTR-2B"
-              hint="From the GST portal · .csv / .xlsx"
+              hint="From the GST portal · .json or .xlsx"
               file={gstrFile}
               onFile={setGstrFile}
               disabled={locked}
@@ -379,7 +382,7 @@ export function ReconcileScreen() {
       )}
 
       {error && (
-        <p className="status" style={{ color: "var(--color-text-2)" }}>
+        <p className="status" style={{ color: "var(--color-text-2)" }} role="alert">
           <span className="dot dot-risk" aria-hidden />
           {error}
         </p>
@@ -616,7 +619,7 @@ function FileDrop({
       <input
         id={inputId}
         type="file"
-        accept=".csv,.xlsx,.xls"
+        accept=".csv,.xlsx,.xls,.json"
         aria-describedby={hintId}
         disabled={disabled}
         className="sr-only"
