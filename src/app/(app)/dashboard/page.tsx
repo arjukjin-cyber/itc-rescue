@@ -5,21 +5,28 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CircleCheck, Clock, Inbox, Lock, Plus, Send, SquareKanban, Upload } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { KpiStrip } from "@/components/KpiStrip";
 import { ActionTable, ResultTabs, filterByTab, useChaseRows, type TabKey } from "@/components/RiskTable";
 import { Toast, useToast } from "@/components/Toast";
 import { getSettings } from "@/lib/storage";
-import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
+import { fetchChaseItems, fetchReconState, type ReconTri } from "@/lib/api-data";
 import { daysText, getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
 import { formatIstTimestamp } from "@/lib/format";
 import { TRIAL_USED_MESSAGE } from "@/lib/recon-guard";
-import type { MatchResult, ReconSummary } from "@/lib/types";
+import type { MatchResult } from "@/lib/types";
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [loaded, setLoaded] = useState(false);
-  const [summary, setSummary] = useState<ReconSummary | null>(null);
-  const [results, setResults] = useState<MatchResult[]>([]);
+  /**
+   * GET /api/recon tri-state: undefined = loading (skeleton), null = server said no recon
+   * (empty state), object = data. Errors keep it undefined and take the existing path
+   * (redirect to /login), so the empty state can't flash before data arrives.
+   */
+  const [recon, setRecon] = useState<ReconTri>(undefined);
+  const loaded = recon !== undefined;
+  const summary = recon?.summary ?? null;
+  const results: MatchResult[] = useMemo(() => recon?.results ?? [], [recon]);
   const [company, setCompany] = useState("My Company");
   const [tab, setTab] = useState<TabKey>("action");
   const [lastRecon, setLastRecon] = useState<string | null>(null);
@@ -38,13 +45,11 @@ export default function DashboardPage() {
         router.replace("/login");
         return;
       }
-      setSummary(recon.summary);
-      setResults(recon.results);
       if (!chaseRes.authError) setChase(chaseRes.items);
       // "Last recon" = the saved run's created_at from GET /api/recon (#28), shown in IST.
-      setLastRecon(recon.summary ? recon.createdAt ?? null : null);
+      setLastRecon(recon.recon ? recon.createdAt ?? null : null);
       setCanRun(recon.canRun);
-      setLoaded(true);
+      setRecon(recon.recon);
     })();
     return () => {
       cancelled = true;
@@ -60,17 +65,9 @@ export default function DashboardPage() {
   const rows = useMemo(() => filterByTab(results, tab), [results, tab]);
   const due = useMemo(() => getGstr3bDue(results), [results]);
 
-  if (!loaded) {
-    return (
-      <div className="space-y-4" aria-busy="true" aria-label="Loading dashboard">
-        <div className="h-6 w-32 animate-pulse rounded" style={{ backgroundColor: "var(--color-line-2)" }} />
-        <div className="h-24 animate-pulse rounded-lg" style={{ backgroundColor: "var(--color-line-2)" }} />
-        <div className="h-12 animate-pulse rounded-lg" style={{ backgroundColor: "var(--color-line-2)" }} />
-      </div>
-    );
-  }
+  if (recon === undefined) return <LoadingSkeleton label="Loading dashboard" kpis={5} rows={5} cols={6} actions />;
 
-  if (!summary) return <DashboardEmpty due={due} />;
+  if (recon === null || !summary) return <DashboardEmpty due={due} />;
 
   const chaseLabel = `Chase ${pendingCount} vendor${pendingCount === 1 ? "" : "s"} on WhatsApp`;
   const meta = [

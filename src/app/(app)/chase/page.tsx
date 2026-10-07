@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Copy, Check, Send, ChevronDown, CircleCheck } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { ChaseStateCell, IssueCell } from "@/components/RiskTable";
 import { formatDay, inr } from "@/lib/format";
 import { emitChaseCount } from "@/lib/ui-events";
@@ -15,15 +16,20 @@ import type { ChaseItem, MatchResult } from "@/lib/types";
 
 export default function ChasePage() {
   const router = useRouter();
-  const [items, setItems] = useState<ChaseItem[]>([]);
+  /**
+   * GET /api/chase (+ /api/recon for the message text) tri-state: undefined = loading (skeleton),
+   * [] = the server returned no open items (empty state), array = data. Errors keep it undefined
+   * and take the existing path (redirect to /login). Focus/visibility refreshes keep the
+   * current list on screen instead of going back to the skeleton.
+   */
+  const [loadedItems, setItems] = useState<ChaseItem[] | undefined>(undefined);
+  const items = loadedItems ?? [];
   const [resultsMap, setResultsMap] = useState<Map<string, MatchResult>>(new Map());
   const [company, setCompany] = useState("My Company");
   const [copied, setCopied] = useState<string | null>(null);
   const [lang, setLang] = useState<"en" | "hi">("en");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [allFixed, setAllFixed] = useState(false);
-  /** Hold EmptyState until first fetch settles — kills hydrate flash */
-  const [loaded, setLoaded] = useState(false);
 
   async function reload() {
     const [{ items: all, authError: chaseAuth }, recon] = await Promise.all([
@@ -51,7 +57,6 @@ export default function ChasePage() {
     setAllFixed(open.length === 0 && all.some((c) => c.status === "fixed"));
     setResultsMap(byId);
     setCompany(getSettings().companyName || "My Company");
-    setLoaded(true);
   }
 
   useEffect(() => {
@@ -77,16 +82,7 @@ export default function ChasePage() {
     window.setTimeout(() => setCopied(null), 1200);
   }
 
-  if (!loaded) {
-    return (
-      <div className="space-y-3" aria-busy="true" aria-label="Loading chase list">
-        <div className="h-6 w-40 animate-pulse rounded" style={{ backgroundColor: "var(--color-line-2)" }} />
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-11 animate-pulse rounded" style={{ backgroundColor: "var(--color-line-2)" }} />
-        ))}
-      </div>
-    );
-  }
+  if (loadedItems === undefined) return <LoadingSkeleton label="Loading chase list" rows={5} cols={6} actions />;
 
   if (!items.length) {
     return (

@@ -762,3 +762,22 @@ html { scroll-behavior: smooth; }
 }
 .v3-cmdk-foot .v3-kbd { margin: 0; }
 .menu.v3-sw-pop { left: 10px; top: calc(100% + 4px); }
+
+/* ── Loading skeleton (v1.1): neutral grey blocks, 4–6px radius, subtle pulse only ── */
+.skel {
+  display: block;
+  background-color: var(--color-line-2);
+  border-radius: var(--radius-sm);
+  animation: skel-pulse 1.8s ease-in-out infinite;
+}
+.skel[data-r="md"] { border-radius: var(--radius-md); }
+.skel-kpis .kpi { min-height: 86px; }
+.skel-table td { padding-top: 13px; padding-bottom: 13px; }
+.skel-table tbody tr:hover td { background-color: transparent; }
+@keyframes skel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel { animation: none; }
+}

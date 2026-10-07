@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Upload, Play, Loader2, Lock, Inbox, CircleCheck, Send, Download, ChevronDown } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import * as XLSX from "xlsx";
 import { reconCsv, atRiskCsv, atRiskResults, downloadCsv, istDate } from "@/lib/csv-export";
 import { HelpTip } from "@/components/HelpTip";
@@ -17,7 +18,7 @@ import { clearSampleRun, getSampleRun, setSampleRun } from "@/lib/sample-run";
 import { Toast, useToast } from "@/components/Toast";
 import { getSettings, setTrialFromServer } from "@/lib/storage";
 import { useRouter, useSearchParams } from "next/navigation";
-import { fetchChaseItems, fetchReconState, persistRecon } from "@/lib/api-data";
+import { fetchChaseItems, fetchReconState, persistRecon, type ReconTri } from "@/lib/api-data";
 import { parseInvoiceFile, parseInvoiceFileDetailed, fetchSampleAsFile } from "@/lib/parseFile";
 import { describeImportSource } from "@/lib/importers/tally-busy";
 import { reconcile } from "@/lib/reconcile";
@@ -41,17 +42,9 @@ function defaultFilter(results: MatchResult[]): TabKey {
   return atRiskTotal(results) > 0 ? "action" : "all";
 }
 
+/** Also the Suspense fallback in reconcile/page.tsx: same shape as the loaded Runs screen. */
 export function ReconcileSkeleton() {
-  return (
-    <div className="space-y-4" aria-busy="true" aria-label="Loading reconciliation">
-      <div className="h-6 w-32 animate-pulse rounded" style={{ backgroundColor: "var(--color-line-2)" }} />
-      <div className="grid gap-3 md:grid-cols-2">
-        {[0, 1].map((i) => (
-          <div key={i} className="h-32 animate-pulse rounded-lg" style={{ backgroundColor: "var(--color-line-2)" }} />
-        ))}
-      </div>
-    </div>
-  );
+  return <LoadingSkeleton label="Loading reconciliation" kpis={4} rows={5} cols={6} actions />;
 }
 
 /**
@@ -66,7 +59,13 @@ export function ReconcileScreen() {
   const def = view ? viewDef(view) : null;
   /** Sidebar "New recon" → upload step */
   const wantsNew = searchParams.get("new") === "1";
-  const [loaded, setLoaded] = useState(false);
+  /**
+   * Initial GET /api/recon tri-state: undefined = loading (skeleton), null = the server said
+   * there is no saved recon (upload step / empty view), object = saved run. Errors keep it
+   * undefined and take the existing path (redirect to /login), so no empty-state flash.
+   * Runs made on this screen afterwards live in `results` / `summary` as before.
+   */
+  const [initialRecon, setInitialRecon] = useState<ReconTri>(undefined);
   const [booksFile, setBooksFile] = useState<File | null>(null);
   const [gstrFile, setGstrFile] = useState<File | null>(null);
   const [results, setResults] = useState<MatchResult[]>([]);
@@ -114,7 +113,7 @@ export function ReconcileScreen() {
       }
       if (!chase.authError) setChase(chase.items);
       setLocked(!state.canRun);
-      setLoaded(true);
+      setInitialRecon(state.recon);
       // Dashboard "Try with sample files" deep link (/reconcile?sample=1)
       if (new URLSearchParams(window.location.search).get("sample") === "1") {
         router.replace("/reconcile");
@@ -292,7 +291,7 @@ export function ReconcileScreen() {
     }
   }
 
-  if (!loaded) return <ReconcileSkeleton />;
+  if (initialRecon === undefined) return <ReconcileSkeleton />;
 
   const bothFiles = Boolean(booksFile && gstrFile);
   const chaseBtn = (large: boolean) =>
