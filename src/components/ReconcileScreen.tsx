@@ -16,13 +16,13 @@ import { Dropdown, MenuItem, MenuLabel } from "@/components/Dropdown";
 import { viewDef, viewFromSlug, type ItcView } from "@/lib/views";
 import { clearSampleRun, getSampleRun, setSampleRun } from "@/lib/sample-run";
 import { Toast, useToast } from "@/components/Toast";
-import { getSettings, setTrialFromServer } from "@/lib/storage";
+import { setTrialFromServer, syncProfileFromServer } from "@/lib/storage";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchChaseItems, fetchReconState, persistRecon, type ReconTri } from "@/lib/api-data";
 import { parseInvoiceFile, parseInvoiceFileDetailed, fetchSampleAsFile } from "@/lib/parseFile";
 import { describeImportSource } from "@/lib/importers/tally-busy";
 import { reconcile } from "@/lib/reconcile";
-import type { MatchResult, ReconSummary } from "@/lib/types";
+import type { MatchResult, ReconSummary, UserSession } from "@/lib/types";
 
 const MATCH_RULE = "Matched on GSTIN + invoice number + invoice date (±1 day).";
 
@@ -79,7 +79,8 @@ export function ReconcileScreen() {
   /** Trial used → locked "Run again" button (no banner above results). */
   const [locked, setLocked] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
-  const [company, setCompany] = useState("My Company");
+  /** Chase text sender name: the server profile (/api/auth/me, synced via #34's helper) only. */
+  const [company, setCompany] = useState("");
   const { toast, show, dismiss } = useToast();
   const { setChase, statusById, pendingCount, resolve, resolveMany, busy } = useChaseRows(show);
   const autoSampleDone = useRef(false);
@@ -89,9 +90,15 @@ export function ReconcileScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    setCompany(getSettings().companyName || "My Company");
     (async () => {
-      const [state, chase] = await Promise.all([fetchReconState(), fetchChaseItems()]);
+      const [state, chase, me] = await Promise.all([
+        fetchReconState(),
+        fetchChaseItems(),
+        fetch("/api/auth/me", { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => (d?.user as UserSession | null | undefined) ?? null)
+        .catch(() => null),
+      ]);
       if (cancelled) return;
       if (state.authError) {
         setError(state.authError);
@@ -111,6 +118,8 @@ export function ReconcileScreen() {
         setSummary(state.summary);
         setFilter(defaultFilter(state.results));
       }
+      if (me) syncProfileFromServer(me);
+      setCompany(me ? me.companyName || me.name || "" : "");
       if (!chase.authError) setChase(chase.items);
       setLocked(!state.canRun);
       setInitialRecon(state.recon);

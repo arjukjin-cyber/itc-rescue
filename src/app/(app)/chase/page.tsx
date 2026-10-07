@@ -8,11 +8,11 @@ import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { ChaseStateCell, IssueCell } from "@/components/RiskTable";
 import { formatDay, inr } from "@/lib/format";
 import { emitChaseCount } from "@/lib/ui-events";
-import { getSettings } from "@/lib/storage";
+import { syncProfileFromServer } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
 import { formatIndianMobile, waLink } from "@/lib/phone";
 import { whatsappEnglish, whatsappHindi, emailSubject, emailBody } from "@/lib/templates";
-import type { ChaseItem, MatchResult } from "@/lib/types";
+import type { ChaseItem, MatchResult, UserSession } from "@/lib/types";
 
 export default function ChasePage() {
   const router = useRouter();
@@ -25,16 +25,21 @@ export default function ChasePage() {
   const [loadedItems, setItems] = useState<ChaseItem[] | undefined>(undefined);
   const items = loadedItems ?? [];
   const [resultsMap, setResultsMap] = useState<Map<string, MatchResult>>(new Map());
-  const [company, setCompany] = useState("My Company");
+  /** WhatsApp / email sender name: the server profile (/api/auth/me, synced via #34's helper) only. */
+  const [company, setCompany] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   const [lang, setLang] = useState<"en" | "hi">("en");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [allFixed, setAllFixed] = useState(false);
 
   async function reload() {
-    const [{ items: all, authError: chaseAuth }, recon] = await Promise.all([
+    const [{ items: all, authError: chaseAuth }, recon, me] = await Promise.all([
       fetchChaseItems(),
       fetchReconState(),
+      fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => (d?.user as UserSession | null | undefined) ?? null)
+      .catch(() => null),
     ]);
     if (chaseAuth || recon.authError) {
       router.replace("/login");
@@ -56,7 +61,8 @@ export default function ChasePage() {
     emitChaseCount(open.filter((c) => c.status === "pending").length);
     setAllFixed(open.length === 0 && all.some((c) => c.status === "fixed"));
     setResultsMap(byId);
-    setCompany(getSettings().companyName || "My Company");
+    if (me) syncProfileFromServer(me);
+    setCompany(me ? me.companyName || me.name || "" : "");
   }
 
   useEffect(() => {

@@ -13,20 +13,34 @@ function isTaxDiff(r: MatchResult): boolean {
   return r.category === "value_mismatch";
 }
 
+/**
+ * Opening line. `companyName` comes from the server profile (/api/auth/me); when it isn't known
+ * the "this is …" clause is dropped rather than filled with a placeholder or a stale local value.
+ */
+function greetEn(r: MatchResult, companyName: string): string {
+  const c = companyName.trim();
+  return c ? `Hi ${r.vendorName}, this is ${c}.` : `Hi ${r.vendorName}.`;
+}
+
+function greetHi(r: MatchResult, companyName: string): string {
+  const c = companyName.trim();
+  return c ? `नमस्ते ${r.vendorName}, यह ${c} की ओर से है।` : `नमस्ते ${r.vendorName}।`;
+}
+
 export function whatsappEnglish(r: MatchResult, companyName: string): string {
   const date = formatInvoiceDate(r.invoiceDate);
   if (isTaxDiff(r)) {
-    return `Hi ${r.vendorName}, this is ${companyName}. Invoice ${r.invoiceNumber} dated ${date} shows GST of ${formatINRPrecise(r.gstr2bTax || 0)} in GSTR-2B, but our invoice says ${formatINRPrecise(r.booksTax || 0)}. Please amend it in your GSTR-1. Thank you.`;
+    return `${greetEn(r, companyName)} Invoice ${r.invoiceNumber} dated ${date} shows GST of ${formatINRPrecise(r.gstr2bTax || 0)} in GSTR-2B, but our invoice says ${formatINRPrecise(r.booksTax || 0)}. Please amend it in your GSTR-1. Thank you.`;
   }
-  return `Hi ${r.vendorName}, this is ${companyName}. Invoice ${r.invoiceNumber} dated ${date} (${formatINRPrecise(r.booksTax || r.gstr2bTax || 0)} GST) is not showing in our GSTR-2B. Please upload it in your GSTR-1 so we can claim the credit. Thank you.`;
+  return `${greetEn(r, companyName)} Invoice ${r.invoiceNumber} dated ${date} (${formatINRPrecise(r.booksTax || r.gstr2bTax || 0)} GST) is not showing in our GSTR-2B. Please upload it in your GSTR-1 so we can claim the credit. Thank you.`;
 }
 
 export function whatsappHindi(r: MatchResult, companyName: string): string {
   const date = formatInvoiceDate(r.invoiceDate);
   if (isTaxDiff(r)) {
-    return `नमस्ते ${r.vendorName}, यह ${companyName} की ओर से है। इनवॉइस ${r.invoiceNumber} (दिनांक ${date}) के लिए GSTR-2B में GST ${formatINRPrecise(r.gstr2bTax || 0)} दिख रहा है, लेकिन हमारे इनवॉइस में ${formatINRPrecise(r.booksTax || 0)} है। कृपया अपने GSTR-1 में इसे संशोधित करें। धन्यवाद।`;
+    return `${greetHi(r, companyName)} इनवॉइस ${r.invoiceNumber} (दिनांक ${date}) के लिए GSTR-2B में GST ${formatINRPrecise(r.gstr2bTax || 0)} दिख रहा है, लेकिन हमारे इनवॉइस में ${formatINRPrecise(r.booksTax || 0)} है। कृपया अपने GSTR-1 में इसे संशोधित करें। धन्यवाद।`;
   }
-  return `नमस्ते ${r.vendorName}, यह ${companyName} की ओर से है। इनवॉइस ${r.invoiceNumber} दिनांक ${date} (GST ${formatINRPrecise(r.booksTax || r.gstr2bTax || 0)}) हमारे GSTR-2B में नहीं दिख रहा है। कृपया इसे अपने GSTR-1 में अपलोड करें ताकि हम क्रेडिट क्लेम कर सकें। धन्यवाद।`;
+  return `${greetHi(r, companyName)} इनवॉइस ${r.invoiceNumber} दिनांक ${date} (GST ${formatINRPrecise(r.booksTax || r.gstr2bTax || 0)}) हमारे GSTR-2B में नहीं दिख रहा है। कृपया इसे अपने GSTR-1 में अपलोड करें ताकि हम क्रेडिट क्लेम कर सकें। धन्यवाद।`;
 }
 
 export function emailSubject(r: MatchResult): string {

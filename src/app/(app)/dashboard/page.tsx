@@ -9,12 +9,12 @@ import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { KpiStrip } from "@/components/KpiStrip";
 import { ActionTable, ResultTabs, filterByTab, useChaseRows, type TabKey } from "@/components/RiskTable";
 import { Toast, useToast } from "@/components/Toast";
-import { getSettings } from "@/lib/storage";
+import { syncProfileFromServer } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState, type ReconTri } from "@/lib/api-data";
 import { daysText, getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
 import { formatIstTimestamp } from "@/lib/format";
 import { TRIAL_USED_MESSAGE } from "@/lib/recon-guard";
-import type { MatchResult } from "@/lib/types";
+import type { MatchResult, UserSession } from "@/lib/types";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -27,7 +27,8 @@ export default function DashboardPage() {
   const loaded = recon !== undefined;
   const summary = recon?.summary ?? null;
   const results: MatchResult[] = useMemo(() => recon?.results ?? [], [recon]);
-  const [company, setCompany] = useState("My Company");
+  /** Chase text sender name: the server profile (/api/auth/me, synced via #34's helper) only. */
+  const [company, setCompany] = useState("");
   const [tab, setTab] = useState<TabKey>("action");
   const [lastRecon, setLastRecon] = useState<string | null>(null);
   /** Trial used → header "New recon" shown locked (v3 frame). */
@@ -37,14 +38,22 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    setCompany(getSettings().companyName || "My Company");
     (async () => {
-      const [recon, chaseRes] = await Promise.all([fetchReconState(), fetchChaseItems()]);
+      const [recon, chaseRes, me] = await Promise.all([
+        fetchReconState(),
+        fetchChaseItems(),
+        fetch("/api/auth/me", { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => (d?.user as UserSession | null | undefined) ?? null)
+        .catch(() => null),
+      ]);
       if (cancelled) return;
       if (recon.authError) {
         router.replace("/login");
         return;
       }
+      if (me) syncProfileFromServer(me);
+      setCompany(me ? me.companyName || me.name || "" : "");
       if (!chaseRes.authError) setChase(chaseRes.items);
       // "Last recon" = the saved run's created_at from GET /api/recon (#28), shown in IST.
       setLastRecon(recon.recon ? recon.createdAt ?? null : null);
