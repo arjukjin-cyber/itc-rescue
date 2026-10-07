@@ -29,10 +29,11 @@ import {
   Check,
   LogOut,
   Menu,
+  RotateCw,
   X,
   type LucideIcon,
 } from "lucide-react";
-import { clearLocalUser, getLocalUser, getSettings, getTrialUsage, setLocalUser, setTrialFromServer } from "@/lib/storage";
+import { clearLocalUser, getLocalUser, getTrialUsage, setTrialFromServer, syncProfileFromServer } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
 import { CHASE_COUNT_EVENT, RECON_EVENT, TRIAL_EVENT } from "@/lib/ui-events";
 import { getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
@@ -166,9 +167,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [company, setCompany] = useState("");
-  const [gstin, setGstin] = useState("");
-  const [plan, setPlan] = useState("trial");
+  /**
+   * #34: company and plan come only from GET /api/auth/me (synced via syncProfileFromServer),
+   * never from a local fallback. null = /me hasn't answered: skeleton / hidden, never stale data.
+   */
+  const [company, setCompany] = useState<string | null>(null);
+  const [plan, setPlan] = useState<string | null>(null);
+  /** Switcher list: GET /api/gstins (#33) once /me confirms who is signed in. */
+  const [owner, setOwner] = useState<string | null>(null);
+  const gstins = useGstins(owner);
   const [reconUsed, setReconUsed] = useState(0);
   const [pending, setPending] = useState<number | null>(null);
   /** null = no recon yet (or not loaded): ITC counts and the period picker are hidden. */
@@ -198,11 +205,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         router.replace("/login");
         return;
       }
-      const s = getSettings();
       setEmail(local.email);
       setName(local.name || "");
-      setCompany(s.companyName || local.companyName || local.name || "");
-      setGstin(s.gstin || local.gstin || "");
       try {
         const res = await fetch("/api/auth/me", { credentials: "include" });
         if (cancelled) return;
@@ -215,12 +219,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           const data = await res.json();
           const user = data.user as UserSession | null;
           if (user) {
-            setLocalUser(user);
+            syncProfileFromServer(user);
             setEmail(user.email);
             setName(user.name || "");
-            setPlan(user.plan);
-            if (user.companyName) setCompany(user.companyName);
-            if (user.gstin) setGstin(user.gstin);
+            setPlan(user.plan || "trial");
+            setCompany(user.companyName || user.name || "");
+            setOwner(user.email);
             if (data.persistence === "postgres") setTrialFromServer(user.reconCount ?? 0);
             const used = data.persistence === "postgres" ? user.reconCount ?? 0 : getTrialUsage().reconCount;
             // Never step back: a /me request started before a run can land after the POST
@@ -233,7 +237,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         // Fall through; API calls surface auth errors
       }
       if (cancelled) return;
-      setPlan(getSettings().plan);
+      // /me failed (not 401): no local fallback for company / GSTIN / plan (#34). Trial meter
+      // stays hidden; the company and GSTIN slots keep their neutral placeholder.
       setReconUsed((n) => Math.max(n, getTrialUsage().reconCount));
     })();
     return () => {
@@ -322,12 +327,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.push("/");
   }
 
-  const companyName = company || "ITC Rescue";
   const period = recon && recon.due.kind !== "none" ? recon.due.period : null;
 
   const sidebar = (onNavigate?: () => void) => (
     <div className="flex h-full min-h-0 flex-col">
-      <Switcher company={companyName} gstin={gstin} />
+      <Switcher company={company} gstins={gstins} />
       <SearchButton
         onOpen={() => {
           onNavigate?.();
@@ -391,8 +395,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Menu aria-hidden />
             </button>
           </span>
-          <Suspense fallback={<Crumb company={companyName} pathname={pathname} view={null} period={period} />}>
-            <CrumbWithParams company={companyName} pathname={pathname} period={period} />
+          <Suspense fallback={<Crumb company={company} pathname={pathname} view={null} period={period} />}>
+            <CrumbWithParams company={company} pathname={pathname} period={period} />
           </Suspense>
           <div className="flex-1" />
           {/* F-9 / R-7: trial meter stays visible on mobile without opening the menu */}
@@ -414,13 +418,84 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 /* ── Sidebar pieces ─────────────────────────────────────────────────────── */
 
+/** Row shape of GET /api/gstins → { gstins: DbGstin[] } (#33). */
+interface GstinRow {
+  id: string;
+  gstin: string;
+  label: string;
+  stateCode: string;
+  isPrimary: boolean;
+}
+type GstinList = (
+  | { status: "loading" }
+  | { status: "ready"; items: GstinRow[] }
+  | { status: "error"; error: string }
+) & { retry: () => void };
+
+/**
+ * GSTIN list for the switcher, from GET /api/gstins only: no local storage and no fallback to
+ * /me's GSTIN. `owner` = the /me email (null until /me answers); a new owner starts from
+ * "loading", so one account's GSTINs never render under another.
+ */
+function useGstins(owner: string | null): GstinList {
+  type St = { owner: string | null } & ({ status: "loading" } | { status: "ready"; items: GstinRow[] } | { status: "error"; error: string });
+  const [st, setSt] = useState<St>({ owner: null, status: "loading" });
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!owner) return;
+    let cancelled = false;
+    setSt({ owner, status: "loading" });
+    fetch("/api/gstins", { credentials: "include", cache: "no-store" })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}) as Record<string, unknown>);
+        if (cancelled) return;
+        if (!res.ok) {
+          setSt({ owner, status: "error", error: (data?.error as string) || `Could not load GSTINs (${res.status})` });
+          return;
+        }
+        setSt({ owner, status: "ready", items: Array.isArray(data?.gstins) ? (data.gstins as GstinRow[]) : [] });
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setSt({ owner, status: "error", error: e instanceof Error ? e.message : "Network error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [owner, tick]);
+  const retry = () => setTick((t) => t + 1);
+  if (!owner || st.owner !== owner) return { status: "loading", retry };
+  return st.status === "ready"
+    ? { status: "ready", items: st.items, retry }
+    : st.status === "error"
+      ? { status: "error", error: st.error, retry }
+      : { status: "loading", retry };
+}
+
+/** Neutral placeholder bar (v1.1 greys, subtle pulse, off under reduced motion via .skel). */
+function Skel({ w, h = 10 }: { w: number | string; h?: number }) {
+  return <span className="skel align-middle" style={{ width: w, height: h, display: "inline-block" }} aria-hidden />;
+}
+
 /**
  * Workspace / GSTIN switcher (switcher.html). One workspace in v1: no "Create workspace".
- * "Add GSTIN" / "Manage GSTINs" are left out: there is no GSTINs screen or API to open (CTO rule:
- * no dead link, no new API in this PR).
+ * Company name comes from /api/auth/me (#34); the GSTIN line and the menu list come from
+ * GET /api/gstins only (primary first). Empty list = "No GSTIN yet", with no fallback to /me.
+ * "Add GSTIN" / "Manage GSTINs" stay out until the GSTINs screen exists (no dead links).
  */
-function Switcher({ company, gstin }: { company: string; gstin: string }) {
-  const state = gstin ? GST_STATES[gstin.slice(0, 2)] : undefined;
+function Switcher({ company, gstins }: { company: string | null; gstins: GstinList }) {
+  const loading = company === null;
+  const primary =
+    gstins.status === "ready" ? gstins.items.find((g) => g.isPrimary) ?? gstins.items[0] ?? null : null;
+  const gstinLine =
+    gstins.status === "loading" ? (
+      <Skel w={130} h={9} />
+    ) : gstins.status === "error" ? (
+      "GSTIN unavailable"
+    ) : primary ? (
+      primary.gstin
+    ) : (
+      "No GSTIN yet"
+    );
   return (
     <Dropdown
       label="Workspace and GSTIN"
@@ -434,13 +509,19 @@ function Switcher({ company, gstin }: { company: string; gstin: string }) {
           aria-controls={open ? id : undefined}
           onClick={toggle}
           title="Workspace and GSTIN"
+          aria-busy={loading || gstins.status === "loading" || undefined}
+          data-testid="switcher"
         >
           <span className="v3-mark" aria-hidden>
-            {initials(company)}
+            {loading ? "" : initials(company || "?")}
           </span>
           <span className="min-w-0 flex-1">
-            <span className="v3-sw-name">{company}</span>
-            <span className="v3-sw-gstin">{gstin || "GSTIN not set"}</span>
+            <span className="v3-sw-name" data-testid="switcher-company">
+              {loading ? <Skel w={110} h={11} /> : company}
+            </span>
+            <span className="v3-sw-gstin" data-testid="switcher-gstin">
+              {gstinLine}
+            </span>
           </span>
           <ChevronsUpDown aria-hidden />
         </button>
@@ -451,32 +532,83 @@ function Switcher({ company, gstin }: { company: string; gstin: string }) {
           <div className="v3-mh">Workspace</div>
           <button type="button" role="menuitemradio" aria-checked="true" className="v3-mi" data-on="true" onClick={close}>
             <span className="v3-mark" data-size="sm" aria-hidden>
-              {initials(company)}
+              {loading ? "" : initials(company || "?")}
             </span>
             <span className="min-w-0 flex-1 truncate font-medium" style={{ color: "var(--color-ink)" }}>
-              {company}
+              {loading ? <Skel w={120} /> : company}
             </span>
             <Check aria-hidden style={{ color: "var(--color-ink)" }} />
           </button>
           <div className="v3-hr" />
           <div className="v3-mh">GSTIN</div>
-          {gstin ? (
-            <button type="button" role="menuitemradio" aria-checked="true" className="v3-mi" data-on="true" onClick={close}>
-              <span className="v3-mono" style={{ color: "var(--color-ink)" }}>
-                {gstin}
-              </span>
-              {state && <span style={{ color: "var(--color-text-3)" }}>{state}</span>}
-              <span className="flex-1" />
-              <Check aria-hidden style={{ color: "var(--color-ink)" }} />
-            </button>
-          ) : (
-            <div className="v3-mi" style={{ color: "var(--color-text-3)" }}>
-              No GSTIN on this account
-            </div>
-          )}
+          <GstinMenuList gstins={gstins} active={primary?.gstin ?? ""} close={close} />
         </div>
       )}
     </Dropdown>
+  );
+}
+
+function GstinMenuList({ gstins, active, close }: { gstins: GstinList; active: string; close: () => void }) {
+  if (gstins.status === "loading") {
+    return (
+      <div className="flex flex-col gap-2 px-2.5 py-2" aria-busy="true" aria-label="Loading GSTINs" data-testid="gstins-loading">
+        <Skel w={150} />
+        <Skel w={120} />
+      </div>
+    );
+  }
+  if (gstins.status === "error") {
+    return (
+      <div className="px-2.5 pb-2 pt-1 text-[13px]" style={{ color: "var(--color-text-2)" }} role="alert" data-testid="gstins-error">
+        <p>Couldn&apos;t load your GSTINs.</p>
+        <button
+          type="button"
+          className="mt-1.5 inline-flex items-center gap-1.5 text-[13px] font-medium"
+          style={{ color: "var(--color-accent)" }}
+          onClick={gstins.retry}
+        >
+          <RotateCw aria-hidden style={{ width: 13, height: 13 }} /> Try again
+        </button>
+      </div>
+    );
+  }
+  if (!gstins.items.length) {
+    return (
+      <div className="px-2.5 pb-2 pt-1 text-[13px]" style={{ color: "var(--color-text-3)" }} data-testid="gstins-empty">
+        No GSTIN yet
+      </div>
+    );
+  }
+  return (
+    <div data-testid="gstins-list">
+      {gstins.items.map((g) => {
+        const on = g.gstin === active;
+        const state = GST_STATES[g.stateCode || g.gstin.slice(0, 2)];
+        return (
+          <button
+            key={g.id}
+            type="button"
+            role="menuitemradio"
+            aria-checked={on}
+            className="v3-mi"
+            data-on={on ? "true" : undefined}
+            onClick={close}
+            title={g.label || undefined}
+          >
+            <span className="v3-mono" style={{ color: "var(--color-ink)" }}>
+              {g.gstin}
+            </span>
+            {state && (
+              <span className="truncate" style={{ color: "var(--color-text-3)" }}>
+                {state}
+              </span>
+            )}
+            <span className="flex-1" />
+            {on && <Check aria-hidden style={{ color: "var(--color-ink)" }} />}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -557,7 +689,7 @@ function SideNav({
  * F-9 / v3 foot: "Free trial · N of 1 recon used" + 4px ink meter (sidebar + mobile drawer).
  * `compact` = the same meter in the mobile top bar (hidden on lg, where the sidebar shows it).
  */
-function TrialMeter({ plan, reconUsed, compact = false }: { plan: string; reconUsed: number; compact?: boolean }) {
+function TrialMeter({ plan, reconUsed, compact = false }: { plan: string | null; reconUsed: number; compact?: boolean }) {
   if (plan !== "trial") return null;
   const used = Math.min(reconUsed, 1);
   const bar = (
@@ -616,7 +748,8 @@ function Crumb({
   view,
   period,
 }: {
-  company: string;
+  /** null while /me loads: a neutral placeholder, never a stale or guessed company name. */
+  company: string | null;
   pathname: string;
   view: ItcView | null;
   period: string | null;
@@ -638,6 +771,12 @@ function Crumb({
   const parts = [company, section].filter(Boolean) as string[];
   return (
     <nav className="v3-crumb" aria-label="Breadcrumb">
+      {company === null && (
+        <span className="hidden items-center gap-1.5 sm:flex" aria-hidden>
+          <Skel w={96} />
+          <span>/</span>
+        </span>
+      )}
       {parts.map((p, i) => (
         <span key={i} className={`items-center gap-1.5 ${i === 0 ? "hidden sm:flex" : "hidden md:flex"}`}>
           <span className="truncate">{p}</span>

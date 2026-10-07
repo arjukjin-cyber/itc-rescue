@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { Logo } from "@/components/Logo";
-import { setLocalUser, saveSettings, resetTrialUsage, clearReconData } from "@/lib/storage";
+import { clearAllLocal, resetTrialUsage, syncProfileFromServer } from "@/lib/storage";
 import type { UserSession } from "@/lib/types";
 
 type FormState = {
@@ -52,15 +52,13 @@ export default function SignupPage() {
         return;
       }
       const user = data.user as UserSession;
-      setLocalUser(user);
-      resetTrialUsage();
-      clearReconData();
-      saveSettings({
-        companyName: form.companyName || user.name,
-        gstin: form.gstin,
-        email: form.email,
-        plan: "trial",
+      clearAllLocal();
+      syncProfileFromServer({
+        ...user,
+        companyName: user.companyName || form.companyName || user.name,
+        gstin: user.gstin || form.gstin,
       });
+      resetTrialUsage();
       router.push("/dashboard");
     } catch {
       setError("Something went wrong");

@@ -45,12 +45,50 @@ export function getLocalUser(): UserSession | null {
   return safeParse(lsGet(KEYS.session), null);
 }
 
+/**
+ * Wipe every piece of local profile/recon/trial data (all itc_* keys).
+ * Called on logout, login, signup and expired sessions so a shared computer
+ * never shows the previous account's company, GSTIN or results.
+ */
+export function clearAllLocal() {
+  if (typeof window === "undefined") return;
+  for (const k of Object.values(KEYS)) lsRemove(k);
+  try {
+    const stale: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("itc_")) stale.push(k);
+    }
+    stale.forEach((k) => localStorage.removeItem(k));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function setLocalUser(user: UserSession) {
+  // Different account in the same browser: drop everything from the previous one first.
+  const prev = getLocalUser();
+  if (prev && prev.email !== user.email) clearAllLocal();
   lsSet(KEYS.session, JSON.stringify(user));
 }
 
+/** Server is the source of truth for company name, GSTIN, email and plan. */
+export function syncProfileFromServer(user: UserSession) {
+  setLocalUser(user);
+  lsSet(
+    KEYS.settings,
+    JSON.stringify({
+      companyName: user.companyName || user.name || "My Company",
+      gstin: user.gstin || "",
+      email: user.email,
+      plan: user.plan || "trial",
+    } satisfies CompanySettings)
+  );
+}
+
+/** Logout / expired session: nothing from this account stays in the browser. */
 export function clearLocalUser() {
-  lsRemove(KEYS.session);
+  clearAllLocal();
 }
 
 export function saveRecon(results: MatchResult[], summary: ReconSummary) {
@@ -108,13 +146,16 @@ export function updateChaseStatus(
 
 export function getSettings(): CompanySettings {
   const user = getLocalUser();
-  return safeParse(lsGet(KEYS.settings), {
+  const fallback: CompanySettings = {
     companyName: user?.companyName || user?.name || "My Company",
     gstin: user?.gstin || "",
     email: user?.email || "",
     plan: user?.plan || "trial",
-    phone: "",
-  });
+  };
+  const stored = safeParse<CompanySettings | null>(lsGet(KEYS.settings), null);
+  // Never show settings that belong to another account.
+  if (!stored || !user || stored.email !== user.email) return fallback;
+  return stored;
 }
 
 export function saveSettings(s: CompanySettings) {
