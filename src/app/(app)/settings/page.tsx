@@ -3,7 +3,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { getSettings, getTrialUsage, saveSettings, syncProfileFromServer } from "@/lib/storage";
-import { fetchReconState } from "@/lib/api-data";
 import { TRIAL_EVENT } from "@/lib/ui-events";
 import type { CompanySettings, UserSession } from "@/lib/types";
 
@@ -13,8 +12,8 @@ import type { CompanySettings, UserSession } from "@/lib/types";
  * never from another session's local copy. Only the company name is editable; it saves through
  * PATCH /api/settings { name }. Primary GSTIN and account email are read-only. Demo mode (no
  * Postgres) keeps the local save.
- * Free trial card (F-8): counts come from the server: recon_count via /api/auth/me and the
- * processed-invoice count = rows in the latest saved recon (GET /api/recon). No "/50" limit
+ * Free trial card (F-8): counts come from the server: recon_count and invoice_count via
+ * /api/auth/me (#35). Demo mode (no Postgres) uses the local trial counter. No "/50" limit
  * copy (UX-28), no plan cards or Upgrade (T-08). Meter = 4px ink on line (v1 sidebar pattern).
  */
 export default function SettingsPage() {
@@ -31,20 +30,17 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [reconUsed, setReconUsed] = useState<number | null>(null);
-  /** null = still loading; 0 = no saved recon yet. */
+  /** invoice_count from /me (#35); null = still loading. */
   const [invoices, setInvoices] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [me, recon] = await Promise.all([
-        fetch("/api/auth/me", { credentials: "include" })
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null),
-        fetchReconState(),
-      ]);
+      const me = await fetch("/api/auth/me", { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
       if (cancelled) return;
-      const user = me?.user as (UserSession & { reconCount?: number }) | null | undefined;
+      const user = me?.user as (UserSession & { reconCount?: number; invoiceCount?: number }) | null | undefined;
       // Company details come from the server, never from another session's local copy.
       if (user && me?.persistence === "postgres") {
         syncProfileFromServer(user);
@@ -55,15 +51,17 @@ export default function SettingsPage() {
           email: user.email,
           plan: user.plan || "trial",
         });
-        setReconUsed(typeof user.reconCount === "number" ? user.reconCount : getTrialUsage().reconCount);
+        setReconUsed(typeof user.reconCount === "number" ? user.reconCount : 0);
+        setInvoices(typeof user.invoiceCount === "number" ? user.invoiceCount : 0);
       } else {
-        // Demo mode (no Postgres): local, email-guarded settings (#34).
+        // Demo mode (no Postgres): local, email-guarded settings (#34) and the local trial counter.
         setPersistence("demo");
         setForm(getSettings());
-        setReconUsed(getTrialUsage().reconCount);
+        const t = getTrialUsage();
+        setReconUsed(t.reconCount);
+        setInvoices(t.invoiceCount);
       }
       setProfileLoaded(true);
-      setInvoices(recon.authError ? 0 : recon.results.length);
     })();
     const onTrial = (e: Event) => {
       const n = (e as CustomEvent<number | undefined>).detail;
