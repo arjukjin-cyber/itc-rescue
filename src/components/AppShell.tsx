@@ -205,8 +205,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         router.replace("/login");
         return;
       }
-      setEmail(local.email);
-      setName(local.name || "");
+      // Avatar / account menu wait for /me too: nothing on screen is seeded from localStorage.
       try {
         const res = await fetch("/api/auth/me", { credentials: "include" });
         if (cancelled) return;
@@ -867,7 +866,7 @@ function HelpMenu() {
 }
 
 function UserMenu({ email, name, onLogout }: { email: string; name: string; onLogout: () => void }) {
-  const label = name || email || "?";
+  const label = name || email;
   return (
     <Dropdown
       label="Account"
@@ -885,7 +884,7 @@ function UserMenu({ email, name, onLogout }: { email: string; name: string; onLo
           aria-label="Account menu"
           title={email}
         >
-          {initials(label)}
+          {label ? initials(label) : ""}
         </button>
       )}
     >

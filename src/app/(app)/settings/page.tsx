@@ -23,8 +23,13 @@ export default function SettingsPage() {
     email: "",
     plan: "trial",
   });
-  /** false until /me answers: fields show blank, never a previous account's values. */
-  const [profileLoaded, setProfileLoaded] = useState(false);
+  /**
+   * /me state: "loading" = skeleton for the company fields, plan and trial lines (never 0/1 or
+   * another account's values); "error" = /me failed in Postgres mode (no local fallback).
+   */
+  const [profile, setProfile] = useState<"loading" | "ready" | "error">("loading");
+  const [reloadTick, setReloadTick] = useState(0);
+  const profileLoaded = profile === "ready";
   const [persistence, setPersistence] = useState<"postgres" | "demo">("postgres");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -35,11 +40,17 @@ export default function SettingsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    setProfile("loading");
     (async () => {
       const me = await fetch("/api/auth/me", { credentials: "include" })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null);
       if (cancelled) return;
+      if (!me?.user) {
+        // /me failed: show an error with retry, not local data. (A 401 is handled by AppShell.)
+        setProfile("error");
+        return;
+      }
       const user = me?.user as (UserSession & { reconCount?: number; invoiceCount?: number }) | null | undefined;
       // Company details come from the server, never from another session's local copy.
       if (user && me?.persistence === "postgres") {
@@ -54,14 +65,15 @@ export default function SettingsPage() {
         setReconUsed(typeof user.reconCount === "number" ? user.reconCount : 0);
         setInvoices(typeof user.invoiceCount === "number" ? user.invoiceCount : 0);
       } else {
-        // Demo mode (no Postgres): local, email-guarded settings (#34) and the local trial counter.
+        // Demo mode (no Postgres, /me persistence "demo"): local, email-guarded settings (#34)
+        // and the local trial counter, which is the only store in demo mode.
         setPersistence("demo");
         setForm(getSettings());
         const t = getTrialUsage();
         setReconUsed(t.reconCount);
         setInvoices(t.invoiceCount);
       }
-      setProfileLoaded(true);
+      setProfile("ready");
     })();
     const onTrial = (e: Event) => {
       const n = (e as CustomEvent<number | undefined>).detail;
@@ -72,7 +84,7 @@ export default function SettingsPage() {
       cancelled = true;
       window.removeEventListener(TRIAL_EVENT, onTrial);
     };
-  }, []);
+  }, [reloadTick]);
 
   async function onSave(e: FormEvent) {
     e.preventDefault();
@@ -113,11 +125,24 @@ export default function SettingsPage() {
   const used = Math.min(reconUsed ?? 0, 1);
   const invoiceLine =
     invoices === null || reconUsed === null
-      ? "Loading usage…"
+      ? null
       : [
           `${invoices} invoice${invoices === 1 ? "" : "s"} processed`,
           used >= 1 ? "free run used" : "free run available",
         ].join(" · ");
+
+  /** Input-shaped placeholder while /me loads (no value, so nothing stale can show). */
+  const fieldSkel = (id: string, w: number) => (
+    <div
+      id={id}
+      className="input-token mt-1.5 flex w-full items-center px-3"
+      style={{ backgroundColor: "var(--color-subtle)" }}
+      aria-hidden
+      data-testid={`${id}-skeleton`}
+    >
+      <Skel w={w} />
+    </div>
+  );
 
   const label = (htmlFor: string, text: string) => (
     <label htmlFor={htmlFor} className="block text-[12px] font-medium" style={{ color: "var(--color-text-2)" }}>
@@ -145,6 +170,9 @@ export default function SettingsPage() {
         </h2>
         <div>
           {label("settings-companyName", "Company name")}
+          {!profileLoaded ? (
+            fieldSkel("settings-companyName", 160)
+          ) : (
           <input
             id="settings-companyName"
             name="companyName"
@@ -155,9 +183,9 @@ export default function SettingsPage() {
             minLength={2}
             maxLength={120}
             required
-            disabled={!profileLoaded}
             className="input-token mt-1.5 w-full px-3 text-[13px]"
           />
+          )}
         </div>
         {[
           { key: "gstin" as const, label: "Primary GSTIN", mono: true },
@@ -165,18 +193,35 @@ export default function SettingsPage() {
         ].map((f) => (
           <div key={f.key}>
             {label(`settings-${f.key}`, f.label)}
+            {!profileLoaded ? (
+              fieldSkel(`settings-${f.key}`, f.key === "gstin" ? 140 : 180)
+            ) : (
             <input
               id={`settings-${f.key}`}
               name={f.key}
               type="text"
-              value={profileLoaded ? form[f.key] || "Not set" : ""}
+              value={form[f.key] || "Not set"}
               readOnly
               disabled
               className={`input-token mt-1.5 w-full cursor-not-allowed px-3 text-[13px]${f.mono ? " mono-sm" : ""}`}
               style={{ backgroundColor: "var(--color-subtle)", color: "var(--color-text-3)" }}
             />
+            )}
           </div>
         ))}
+        {profile === "error" && (
+          <p role="alert" className="text-[13px]" style={{ color: "var(--color-text-2)" }} data-testid="settings-profile-error">
+            Couldn&apos;t load your company profile.{" "}
+            <button
+              type="button"
+              className="font-medium"
+              style={{ color: "var(--color-accent)" }}
+              onClick={() => setReloadTick((t) => t + 1)}
+            >
+              Try again
+            </button>
+          </p>
+        )}
         {error && (
           <p role="alert" className="text-[13px]" style={{ color: "var(--color-risk)" }}>
             {error}
@@ -197,6 +242,19 @@ export default function SettingsPage() {
         </div>
       </form>
 
+      {profile !== "ready" && profile !== "error" && (
+        <section className="card p-4" aria-busy="true" aria-label="Loading free trial" data-testid="settings-trial-skeleton">
+          <div className="flex items-center justify-between gap-2">
+            <Skel w={72} h={12} />
+            <Skel w={96} h={9} />
+          </div>
+          <span className="skel" style={{ marginTop: 12, height: 4, width: "100%" }} aria-hidden />
+          <div className="mt-2.5">
+            <Skel w={200} h={9} />
+          </div>
+        </section>
+      )}
+
       {plan === "trial" && (
         <section className="card p-4" aria-labelledby="settings-trial">
           <div className="flex items-baseline justify-between gap-2">
@@ -204,7 +262,7 @@ export default function SettingsPage() {
               Free trial
             </h2>
             <span className="text-[12px] tabular-nums" style={{ color: "var(--color-text-3)" }}>
-              {reconUsed === null ? "…" : `${used} of 1 recon used`}
+              {reconUsed === null ? <Skel w={96} h={9} /> : `${used} of 1 recon used`}
             </span>
           </div>
           <div
@@ -219,7 +277,7 @@ export default function SettingsPage() {
             <i style={{ width: `${used * 100}%` }} />
           </div>
           <p className="text-meta mt-2" data-testid="settings-invoice-count">
-            {invoiceLine}
+            {invoiceLine ?? <Skel w={200} h={9} />}
           </p>
           {used >= 1 && (
             <p className="mt-3 text-[13px]" style={{ color: "var(--color-text-2)" }}>
@@ -230,4 +288,9 @@ export default function SettingsPage() {
       )}
     </div>
   );
+}
+
+/** v1.1 skeleton bar (.skel: neutral grey, 4px radius, subtle pulse off under reduced motion). */
+function Skel({ w, h = 10 }: { w: number | string; h?: number }) {
+  return <span className="skel align-middle" style={{ width: w, height: h, display: "inline-block" }} aria-hidden />;
 }
