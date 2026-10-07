@@ -108,6 +108,70 @@ export function isRepeatOffender(offenderCount: number): boolean {
   return offenderCount >= REPEAT_OFFENDER_THRESHOLD;
 }
 
+/**
+ * CPO condition on the #25 schema approval: the user-facing repeat-offender
+ * label stays HIDDEN until offender counting is by DISTINCT return_period
+ * (YYYY-MM). Re-running the same month must never make a vendor a "repeat
+ * offender".
+ *
+ * Single switch. While false:
+ *   - every VendorSummary has `repeatOffender: null` (label hidden),
+ *   - API responses carry `repeatOffenderLabel: "hidden"`,
+ *   - `offenderCount` is the internal per-run counter (vendors.offender_count),
+ *     with `offenderCountBasis: "runs"`; for QA/internal use only, and UIs must
+ *     not derive a label from it.
+ * When true:
+ *   - `offenderCount` = COUNT(DISTINCT return_period) over the vendor's runs
+ *     with itc_at_risk/value_mismatch rows (DISTINCT_PERIOD_OFFENDER_SQL in db.ts,
+ *     modelled by offenderPeriodCounts below),
+ *   - `repeatOffender` = offenderCount >= 2, `repeatOffenderLabel: "shown"`,
+ *     `offenderCountBasis: "distinct_return_period"`.
+ *
+ * TODO(#33): needs recon_runs.return_period from PR #33 (feat/gstins-api).
+ * Once #33 is on main, the flip is this one line:
+ *   export const OFFENDER_COUNT_BY_DISTINCT_PERIOD = true;
+ * Do NOT flip before #33 is merged: the distinct-period query reads
+ * recon_runs.return_period, which doesn't exist without #33.
+ */
+export const OFFENDER_COUNT_BY_DISTINCT_PERIOD = false;
+
+export type RepeatOffenderLabel = "hidden" | "shown";
+export type OffenderCountBasis = "runs" | "distinct_return_period";
+
+/** Response-level metadata for /api/vendors and /api/vendors/[gstin]. */
+export function vendorsResponseMeta(
+  byDistinctPeriod: boolean = OFFENDER_COUNT_BY_DISTINCT_PERIOD
+): { repeatOffenderLabel: RepeatOffenderLabel; offenderCountBasis: OffenderCountBasis } {
+  return byDistinctPeriod
+    ? { repeatOffenderLabel: "shown", offenderCountBasis: "distinct_return_period" }
+    : { repeatOffenderLabel: "hidden", offenderCountBasis: "runs" };
+}
+
+/** Return period as YYYY-MM (same rule as #33's normalizeReturnPeriod output). */
+export const RETURN_PERIOD_RE = /^20[0-9]{2}-(0[1-9]|1[0-2])$/;
+
+/**
+ * Pure model of DISTINCT_PERIOD_OFFENDER_SQL: GSTIN -> number of DISTINCT valid
+ * return periods (YYYY-MM) in which it had itc_at_risk or value_mismatch rows.
+ * Runs with a blank/invalid period ('' is #33's default) are ignored, as are
+ * UNKNOWN/blank GSTINs. Re-running the same month counts once.
+ */
+export function offenderPeriodCounts(
+  runs: { returnPeriod: string | null | undefined; results: MatchResult[] }[]
+): Map<string, number> {
+  const periods = new Map<string, Set<string>>();
+  for (const run of runs) {
+    const p = String(run.returnPeriod || "").trim();
+    if (!RETURN_PERIOD_RE.test(p)) continue;
+    for (const g of offenderGstinsForRun(run.results || [])) {
+      let set = periods.get(g);
+      if (!set) periods.set(g, (set = new Set()));
+      set.add(p);
+    }
+  }
+  return new Map(Array.from(periods, ([g, set]) => [g, set.size]));
+}
+
 export interface StoredVendor {
   gstin: string;
   name: string | null;
@@ -131,9 +195,17 @@ export interface VendorSummary {
   mismatchAmount: number;
   /** chase_items with status pending | still_blocked for this GSTIN. */
   openChaseCount: number;
-  /** Stored: number of distinct recon runs with at-risk/mismatch rows for this GSTIN. */
+  /**
+   * Internal/QA. Switch off: stored per-run counter (vendors.offender_count).
+   * Switch on: COUNT(DISTINCT return_period) with at-risk/mismatch rows.
+   * Do not build a user-facing label from this; use `repeatOffender`.
+   */
   offenderCount: number;
-  repeatOffender: boolean;
+  /**
+   * User-facing repeat-offender label. `null` = HIDDEN (CPO condition) while
+   * OFFENDER_COUNT_BY_DISTINCT_PERIOD is false; boolean once it's on.
+   */
+  repeatOffender: boolean | null;
   /** True if this GSTIN appears (any category) in the latest recon. */
   inLatestRecon: boolean;
   updatedAt: string | null;
@@ -155,7 +227,12 @@ export function buildVendorSummaries(input: {
   latestResults: MatchResult[] | null | undefined;
   stored: StoredVendor[];
   chase: Pick<ChaseItem, "gstin" | "status">[];
+  /** Defaults to OFFENDER_COUNT_BY_DISTINCT_PERIOD. Tests pass it explicitly. */
+  byDistinctPeriod?: boolean;
+  /** GSTIN -> distinct return-period count; used only when byDistinctPeriod. */
+  periodCounts?: ReadonlyMap<string, number>;
 }): VendorSummary[] {
+  const byDistinctPeriod = input.byDistinctPeriod ?? OFFENDER_COUNT_BY_DISTINCT_PERIOD;
   const byGstin = new Map<string, VendorSummary>();
   const reconNames = new Map<string, string>();
 
@@ -172,7 +249,7 @@ export function buildVendorSummaries(input: {
         mismatchAmount: 0,
         openChaseCount: 0,
         offenderCount: 0,
-        repeatOffender: false,
+        repeatOffender: null,
         inLatestRecon: false,
         updatedAt: null,
       };
@@ -219,7 +296,12 @@ export function buildVendorSummaries(input: {
     if (!v.name) v.name = reconNames.get(v.gstin) || "";
     v.atRiskAmount = round2(v.atRiskAmount);
     v.mismatchAmount = round2(v.mismatchAmount);
-    v.repeatOffender = isRepeatOffender(v.offenderCount);
+    if (byDistinctPeriod) {
+      v.offenderCount = input.periodCounts?.get(v.gstin) ?? 0;
+      v.repeatOffender = isRepeatOffender(v.offenderCount);
+    } else {
+      v.repeatOffender = null; // CPO condition: label hidden (see OFFENDER_COUNT_BY_DISTINCT_PERIOD)
+    }
   }
   out.sort(
     (a, b) =>

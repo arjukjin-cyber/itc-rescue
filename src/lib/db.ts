@@ -7,6 +7,7 @@ import {
   normalizeIndianMobile,
   normalizeVendorGstin,
   offenderGstinsForRun,
+  OFFENDER_COUNT_BY_DISTINCT_PERIOD,
   withBestEffortOffenseBump,
   type StoredVendor,
   type VendorSummary,
@@ -727,8 +728,44 @@ export async function listVendorsForUser(userId: string): Promise<VendorSummary[
     gstin: String(r.gstin || ""),
     status: r.status as ChaseStatus,
   }));
-  return buildVendorSummaries({ latestResults: latest?.results, stored, chase });
+  // CPO condition: label hidden until counting is by DISTINCT return_period.
+  // The distinct-period query only runs once the switch is flipped (after #33).
+  let periodCounts: Map<string, number> | undefined;
+  if (OFFENDER_COUNT_BY_DISTINCT_PERIOD) {
+    const pr = await sql.query(DISTINCT_PERIOD_OFFENDER_SQL, [userId]);
+    periodCounts = new Map(
+      (pr as Record<string, unknown>[]).map((r) => [String(r.gstin || ""), Number(r.periods || 0)])
+    );
+  }
+  return buildVendorSummaries({
+    latestResults: latest?.results,
+    stored,
+    chase,
+    byDistinctPeriod: OFFENDER_COUNT_BY_DISTINCT_PERIOD,
+    periodCounts,
+  });
 }
+
+/**
+ * Repeat-offender count by DISTINCT return_period (YYYY-MM): per vendor GSTIN,
+ * how many distinct months had ≥1 itc_at_risk/value_mismatch row. Runs with a
+ * blank/invalid period (#33 defaults to '') don't count; re-running the same
+ * month counts once. Requires recon_runs.return_period from PR #33, so it is
+ * only executed when OFFENDER_COUNT_BY_DISTINCT_PERIOD is true.
+ * Pure model + tests: offenderPeriodCounts() in vendors.ts.
+ */
+export const DISTINCT_PERIOD_OFFENDER_SQL = `
+SELECT UPPER(BTRIM(e->>'gstin')) AS gstin,
+       COUNT(DISTINCT r.return_period)::int AS periods
+FROM recon_runs r
+CROSS JOIN LATERAL jsonb_array_elements(
+  CASE WHEN jsonb_typeof(r.results) = 'array' THEN r.results ELSE '[]'::jsonb END
+) AS e
+WHERE r.user_id = $1
+  AND r.return_period ~ '^20[0-9]{2}-(0[1-9]|1[0-2])$'
+  AND e->>'category' IN ('itc_at_risk', 'value_mismatch')
+  AND UPPER(BTRIM(COALESCE(e->>'gstin', ''))) NOT IN ('', 'UNKNOWN')
+GROUP BY 1`;
 
 /**
  * Save a vendor's phone (and optionally a display-name override).

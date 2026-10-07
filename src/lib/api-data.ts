@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChaseItem, ChaseStatus, MatchResult, ReconSummary } from "./types";
-import type { VendorSummary } from "./vendors";
+import type { RepeatOffenderLabel, VendorSummary } from "./vendors";
 import {
   canRunRecon as localCanRun,
   clearLocalUser,
@@ -277,6 +277,8 @@ export async function persistChaseStatus(
 export async function fetchVendors(): Promise<{
   persistence: "postgres" | "demo";
   vendors: VendorSummary[];
+  /** "hidden" until the server counts offenders by distinct return period; render no badge when hidden. */
+  repeatOffenderLabel?: RepeatOffenderLabel;
   authError?: string;
   error?: string;
 }> {
@@ -291,7 +293,11 @@ export async function fetchVendors(): Promise<{
     }
     const data = await res.json().catch(() => ({} as Record<string, unknown>));
     if (res.ok && data.persistence === "postgres") {
-      return { persistence: "postgres", vendors: (data.vendors as VendorSummary[]) || [] };
+      return {
+        persistence: "postgres",
+        vendors: (data.vendors as VendorSummary[]) || [],
+        repeatOffenderLabel: data.repeatOffenderLabel === "shown" ? "shown" : "hidden",
+      };
     }
     if (res.ok && data.persistence === "demo" && !wantsAuth) {
       return { persistence: "demo", vendors: [] };

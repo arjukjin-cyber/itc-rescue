@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hasDatabase, upsertVendorPhone } from "@/lib/db";
 import { requireDbUser } from "@/lib/session-user";
-import { VendorValidationError } from "@/lib/vendors";
+import { VendorValidationError, vendorsResponseMeta } from "@/lib/vendors";
 import {
   QA_FAIL_VENDORS_COOKIE,
   QA_FAIL_VENDORS_MESSAGE,
@@ -45,7 +45,8 @@ export async function PATCH(
       phone,
       name as string | null | undefined
     );
-    return NextResponse.json({ persistence: "postgres", vendor, vendors });
+    // repeatOffenderLabel: "hidden" until OFFENDER_COUNT_BY_DISTINCT_PERIOD (CPO condition, #33)
+    return NextResponse.json({ persistence: "postgres", vendor, vendors, ...vendorsResponseMeta() });
   } catch (err) {
     if (err instanceof VendorValidationError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
