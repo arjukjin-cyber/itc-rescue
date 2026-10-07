@@ -20,6 +20,7 @@ export async function GET() {
             gstin: dbUser.gstin,
             plan: dbUser.plan,
             reconCount: dbUser.reconCount,
+            invoiceCount: dbUser.invoiceCount,
             createdAt: dbUser.createdAt,
           },
           persistence: "postgres",
