@@ -120,7 +120,7 @@ export async function ensureSchema() {
        SELECT 'gst_' || substr(md5(c.id || c.gstin), 1, 16), c.id, upper(c.gstin), substr(upper(c.gstin), 1, 2), TRUE
        FROM companies c
        WHERE length(c.gstin) = 15
-       ON CONFLICT (company_id, gstin) DO NOTHING`
+       ON CONFLICT DO NOTHING`
     );
   } catch (err) {
     console.error("[schema] gstins backfill skipped:", err instanceof Error ? err.message : err);
@@ -643,11 +643,29 @@ function rowToGstin(r: Record<string, unknown>): DbGstin {
   };
 }
 
+/**
+ * The schema backfill only runs once per server process, so a company that signed up
+ * later may have companies.gstin set but no gstins row. Heal it on read (idempotent).
+ */
+async function ensurePrimaryGstinRow(companyId: string) {
+  const sql = getSql();
+  await sql.query(
+    `INSERT INTO gstins (id, company_id, gstin, state_code, is_primary)
+     SELECT 'gst_' || substr(md5(c.id || c.gstin), 1, 16), c.id, upper(c.gstin), substr(upper(c.gstin), 1, 2),
+            NOT EXISTS (SELECT 1 FROM gstins g WHERE g.company_id = c.id)
+     FROM companies c
+     WHERE c.id = $1 AND length(c.gstin) = 15
+     ON CONFLICT DO NOTHING`,
+    [companyId]
+  );
+}
+
 export async function listGstinsForUser(userId: string): Promise<DbGstin[]> {
   await ensureSchema();
   const sql = getSql();
   const companyId = await companyIdForUser(userId);
   if (!companyId) return [];
+  await ensurePrimaryGstinRow(companyId);
   const rows = await sql`
     SELECT id, gstin, label, state_code, is_primary, created_at
     FROM gstins WHERE company_id = ${companyId}
@@ -671,6 +689,7 @@ export async function addGstinForUser(
   const sql = getSql();
   const companyId = await companyIdForUser(userId);
   if (!companyId) throw new GstinError("Account has no company", 404, "no_company");
+  await ensurePrimaryGstinRow(companyId);
   const existing = await sql`SELECT gstin FROM gstins WHERE company_id = ${companyId}`;
   if ((existing as Record<string, unknown>[]).some((r) => r.gstin === input.gstin)) {
     throw new GstinError("This GSTIN is already added", 409, "duplicate");

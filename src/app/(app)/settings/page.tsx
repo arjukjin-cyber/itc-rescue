@@ -26,7 +26,7 @@ export default function SettingsPage() {
         const res = await fetch("/api/auth/me", { credentials: "include" });
         if (res.ok) {
           const data = await res.json();
-          const user = data.user as (UserSession & { reconCount?: number }) | null;
+          const user = data.user as (UserSession & { reconCount?: number; invoiceCount?: number }) | null;
           if (!cancelled && user && data.persistence === "postgres") {
             syncProfileFromServer(user);
             setPersistence("postgres");
@@ -36,7 +36,10 @@ export default function SettingsPage() {
               email: user.email,
               plan: user.plan || "trial",
             });
-            setTrial((t) => ({ ...getTrialUsage(), reconCount: user.reconCount ?? t.reconCount }));
+            setTrial((t) => ({
+              reconCount: user.reconCount ?? t.reconCount,
+              invoiceCount: user.invoiceCount ?? getTrialUsage().invoiceCount,
+            }));
             return;
           }
         }
