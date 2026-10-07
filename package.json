@@ -9,7 +9,8 @@
     "lint": "eslint",
     "smoke:dod": "node scripts/dod-persist-smoke.mjs",
     "test:importers": "npx --yes tsx scripts/test-importers.ts",
-    "check:phone": "npx --yes tsx scripts/test-phone.ts"
+    "check:phone": "npx --yes tsx scripts/test-phone.ts",
+    "check:gstin": "npx --yes tsx scripts/test-gstin.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
