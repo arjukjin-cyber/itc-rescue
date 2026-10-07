@@ -15,7 +15,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { Logo } from "./Logo";
-import { clearLocalUser, getLocalUser, getSettings, getTrialUsage, setLocalUser, setTrialFromServer } from "@/lib/storage";
+import { clearLocalUser, getLocalUser, getSettings, getTrialUsage, setTrialFromServer, syncProfileFromServer } from "@/lib/storage";
 import type { UserSession } from "@/lib/types";
 
 const NAV = [
@@ -55,7 +55,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           const data = await res.json();
           const user = data.user as UserSession | null;
           if (user) {
-            setLocalUser(user);
+            syncProfileFromServer(user);
             setEmail(user.email);
             setPlan(user.plan);
             if (data.persistence === "postgres") {
