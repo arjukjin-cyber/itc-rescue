@@ -27,7 +27,12 @@ import {
   parseImportAmount,
   parseImportDate,
 } from "../src/lib/importers/tally-busy";
-import { flattenHeaderRows, pickGstr2bSheet } from "../src/lib/importers/gstr2b-portal";
+import { findGstr2bReturnPeriod } from "../src/lib/importers/gstr2b-json";
+import {
+  extractGstr2bPortalPeriod,
+  flattenHeaderRows,
+  pickGstr2bSheet,
+} from "../src/lib/importers/gstr2b-portal";
 import type { InvoiceRecord } from "../src/lib/types";
 
 const root = join(__dirname, "..");
@@ -928,6 +933,104 @@ async function main() {
         [4, 2, 1, 1, 36000],
         g.name
       );
+    }
+  });
+
+
+  console.log("returnPeriod (YYYY-MM) on the GSTR-2B parse result");
+
+  const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  const b2bOnly = { docdata: { b2b: [{ ctin: "27AAAAA1111A1ZW", trdnm: "A", inv: [{ inum: "R-1", dt: "03-09-2026", txval: 100, cgst: 9, sgst: 9 }] }] } };
+
+  await test("returnPeriod: existing portal JSON fixture (data.rtnprd 082026) -> 2026-08", async () => {
+    const res = await parseInvoiceFileDetailed(fixtureFile("fixtures/ux-audit-gstr-2b-portal.json", "application/json"), "gstr2b");
+    assert.equal(res.returnPeriod, "2026-08");
+  });
+
+  await test("returnPeriod: JSON rtnprd 092026 nested under data and at top level -> 2026-09", async () => {
+    const nested = await parseInvoiceFileDetailed(jsonFile({ data: { rtnprd: "092026", ...b2bOnly } }), "gstr2b");
+    assert.equal(nested.returnPeriod, "2026-09");
+    const top = await parseInvoiceFileDetailed(jsonFile({ rtnprd: "092026", ...b2bOnly }), "gstr2b");
+    assert.equal(top.returnPeriod, "2026-09");
+    // rtnprd at top level, docdata under data
+    const mixed = await parseInvoiceFileDetailed(jsonFile({ rtnprd: "092026", data: { ...b2bOnly } }), "gstr2b");
+    assert.equal(mixed.returnPeriod, "2026-09");
+    // invalid nested value falls back to a valid top-level one
+    assert.equal(findGstr2bReturnPeriod({ rtnprd: "092026", data: { rtnprd: "132026" } }), "2026-09");
+  });
+
+  await test("returnPeriod: invalid / empty / missing rtnprd -> null", async () => {
+    for (const rtnprd of ["132026", "", "002026", "0926", "Sept"]) {
+      const res = await parseInvoiceFileDetailed(jsonFile({ data: { rtnprd, ...b2bOnly } }), "gstr2b");
+      assert.equal(res.returnPeriod, null, JSON.stringify(rtnprd));
+      assert.equal(findGstr2bReturnPeriod({ rtnprd, ...b2bOnly }), null, JSON.stringify(rtnprd));
+    }
+    const missing = await parseInvoiceFileDetailed(jsonFile({ data: { ...b2bOnly } }), "gstr2b");
+    assert.equal(missing.returnPeriod, null);
+    assert.ok("returnPeriod" in missing, "field is always present on 2B results");
+    assert.equal(findGstr2bReturnPeriod(null), null);
+  });
+
+  await test("returnPeriod: portal xlsx fixture (Read me: Financial Year 2026-27, Tax Period August) -> 2026-08", async () => {
+    const res = await parseInvoiceFileDetailed(fixtureFile("fixtures/ux-audit-gstr-2b-portal-style.xlsx", XLSX_TYPE), "gstr2b");
+    assert.equal(res.detected, "gstr2b_portal");
+    assert.equal(res.returnPeriod, "2026-08");
+  });
+
+  await test("returnPeriod: portal xlsx with the period in the B2B sheet's header block (Jan-Mar -> FY end year)", async () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["Goods and Services Tax  - GSTR-2B"],
+      ["Financial Year", "2025-26", "", "Tax Period", "February"],
+      ["Taxable inward supplies received from registered persons"],
+      PORTAL_TOP,
+      PORTAL_SUB,
+      ["27AABCT1332L1ZV", "TechParts India Pvt Ltd", "TP-9", "Regular", "10-02-2026", 1180, "Maharashtra", "N", 18, 1000, 0, 90, 90, 0,
+        "Feb'26", "11-03-2026", "Yes", "", "", "", "", ""],
+    ]), "B2B");
+    const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+    const res = await parseInvoiceFileDetailed(new File([buf], "2b-feb.xlsx", { type: XLSX_TYPE }), "gstr2b");
+    assert.equal(res.detected, "gstr2b_portal");
+    assert.equal(res.returnPeriod, "2026-02");
+  });
+
+  await test("returnPeriod: portal xlsx without a stated period -> null (not guessed from invoice dates)", async () => {
+    const res = await parseInvoiceFileDetailed(portalWorkbookFile(), "gstr2b");
+    assert.equal(res.detected, "gstr2b_portal");
+    assert.ok(res.invoices.length > 0);
+    assert.equal(res.returnPeriod, null);
+  });
+
+  await test("extractGstr2bPortalPeriod: header-block forms and rejects", () => {
+    const p = (rows: unknown[][]) => extractGstr2bPortalPeriod([rows]);
+    assert.equal(p([["Financial Year", "2026-27"], ["Tax Period", "September"]]), "2026-09");
+    assert.equal(p([["Financial Year", "2026-2027"], ["Tax Period", "Mar"]]), "2027-03");
+    assert.equal(p([["Tax Period: Sept", "Financial Year: 2026-27"]]), "2026-09");
+    assert.equal(p([["Tax Period", "092026"]]), "2026-09");
+    assert.equal(p([["Return Period", "August 2026"]]), "2026-08");
+    assert.equal(p([["Tax Period", "August"]]), null, "month without FY");
+    assert.equal(p([["Financial Year", "2026-28"], ["Tax Period", "August"]]), null, "bad FY");
+    assert.equal(p([["Financial Year", "2026-27"], ["Tax Period", "Augustus"]]), null, "not a month");
+    assert.equal(p([["Financial Year", "2026-27"], ["Tax Period", "132026"]]), null);
+    assert.equal(p([["GSTIN of supplier", "Invoice Date"], ["27AABCT1332L1ZV", "03-08-2026"]]), null);
+    assert.equal(extractGstr2bPortalPeriod([[], [["Financial Year", "2026-27"], ["Tax Period", "May"]]]), "2026-05");
+  });
+
+  await test("returnPeriod: Tally / CSV 2B and every books file -> null", async () => {
+    const sample2b = await parseInvoiceFileDetailed(csvFile("public/samples/gstr-2b.csv"), "gstr2b");
+    assert.equal(sample2b.returnPeriod, null);
+    const ux2b = await parseInvoiceFileDetailed(csvFile("fixtures/ux-audit-gstr-2b.csv"), "gstr2b");
+    assert.equal(ux2b.returnPeriod, null);
+    for (const f of [
+      csvFile("public/samples/purchase-register.csv"),
+      csvFile("fixtures/tally-purchase-register.csv"),
+      csvFile("fixtures/busy-purchase-register.csv"),
+      fixtureFile("fixtures/ux-audit-purchase-register.xlsx", XLSX_TYPE),
+      fixtureFile("fixtures/ux-audit-gstr-2b-portal.json", "application/json"),
+      fixtureFile("fixtures/ux-audit-gstr-2b-portal-style.xlsx", XLSX_TYPE),
+    ]) {
+      const books = await parseInvoiceFileDetailed(f, "books");
+      assert.equal(books.returnPeriod, null, f.name);
     }
   });
 
