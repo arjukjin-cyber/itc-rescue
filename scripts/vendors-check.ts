@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { reconcile, rowToInvoice } from "../src/lib/reconcile";
+import { normalizeReturnPeriod } from "../src/lib/gstin";
 import type { InvoiceRecord, MatchResult } from "../src/lib/types";
 import {
   QA_FAIL_VENDORS_MESSAGE,
@@ -153,7 +154,7 @@ test("sample recon: offender GSTINs = at-risk ∪ mismatch, distinct", () => {
   assert.ok(!offenderGstinsForRun(withUnknown).includes("UNKNOWN"));
 });
 
-test("two runs over the sample → raw per-run offenderCount; label hidden by default", () => {
+test("switch off: raw per-run offenderCount kept, label hidden", () => {
   let s = new Map<string, OffenseState>();
   const offenders = offenderGstinsForRun(results);
   s = applyOffenseBump(s, "recon_1", offenders);
@@ -176,6 +177,7 @@ test("two runs over the sample → raw per-run offenderCount; label hidden by de
       { gstin: "29AADCS1234A1Z5", status: "fixed" },
       { gstin: "33AAACR5055K1Z2", status: "still_blocked" },
     ],
+    byDistinctPeriod: false,
   });
   const bst = vendors.find((v) => v.gstin === "29AADCS1234A1Z5")!;
   assert.equal(bst.offenderCount, 2); // internal per-run counter still computed
@@ -198,6 +200,7 @@ test("stored vendor not in latest recon is still listed (phone saved)", () => {
     latestResults: results,
     stored: [{ gstin: "32AAACX1234A1Z9", name: null, phone: "+917012345678", offenderCount: 3, updatedAt: null }],
     chase: [],
+    byDistinctPeriod: false,
   });
   const v = vendors.find((x) => x.gstin === "32AAACX1234A1Z9")!;
   assert.equal(v.inLatestRecon, false);
@@ -331,28 +334,84 @@ test("shouldForceVendorsFail (qa_fail_vendors cookie): OFF outside preview+QA_HO
 });
 
 // ---------- CPO condition: repeat-offender label hidden until DISTINCT return_period ----------
-test("switch OFFENDER_COUNT_BY_DISTINCT_PERIOD is false (TODO #33)", () => {
-  assert.equal(OFFENDER_COUNT_BY_DISTINCT_PERIOD, false);
-  assert.deepEqual(vendorsResponseMeta(), { repeatOffenderLabel: "hidden", offenderCountBasis: "runs" });
-  assert.deepEqual(vendorsResponseMeta(true), {
+test("switch OFFENDER_COUNT_BY_DISTINCT_PERIOD is ON (#33 merged): label shown by default", () => {
+  assert.equal(OFFENDER_COUNT_BY_DISTINCT_PERIOD, true);
+  assert.deepEqual(vendorsResponseMeta(), {
     repeatOffenderLabel: "shown",
     offenderCountBasis: "distinct_return_period",
   });
+  assert.deepEqual(vendorsResponseMeta(false), { repeatOffenderLabel: "hidden", offenderCountBasis: "runs" });
 });
 
-test("label hidden while switch is off: repeatOffender is null for every vendor, any count", () => {
+test("default (switch on): repeatOffender is a boolean from distinct periods, stored per-run count ignored", () => {
+  const stored = [
+    { gstin: "29AADCS1234A1Z5", name: null, phone: null, offenderCount: 7, updatedAt: null }, // 7 re-runs
+    { gstin: "33AAACR5055K1Z2", name: null, phone: null, offenderCount: 1, updatedAt: null },
+  ];
+  const periodCounts = new Map([["29AADCS1234A1Z5", 1], ["33AAACR5055K1Z2", 2]]);
+  const vendors = buildVendorSummaries({ latestResults: results, stored, chase: [], periodCounts });
+  for (const v of vendors) assert.equal(typeof v.repeatOffender, "boolean", v.gstin);
+  const bst = vendors.find((v) => v.gstin === "29AADCS1234A1Z5")!;
+  assert.deepEqual([bst.offenderCount, bst.repeatOffender], [1, false]);
+  const chennai = vendors.find((v) => v.gstin === "33AAACR5055K1Z2")!;
+  assert.deepEqual([chennai.offenderCount, chennai.repeatOffender], [2, true]);
+  // no period data (e.g. pre-#33 account) → 0 / false for everyone, no error
+  const none = buildVendorSummaries({ latestResults: results, stored, chase: [] });
+  for (const v of none) assert.deepEqual([v.offenderCount, v.repeatOffender], [0, false], v.gstin);
+  const json = JSON.stringify({ persistence: "postgres", vendors: none, ...vendorsResponseMeta() });
+  assert.ok(json.includes('"repeatOffenderLabel":"shown"'));
+  assert.ok(!json.includes('"repeatOffender":null'));
+});
+
+test("pre-#33 / blank / null return_period runs are ignored without error (existing accounts)", () => {
+  const atRiskRows = results.filter((r) => r.category === "itc_at_risk");
+  const counts = offenderPeriodCounts([
+    { returnPeriod: "", results: atRiskRows }, // pre-#33 rows (column default '')
+    { returnPeriod: "", results: atRiskRows },
+    { returnPeriod: null, results: atRiskRows },
+    { returnPeriod: undefined, results: atRiskRows },
+    { returnPeriod: "   ", results: atRiskRows },
+  ]);
+  assert.equal(counts.size, 0);
+  // one valid month on top of many blank runs → 1, not a repeat offender
+  const mixed = offenderPeriodCounts([
+    { returnPeriod: "", results: atRiskRows },
+    { returnPeriod: "", results: atRiskRows },
+    { returnPeriod: "2026-09", results: atRiskRows },
+  ]);
+  for (const g of offenderGstinsForRun(atRiskRows)) assert.equal(mixed.get(g), 1, g);
+});
+
+test("YYYY-MM rule agrees across vendors.ts, #33's normalizeReturnPeriod and the SQL regex", () => {
+  const dbSrc = readFileSync(join(__dirname, "..", "src", "lib", "db.ts"), "utf8");
+  const sqlText = dbSrc.match(/export const DISTINCT_PERIOD_OFFENDER_SQL = `([\s\S]*?)`;/)![1];
+  const sqlRe = new RegExp(sqlText.match(/r\.return_period ~ '([^']+)'/)![1]);
+  const samples = [
+    "2026-09", "2026-01", "2026-12", "2099-12", "2000-01",
+    "2026-00", "2026-13", "2026-9", "26-09", "092026", "2026/09", "1999-12", "2026-09-01", "", " 2026-09",
+  ];
+  for (const p of samples) {
+    const stored = normalizeReturnPeriod(p) === p; // what #33 would store verbatim
+    assert.equal(RETURN_PERIOD_RE.test(p), stored, `vendors.ts vs gstin.ts: ${JSON.stringify(p)}`);
+    assert.equal(sqlRe.test(p), stored, `SQL vs gstin.ts: ${JSON.stringify(p)}`);
+  }
+  // #33 normalises the portal's MMYYYY to YYYY-MM before saving, so it counts as that month
+  assert.equal(normalizeReturnPeriod("092026"), "2026-09");
+});
+
+test("switch off (rollback path): repeatOffender is null for every vendor, any count", () => {
   const stored = [
     { gstin: "29AADCS1234A1Z5", name: null, phone: null, offenderCount: 9, updatedAt: null },
     { gstin: "33AAACR5055K1Z2", name: null, phone: null, offenderCount: 2, updatedAt: null },
     { gstin: "27AAECS4455P1ZA", name: null, phone: null, offenderCount: 1, updatedAt: null },
   ];
   // default (uses the switch) and explicit false
-  for (const opts of [{}, { byDistinctPeriod: false }]) {
+  for (const opts of [{ byDistinctPeriod: false }]) {
     const vendors = buildVendorSummaries({ latestResults: results, stored, chase: [], ...opts });
     assert.ok(vendors.length > 0);
     for (const v of vendors) assert.equal(v.repeatOffender, null, v.gstin);
     // no truthy label anywhere in the serialised payload
-    const json = JSON.stringify({ persistence: "postgres", vendors, ...vendorsResponseMeta() });
+    const json = JSON.stringify({ persistence: "postgres", vendors, ...vendorsResponseMeta(false) });
     assert.ok(!json.includes('"repeatOffender":true'));
     assert.ok(!json.includes('"repeatOffender":false'));
     assert.ok(json.includes('"repeatOffenderLabel":"hidden"'));
@@ -387,7 +446,7 @@ test("offenderPeriodCounts: DISTINCT return_period (same month re-run counts onc
   assert.ok(RETURN_PERIOD_RE.test("2026-09") && !RETURN_PERIOD_RE.test("2026-9"));
 });
 
-test("switch on (post-#33): label shown, based on distinct periods not runs", () => {
+test("switch on: label shown, based on distinct periods not runs (re-runs of one month count once)", () => {
   // Stored per-run counter says 4 (four re-runs of one month) → must NOT be a repeat offender.
   const stored = [
     { gstin: "29AADCS1234A1Z5", name: null, phone: null, offenderCount: 4, updatedAt: null },

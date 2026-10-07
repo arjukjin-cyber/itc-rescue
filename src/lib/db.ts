@@ -107,6 +107,37 @@ export async function ensureSchema() {
   } catch {
     /* ignore */
   }
+  // GSTINs (multi-GSTIN per company) + per-run GSTIN / return period.
+  // chase_items.gstin is the VENDOR's GSTIN, so the company's GSTIN lives in company_gstin.
+  await sql`
+    CREATE TABLE IF NOT EXISTS gstins (
+      id TEXT PRIMARY KEY,
+      company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      gstin TEXT NOT NULL,
+      label TEXT NOT NULL DEFAULT '',
+      state_code TEXT NOT NULL DEFAULT '',
+      is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (company_id, gstin)
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS gstins_company_idx ON gstins(company_id)`;
+  await sql`ALTER TABLE recon_runs ADD COLUMN IF NOT EXISTS company_gstin TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE recon_runs ADD COLUMN IF NOT EXISTS return_period TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE chase_items ADD COLUMN IF NOT EXISTS company_gstin TEXT NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE chase_items ADD COLUMN IF NOT EXISTS return_period TEXT NOT NULL DEFAULT ''`;
+  // Backfill: the signup GSTIN becomes the company's primary GSTIN (idempotent).
+  try {
+    await sql.query(
+      `INSERT INTO gstins (id, company_id, gstin, state_code, is_primary)
+       SELECT 'gst_' || substr(md5(c.id || c.gstin), 1, 16), c.id, upper(c.gstin), substr(upper(c.gstin), 1, 2), TRUE
+       FROM companies c
+       WHERE length(c.gstin) = 15
+       ON CONFLICT (company_id, gstin) DO NOTHING`
+    );
+  } catch (err) {
+    console.error("[schema] gstins backfill skipped:", err instanceof Error ? err.message : err);
+  }
   _schemaReady = true;
 }
 
@@ -328,8 +359,17 @@ export async function saveReconForUser(
   userId: string,
   results: MatchResult[],
   summary: ReconSummary,
-  opts: { forceVendorsFail?: boolean } = {}
+  opts: {
+    /** #33: company GSTIN this run covers ('' = unscoped). */
+    companyGstin?: string;
+    /** #33: return period YYYY-MM ('' = unknown). */
+    returnPeriod?: string;
+    /** PREVIEW-ONLY QA switch (qa_fail_vendors); ignored in production. */
+    forceVendorsFail?: boolean;
+  } = {}
 ): Promise<{ reconId: string; chase: ChaseItem[] }> {
+  const companyGstin = opts.companyGstin || "";
+  const returnPeriod = opts.returnPeriod || "";
   await ensureSchema();
   const sql = getSql();
   const reconId = id("recon");
@@ -376,9 +416,9 @@ export async function saveReconForUser(
 
   // Sequential writes (neon HTTP). Avoid fragile multi-style transaction batches.
   await sql.query(
-    `INSERT INTO recon_runs (id, user_id, summary, results)
-     VALUES ($1, $2, $3::jsonb, $4::jsonb)`,
-    [reconId, userId, summaryJson, resultsJson]
+    `INSERT INTO recon_runs (id, user_id, summary, results, company_gstin, return_period)
+     VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6)`,
+    [reconId, userId, summaryJson, resultsJson, companyGstin, returnPeriod]
   );
 
   await sql`DELETE FROM chase_items WHERE user_id = ${userId}`;
@@ -387,9 +427,9 @@ export async function saveReconForUser(
     await sql.query(
       `INSERT INTO chase_items (
         id, user_id, recon_id, gstin, vendor_name, invoice_number, invoice_date,
-        amount, category, status, last_updated
+        amount, category, status, company_gstin, return_period, last_updated
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW()
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW()
       )
       ON CONFLICT (user_id, id) DO UPDATE SET
         recon_id = EXCLUDED.recon_id,
@@ -400,6 +440,8 @@ export async function saveReconForUser(
         amount = EXCLUDED.amount,
         category = EXCLUDED.category,
         status = EXCLUDED.status,
+        company_gstin = EXCLUDED.company_gstin,
+        return_period = EXCLUDED.return_period,
         last_updated = NOW()`,
       [
         c.id,
@@ -412,6 +454,8 @@ export async function saveReconForUser(
         c.amount,
         c.category,
         c.status,
+        companyGstin,
+        returnPeriod,
       ]
     );
   }
@@ -487,11 +531,13 @@ export async function getLatestReconForUser(userId: string): Promise<{
   createdAt: string;
   results: MatchResult[];
   summary: ReconSummary;
+  companyGstin: string;
+  returnPeriod: string;
 } | null> {
   await ensureSchema();
   const sql = getSql();
   const rows = await sql`
-    SELECT id, created_at, summary, results FROM recon_runs
+    SELECT id, created_at, summary, results, company_gstin, return_period FROM recon_runs
     WHERE user_id = ${userId}
     ORDER BY created_at DESC
     LIMIT 1
@@ -503,6 +549,8 @@ export async function getLatestReconForUser(userId: string): Promise<{
     createdAt: new Date(row.created_at as string).toISOString(),
     summary: row.summary as ReconSummary,
     results: row.results as MatchResult[],
+    companyGstin: String(row.company_gstin || ""),
+    returnPeriod: String(row.return_period || ""),
   };
 }
 
@@ -728,8 +776,8 @@ export async function listVendorsForUser(userId: string): Promise<VendorSummary[
     gstin: String(r.gstin || ""),
     status: r.status as ChaseStatus,
   }));
-  // CPO condition: label hidden until counting is by DISTINCT return_period.
-  // The distinct-period query only runs once the switch is flipped (after #33).
+  // CPO condition: the label is shown only when counting by DISTINCT return_period
+  // (#33's recon_runs.return_period). Switch: OFFENDER_COUNT_BY_DISTINCT_PERIOD.
   let periodCounts: Map<string, number> | undefined;
   if (OFFENDER_COUNT_BY_DISTINCT_PERIOD) {
     const pr = await sql.query(DISTINCT_PERIOD_OFFENDER_SQL, [userId]);
@@ -749,9 +797,10 @@ export async function listVendorsForUser(userId: string): Promise<VendorSummary[
 /**
  * Repeat-offender count by DISTINCT return_period (YYYY-MM): per vendor GSTIN,
  * how many distinct months had ≥1 itc_at_risk/value_mismatch row. Runs with a
- * blank/invalid period (#33 defaults to '') don't count; re-running the same
- * month counts once. Requires recon_runs.return_period from PR #33, so it is
- * only executed when OFFENDER_COUNT_BY_DISTINCT_PERIOD is true.
+ * blank/invalid period (#33's column default is '', which is what pre-#33 runs
+ * hold) don't count; re-running the same month counts once. Reads
+ * recon_runs.return_period (TEXT NOT NULL DEFAULT '', YYYY-MM) from #33; the
+ * column is added by ensureSchema(), which listVendorsForUser runs first.
  * Pure model + tests: offenderPeriodCounts() in vendors.ts.
  */
 export const DISTINCT_PERIOD_OFFENDER_SQL = `
@@ -804,4 +853,106 @@ export async function upsertVendorPhone(
   );
   const vendors = await listVendorsForUser(userId);
   return { vendor: vendors.find((v) => v.gstin === g) || null, vendors };
+}
+
+// ---------- Company: GSTINs + settings ----------
+
+export type DbGstin = {
+  id: string;
+  gstin: string;
+  label: string;
+  stateCode: string;
+  isPrimary: boolean;
+  createdAt: string;
+};
+
+export const MAX_GSTINS_PER_COMPANY = 20;
+
+async function companyIdForUser(userId: string): Promise<string | null> {
+  const sql = getSql();
+  const rows = await sql`SELECT company_id FROM users WHERE id = ${userId} LIMIT 1`;
+  if (!rows.length) return null;
+  return ((rows[0] as Record<string, unknown>).company_id as string) || null;
+}
+
+function rowToGstin(r: Record<string, unknown>): DbGstin {
+  return {
+    id: String(r.id),
+    gstin: String(r.gstin),
+    label: String(r.label || ""),
+    stateCode: String(r.state_code || ""),
+    isPrimary: Boolean(r.is_primary),
+    createdAt: new Date(r.created_at as string).toISOString(),
+  };
+}
+
+export async function listGstinsForUser(userId: string): Promise<DbGstin[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const companyId = await companyIdForUser(userId);
+  if (!companyId) return [];
+  const rows = await sql`
+    SELECT id, gstin, label, state_code, is_primary, created_at
+    FROM gstins WHERE company_id = ${companyId}
+    ORDER BY is_primary DESC, created_at ASC
+  `;
+  return (rows as Record<string, unknown>[]).map(rowToGstin);
+}
+
+export class GstinError extends Error {
+  constructor(message: string, public status: number, public code: string) {
+    super(message);
+  }
+}
+
+/** Adds a validated GSTIN. The first GSTIN of a company becomes primary and is mirrored to companies.gstin. */
+export async function addGstinForUser(
+  userId: string,
+  input: { gstin: string; stateCode: string; label?: string }
+): Promise<DbGstin> {
+  await ensureSchema();
+  const sql = getSql();
+  const companyId = await companyIdForUser(userId);
+  if (!companyId) throw new GstinError("Account has no company", 404, "no_company");
+  const existing = await sql`SELECT gstin FROM gstins WHERE company_id = ${companyId}`;
+  if ((existing as Record<string, unknown>[]).some((r) => r.gstin === input.gstin)) {
+    throw new GstinError("This GSTIN is already added", 409, "duplicate");
+  }
+  if (existing.length >= MAX_GSTINS_PER_COMPANY) {
+    throw new GstinError(`You can add up to ${MAX_GSTINS_PER_COMPANY} GSTINs`, 422, "limit");
+  }
+  const isPrimary = existing.length === 0;
+  const gid = id("gst");
+  const label = String(input.label || "").trim().slice(0, 60);
+  await sql.query(
+    `INSERT INTO gstins (id, company_id, gstin, label, state_code, is_primary)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (company_id, gstin) DO NOTHING`,
+    [gid, companyId, input.gstin, label, input.stateCode, isPrimary]
+  );
+  if (isPrimary) {
+    await sql`UPDATE companies SET gstin = ${input.gstin} WHERE id = ${companyId}`;
+  }
+  const rows = await sql`
+    SELECT id, gstin, label, state_code, is_primary, created_at
+    FROM gstins WHERE company_id = ${companyId} AND gstin = ${input.gstin} LIMIT 1
+  `;
+  if (!rows.length) throw new GstinError("GSTIN save failed", 500, "save_failed");
+  return rowToGstin(rows[0] as Record<string, unknown>);
+}
+
+/** True when the GSTIN belongs to the user's company (used to scope recon runs). */
+export async function userOwnsGstin(userId: string, gstin: string): Promise<boolean> {
+  const list = await listGstinsForUser(userId);
+  return list.some((g) => g.gstin === gstin);
+}
+
+/** PATCH /api/settings scope: company name only. */
+export async function updateCompanyNameForUser(userId: string, name: string): Promise<string> {
+  await ensureSchema();
+  const sql = getSql();
+  const companyId = await companyIdForUser(userId);
+  if (!companyId) throw new GstinError("Account has no company", 404, "no_company");
+  await sql`UPDATE companies SET name = ${name} WHERE id = ${companyId}`;
+  return name;
 }

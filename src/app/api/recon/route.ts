@@ -4,7 +4,9 @@ import {
   getLatestReconForUser,
   hasDatabase,
   saveReconForUser,
+  userOwnsGstin,
 } from "@/lib/db";
+import { normalizeGstin, normalizeReturnPeriod } from "@/lib/gstin";
 import { requireDbUser } from "@/lib/session-user";
 import {
   QA_FAIL_VENDORS_COOKIE,
@@ -73,6 +75,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: valid.reason, code: "parse_invalid" }, { status: 422 });
     }
 
+    // Optional scoping: which company GSTIN and return period (YYYY-MM or MMYYYY) this run covers.
+    let companyGstin = "";
+    if (body.gstin != null && body.gstin !== "") {
+      companyGstin = normalizeGstin(body.gstin);
+      if (!(await userOwnsGstin(user.id, companyGstin))) {
+        return NextResponse.json(
+          { error: "That GSTIN isn't on your account. Add it under Company first.", code: "gstin_not_found" },
+          { status: 422 }
+        );
+      }
+    }
+    let returnPeriod = "";
+    if (body.returnPeriod != null && body.returnPeriod !== "") {
+      const p = normalizeReturnPeriod(body.returnPeriod);
+      if (!p) {
+        return NextResponse.json(
+          { error: "Return period must look like 2026-09 or 092026", code: "invalid_return_period" },
+          { status: 422 }
+        );
+      }
+      returnPeriod = p;
+    }
+
     // PREVIEW-ONLY QA switch; ignored in production (qa. trial bypass).
     const bypassTrial = shouldBypassTrial(user.email);
     const gate = await canUserRunRecon(user.id, { bypassTrial });
@@ -86,10 +111,16 @@ export async function POST(req: NextRequest) {
     // PREVIEW-ONLY QA switch; ignored in production (qa_fail_vendors=1 cookie
     // forces the best-effort vendors bump to fail; recon/chase still save).
     const forceVendorsFail = shouldForceVendorsFail(req.cookies.get(QA_FAIL_VENDORS_COOKIE)?.value);
-    const saved = await saveReconForUser(user.id, results, summary, { forceVendorsFail });
+    const saved = await saveReconForUser(user.id, results, summary, {
+      companyGstin,
+      returnPeriod,
+      forceVendorsFail,
+    });
     return NextResponse.json({
       persistence: "postgres",
       reconId: saved.reconId,
+      companyGstin,
+      returnPeriod,
       chase: saved.chase,
       // canRun stays false in production; only a preview QA bypass keeps it true.
       trial: { reconCount: user.reconCount + 1, canRun: bypassTrial },

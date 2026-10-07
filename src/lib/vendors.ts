@@ -127,13 +127,14 @@ export function isRepeatOffender(offenderCount: number): boolean {
  *   - `repeatOffender` = offenderCount >= 2, `repeatOffenderLabel: "shown"`,
  *     `offenderCountBasis: "distinct_return_period"`.
  *
- * TODO(#33): needs recon_runs.return_period from PR #33 (feat/gstins-api).
- * Once #33 is on main, the flip is this one line:
- *   export const OFFENDER_COUNT_BY_DISTINCT_PERIOD = true;
- * Do NOT flip before #33 is merged: the distinct-period query reads
- * recon_runs.return_period, which doesn't exist without #33.
+ * ON since #33 (2feee9e) added recon_runs.return_period
+ * (TEXT NOT NULL DEFAULT '', stored as YYYY-MM by normalizeReturnPeriod in
+ * src/lib/gstin.ts). Runs saved before #33, or without a period, have '' and
+ * are ignored, so existing accounts start with offenderCount 0 / label false
+ * until they save runs with a return period. To hide the label again, set this
+ * to false (one line).
  */
-export const OFFENDER_COUNT_BY_DISTINCT_PERIOD = false;
+export const OFFENDER_COUNT_BY_DISTINCT_PERIOD = true;
 
 export type RepeatOffenderLabel = "hidden" | "shown";
 export type OffenderCountBasis = "runs" | "distinct_return_period";
@@ -147,7 +148,10 @@ export function vendorsResponseMeta(
     : { repeatOffenderLabel: "hidden", offenderCountBasis: "runs" };
 }
 
-/** Return period as YYYY-MM (same rule as #33's normalizeReturnPeriod output). */
+/**
+ * Return period as YYYY-MM: the same pattern as #33's PERIOD_RE in src/lib/gstin.ts
+ * and the regex in DISTINCT_PERIOD_OFFENDER_SQL (check:vendors asserts they agree).
+ */
 export const RETURN_PERIOD_RE = /^20[0-9]{2}-(0[1-9]|1[0-2])$/;
 
 /**
