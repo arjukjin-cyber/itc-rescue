@@ -2,10 +2,9 @@
  * Vendor phone helpers (pure; no DB / React imports). UX-04.
  *
  * Phone values are stored as "91" + 10 digits (e.g. "919999900001"), which is
- * the digits-only form wa.me expects. Rules match PR #25's
- * `normalizeIndianMobile` (src/lib/vendors.ts, unmerged) except for the output
- * format (#25 stores "+91XXXXXXXXXX"). Once #25 merges it should reuse this
- * module and keep the "+" only at its storage boundary.
+ * the digits-only form wa.me expects. Vendor storage (src/lib/vendors.ts) reuses
+ * this helper and adds a leading "+" so the vendors table keeps E.164-ish
+ * `+91XXXXXXXXXX`. WhatsApp chase must keep calling this module (no "+").
  */
 
 /**
