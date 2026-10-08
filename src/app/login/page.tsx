@@ -57,23 +57,33 @@ export default function LoginPage() {
           </p>
           <form onSubmit={onSubmit} className="mt-8 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700">Email</label>
+              <label htmlFor="login-email" className="block text-sm font-medium text-slate-700">
+                Email
+              </label>
               <input
+                id="login-email"
+                name="email"
                 type="email"
+                autoComplete="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                className="input-token mt-1 w-full px-3 py-2 text-sm"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700">Password</label>
+              <label htmlFor="login-password" className="block text-sm font-medium text-slate-700">
+                Password
+              </label>
               <input
+                id="login-password"
+                name="password"
                 type="password"
+                autoComplete="current-password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                className="input-token mt-1 w-full px-3 py-2 text-sm"
               />
             </div>
             {error && (
@@ -84,14 +94,14 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-xl bg-teal-700 py-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-60"
+              className="btn btn-pri btn-lg w-full disabled:opacity-60"
             >
               {loading ? "Signing in…" : "Log in"}
             </button>
           </form>
           <p className="mt-6 text-center text-sm text-slate-600">
             New here?{" "}
-            <Link href="/signup" className="font-semibold text-teal-700 hover:underline">
+            <Link href="/signup" className="font-semibold text-accent hover:underline">
               Create account
             </Link>
           </p>
