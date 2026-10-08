@@ -20,6 +20,7 @@
  * Pure: works on a row grid (`sheet_to_json(..., { header: 1 })`), no XLSX/DOM.
  */
 
+import { normalizeReturnPeriod } from "../gstin";
 import { mergeInvoiceRows } from "../reconcile";
 import type { InvoiceRecord } from "../types";
 import {
@@ -160,4 +161,92 @@ export function mapGstr2bPortalRows(
 
   // Same key as the books side (GSTIN + normalised invoice no + financial year).
   return mergeInvoiceRows(records).records;
+}
+
+// ---------- return period (header block) ----------
+
+const MONTHS = [
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december",
+];
+
+/** "August" / "Aug" / "Sept" -> 1-12, else null. Whole-word month names only. */
+function monthNumber(raw: string): number | null {
+  const t = raw.trim().toLowerCase().replace(/\.$/, "");
+  if (t.length < 3) return null;
+  const i = MONTHS.findIndex((m) => m === t || m.slice(0, 3) === t || (t === "sept" && m === "september"));
+  return i >= 0 ? i + 1 : null;
+}
+
+/** "2026-27" / "2026-2027" -> 2026 (FY start year), else null. */
+function fyStartYear(raw: string): number | null {
+  const m = /^(20\d{2})\s*[-\u2013/]\s*(\d{2}|20\d{2})$/.exec(raw.trim());
+  if (!m) return null;
+  const start = Number(m[1]);
+  return Number(m[2]) % 100 === (start + 1) % 100 ? start : null;
+}
+
+function labelKey(v: unknown): string {
+  return cellText(v).toLowerCase().replace(/[^a-z]+/g, " ").trim();
+}
+
+/** Value for a label in a key/value header block: "Label | value" or "Label: value". */
+function findLabelValue(rows: unknown[][], labels: string[]): string | null {
+  for (const row of rows) {
+    if (!row) continue;
+    for (let i = 0; i < row.length; i++) {
+      const text = cellText(row[i]);
+      if (!text || row[i] instanceof Date) continue;
+      const colon = text.indexOf(":");
+      if (colon > 0 && labels.includes(labelKey(text.slice(0, colon)))) {
+        const v = text.slice(colon + 1).trim();
+        if (v) return v;
+      }
+      if (!labels.includes(labelKey(text))) continue;
+      for (let j = i + 1; j < row.length; j++) {
+        if (row[j] instanceof Date) break;
+        const v = cellText(row[j]);
+        if (v) return v;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Return period (YYYY-MM) from a portal GSTR-2B header block, or null.
+ *
+ * The portal workbook states the period as "Financial Year | 2026-27" and
+ * "Tax Period | August" (month name). Each block is scanned in order; the first
+ * one that yields a valid period wins. Accepted:
+ * - Tax Period already in a form normalizeReturnPeriod accepts (MMYYYY, YYYY-MM)
+ * - Tax Period "<Month> <YYYY>"
+ * - Tax Period "<Month>" + Financial Year "YYYY-YY" (Apr-Dec -> start year,
+ *   Jan-Mar -> start year + 1)
+ * Never guessed from invoice dates.
+ */
+export function extractGstr2bPortalPeriod(blocks: unknown[][][]): string | null {
+  for (const rows of blocks) {
+    const period = findLabelValue(rows, ["tax period", "return period"]);
+    if (!period) continue;
+    const direct = normalizeReturnPeriod(period);
+    if (direct) return direct;
+    const withYear = /^([A-Za-z.]+)[\s,'\u2019-]*(20\d{2})$/.exec(period.trim());
+    if (withYear) {
+      const mm = monthNumber(withYear[1]);
+      if (mm) {
+        const p = normalizeReturnPeriod(`${withYear[2]}-${String(mm).padStart(2, "0")}`);
+        if (p) return p;
+      }
+      continue;
+    }
+    const mm = monthNumber(period);
+    const fyRaw = findLabelValue(rows, ["financial year"]);
+    const fy = fyRaw ? fyStartYear(fyRaw) : null;
+    if (!mm || fy == null) continue;
+    const year = mm >= 4 ? fy : fy + 1;
+    const p = normalizeReturnPeriod(`${year}-${String(mm).padStart(2, "0")}`);
+    if (p) return p;
+  }
+  return null;
 }

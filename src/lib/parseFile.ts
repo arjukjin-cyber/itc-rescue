@@ -13,9 +13,10 @@ import {
   normalizeHeader,
   type ImportSource,
 } from "./importers/tally-busy";
-import { mapGstr2bJson } from "./importers/gstr2b-json";
+import { findGstr2bReturnPeriod, mapGstr2bJson } from "./importers/gstr2b-json";
 import {
   detectGstr2bPortal,
+  extractGstr2bPortalPeriod,
   mapGstr2bPortalRows,
   pickGstr2bSheet,
 } from "./importers/gstr2b-portal";
@@ -37,6 +38,13 @@ export interface ParsedInvoiceFile {
   detected: ImportSource;
   /** 0-based row of the header that was used */
   headerRowIndex: number;
+  /**
+   * GSTR-2B return period as YYYY-MM (e.g. "2026-09"), for pre-filling the period
+   * picker. Set from portal JSON `rtnprd` or the portal Excel header block
+   * ("Financial Year" + "Tax Period"); null when not found, for Tally/CSV/template
+   * 2B files, and always null for books.
+   */
+  returnPeriod: string | null;
 }
 
 /**
@@ -73,6 +81,7 @@ export async function parseInvoiceFileDetailed(
   const name = file.name.toLowerCase();
   let sheet: XLSX.WorkSheet;
   let rows: Record<string, unknown>[] = [];
+  let workbook: XLSX.WorkBook | null = null;
 
   if (name.endsWith(".json") || file.type === "application/json") {
     return parseJsonFile(file, source);
@@ -89,6 +98,7 @@ export async function parseInvoiceFileDetailed(
   } else {
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: "array", cellDates: true, raw: false });
+    workbook = wb;
     // GST portal GSTR-2B workbooks start with "Read me"; invoices live in "B2B".
     sheet = wb.Sheets[pickGstr2bSheet(wb.SheetNames) ?? wb.SheetNames[0]];
     rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
@@ -112,6 +122,7 @@ export async function parseInvoiceFileDetailed(
       invoices: mapGstr2bPortalRows(grid, portal, source),
       detected: "gstr2b_portal",
       headerRowIndex: portal.headerRowIndex,
+      returnPeriod: source === "gstr2b" ? portalReturnPeriod(workbook, grid, portal) : null,
     });
   }
 
@@ -139,6 +150,7 @@ export async function parseInvoiceFileDetailed(
       invoices,
       detected: detection?.source ?? "generic",
       headerRowIndex: 0,
+      returnPeriod: null,
     });
   }
 
@@ -146,7 +158,28 @@ export async function parseInvoiceFileDetailed(
     invoices: mapRegisterRows(grid, detection, source),
     detected: detection.source,
     headerRowIndex: detection.headerRowIndex,
+    returnPeriod: null,
   });
+}
+
+/**
+ * Period from the portal workbook's header block: the title rows above the B2B
+ * header first, then the "Read me" sheet (where the portal puts
+ * "Financial Year" / "Tax Period"). Null when neither states it.
+ */
+function portalReturnPeriod(
+  wb: XLSX.WorkBook | null,
+  grid: unknown[][],
+  portal: { headerRowIndex: number; headerRowCount?: number }
+): string | null {
+  const firstHeaderRow = portal.headerRowIndex - ((portal.headerRowCount ?? 1) - 1);
+  const blocks: unknown[][][] = [grid.slice(0, Math.max(firstHeaderRow, 0))];
+  const readMe = wb?.SheetNames.find((n) => n.trim().toLowerCase().replace(/\s+/g, " ") === "read me");
+  if (wb && readMe) {
+    const rm = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[readMe], { header: 1, defval: "", raw: true });
+    blocks.push(rm.slice(0, 20));
+  }
+  return extractGstr2bPortalPeriod(blocks);
 }
 
 function assertRequiredColumns(
@@ -180,7 +213,12 @@ async function parseJsonFile(file: File, source: "books" | "gstr2b"): Promise<Pa
   if (!invoices || !invoices.length) {
     throw new InvoiceParseError(`${file.name}: no B2B invoices found (expected docdata.b2b)`);
   }
-  return { invoices, detected: "gstr2b_portal_json", headerRowIndex: -1 };
+  return {
+    invoices,
+    detected: "gstr2b_portal_json",
+    headerRowIndex: -1,
+    returnPeriod: source === "gstr2b" ? findGstr2bReturnPeriod(json) : null,
+  };
 }
 
 export async function fetchSampleAsFile(path: string, name: string): Promise<File> {
