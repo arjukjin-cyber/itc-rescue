@@ -12,6 +12,7 @@
  * Pure: takes the parsed JSON value, no DOM/XLSX.
  */
 
+import { normalizeReturnPeriod } from "../gstin";
 import { normalizeGstin, normalizeInvoiceNumber } from "../reconcile";
 import type { InvoiceRecord } from "../types";
 import { parseImportAmount, parseImportDate } from "./tally-busy";
@@ -33,6 +34,17 @@ export function findGstr2bB2b(json: unknown): Obj[] | null {
   const docdata = isObj(data.docdata) ? data.docdata : isObj(json.docdata) ? json.docdata : null;
   const b2b = docdata?.b2b;
   return Array.isArray(b2b) ? (b2b.filter(isObj) as Obj[]) : null;
+}
+
+/**
+ * Return period of a GSTR-2B JSON as YYYY-MM, or null. Reads `rtnprd` (portal
+ * MMYYYY, e.g. "092026") from `data.rtnprd`, then top-level `rtnprd` (the same two
+ * shapes findGstr2bB2b accepts). Invalid or missing -> null.
+ */
+export function findGstr2bReturnPeriod(json: unknown): string | null {
+  if (!isObj(json)) return null;
+  const nested = isObj(json.data) ? normalizeReturnPeriod(json.data.rtnprd) : null;
+  return nested ?? normalizeReturnPeriod(json.rtnprd);
 }
 
 interface Amounts {
