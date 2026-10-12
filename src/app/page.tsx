@@ -111,7 +111,7 @@ export default function LandingPage() {
                 href="/login"
                 className="btn-secondary inline-flex w-full items-center justify-center px-8 py-3.5 text-base sm:w-auto"
               >
-                Log in · try demo samples
+                Log in
               </Link>
             </div>
           </div>
