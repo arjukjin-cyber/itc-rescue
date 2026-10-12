@@ -108,10 +108,10 @@ export default function LandingPage() {
                 Start free trial
               </Link>
               <Link
-                href="/login"
+                href="/signup"
                 className="btn-secondary inline-flex w-full items-center justify-center px-8 py-3.5 text-base sm:w-auto"
               >
-                Log in
+                Sign up free and try sample files
               </Link>
             </div>
           </div>
