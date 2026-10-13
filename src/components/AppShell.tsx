@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   LayoutDashboard,
   GitCompareArrows,
@@ -38,7 +38,8 @@ import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
 import { CHASE_COUNT_EVENT, RECON_EVENT, TRIAL_EVENT, type ReconChangedDetail } from "@/lib/ui-events";
 import { getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
 import { viewCounts, viewFromSlug, viewHref, type ItcView } from "@/lib/views";
-import { getSampleRun, isReconScreen } from "@/lib/sample-run";
+import { getSampleRun, isReconScreen, setSampleRunScope } from "@/lib/sample-run";
+import { createRequestGuard, dataScopeKey } from "@/lib/client-scope";
 import { Dropdown } from "./Dropdown";
 import { gstinMenuLabel } from "@/lib/gstin-scope";
 import { pickedGstinKey, resolveSelectedGstin, setSelectedGstin } from "@/lib/selected-gstin";
@@ -210,6 +211,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Set during render (idempotent module value) so page effects, which run before this
   // component's effects, already read the active GSTIN in their first fetch.
   setSelectedGstin(selectedGstin);
+  /** (user email|GSTIN) every count/recon fetch and cache is tied to; null = not resolved yet. */
+  const scope = dataScopeKey(owner, gstins.status === "ready", selectedGstin);
+  setSampleRunScope(scope);
+  const scopeRef = useRef<string | null>(scope);
+  scopeRef.current = scope;
+  const chaseGuard = useMemo(() => createRequestGuard(() => scopeRef.current), []);
+  const reconGuard = useMemo(() => createRequestGuard(() => scopeRef.current), []);
   useEffect(() => () => setSelectedGstin(null), []);
   const [reconUsed, setReconUsed] = useState(0);
   const [pending, setPending] = useState<number | null>(null);
@@ -284,35 +292,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [pathname, router]);
 
-  // Chase queue pending count: load on navigation, then follow in-page updates.
+  // Scope changed (login, user change, GSTIN switch): drop the previous scope's counts at once.
   useEffect(() => {
-    let cancelled = false;
+    chaseGuard.invalidate();
+    reconGuard.invalidate();
+    setPending(null);
+    setRecon(null);
+  }, [scope, chaseGuard, reconGuard]);
+
+  // Chase queue pending count: load on navigation, then follow in-page updates. Nothing goes out
+  // until the GSTIN is resolved; a response for an older request / other scope is dropped.
+  useEffect(() => {
+    if (!scope) return;
+    const req = chaseGuard.begin(scope);
     void fetchChaseItems().then(({ items, authError }) => {
-      if (cancelled || authError) return;
+      if (!chaseGuard.accept(req) || authError) return;
       setPending(items.filter((c) => c.status === "pending").length);
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [pathname, selectedGstin]);
+    return () => chaseGuard.invalidate();
+  }, [pathname, scope, chaseGuard]);
 
   // ITC counts + return period from the latest recon (existing GET /api/recon).
   useEffect(() => {
-    let cancelled = false;
-    // On /reconcile an unsaved sample run (memory only, #29) is what's on screen.
+    if (!scope) return;
+    // On /reconcile an unsaved sample run (memory only, #29, scoped) is what's on screen.
     const sample = isReconScreen(pathname) ? getSampleRun() : null;
     if (sample) {
       setRecon(snapOf(sample.results));
       return;
     }
+    const req = reconGuard.begin(scope);
     void fetchReconState().then((st) => {
-      if (cancelled || st.authError) return;
+      if (!reconGuard.accept(req) || st.authError) return;
       setRecon(st.summary && st.results.length ? snapOf(st.results, st.returnPeriod) : null);
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [pathname, reconTick, selectedGstin]);
+    return () => reconGuard.invalidate();
+  }, [pathname, reconTick, scope, reconGuard]);
 
   useEffect(() => {
     const onCount = (e: Event) => setPending((e as CustomEvent<number>).detail);
@@ -365,7 +380,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [open]);
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    // Drop every client cache (local/session storage, sample run, selected GSTIN) first.
+    clearLocalUser();
+    setPending(null);
+    setRecon(null);
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     clearLocalUser();
     // Hard navigation drops the client router cache so a stale
     // authenticated /dashboard payload can't flash after logout.
@@ -455,8 +474,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Pages fetch per active GSTIN: mount them once the GSTIN is known (no unscoped flash),
             and remount on a switcher change so every screen refetches for the new GSTIN. */}
-        <main key={selectedGstin ?? "-"} className="min-w-0 flex-1 px-4 pb-8 pt-5 sm:px-6">
-          {!meDone || (owner && gstins.status === "loading") ? (
+        <main key={scope ?? "-"} className="min-w-0 flex-1 px-4 pb-8 pt-5 sm:px-6">
+          {meDone && owner && gstins.status === "error" ? (
+            <div className="text-[13px]" role="alert" data-testid="gstin-scope-error">
+              Could not load your GSTINs.{" "}
+              <button type="button" className="underline" onClick={gstins.retry}>
+                Retry
+              </button>
+            </div>
+          ) : meDone && !owner ? (
+            <div className="text-[13px]" role="alert" data-testid="gstin-scope-error">
+              Could not load your account. Please reload the page.
+            </div>
+          ) : !scope ? (
             <div className="flex flex-col gap-3" aria-busy="true" data-testid="gstin-scope-loading">
               <Skel w={220} h={14} />
               <Skel w={320} />

@@ -7,6 +7,8 @@ import type {
   ReconSummary,
   UserSession,
 } from "./types";
+import { clearSampleRun, setSampleRunScope } from "./sample-run";
+import { setSelectedGstin } from "./selected-gstin";
 
 const KEYS = {
   session: "itc_user",
@@ -51,8 +53,22 @@ export function getLocalUser(): UserSession | null {
  * never shows the previous account's company, GSTIN or results.
  */
 export function clearAllLocal() {
+  // In-memory caches too: the sample run and the published switcher GSTIN.
+  clearSampleRun();
+  setSampleRunScope(null);
+  setSelectedGstin(null);
   if (typeof window === "undefined") return;
   for (const k of Object.values(KEYS)) lsRemove(k);
+  try {
+    const ss: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k && (k.startsWith("itc_") || k.startsWith("itc-rescue:"))) ss.push(k);
+    }
+    ss.forEach((k) => sessionStorage.removeItem(k));
+  } catch {
+    /* ignore */
+  }
   try {
     const stale: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -68,7 +84,7 @@ export function clearAllLocal() {
 export function setLocalUser(user: UserSession) {
   // Different account in the same browser: drop everything from the previous one first.
   const prev = getLocalUser();
-  if (prev && prev.email !== user.email) clearAllLocal();
+  if (prev && prev.email.toLowerCase() !== user.email.toLowerCase()) clearAllLocal();
   lsSet(KEYS.session, JSON.stringify(user));
 }
 
