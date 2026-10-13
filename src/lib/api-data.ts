@@ -1,6 +1,6 @@
 "use client";
 
-import { buildReconPostBody } from "./return-period";
+import { buildReconPostBody, savedRunPeriod } from "./return-period";
 import type { ChaseItem, ChaseStatus, MatchResult, ReconSummary } from "./types";
 import type { RepeatOffenderLabel, VendorSummary } from "./vendors";
 import {
@@ -79,7 +79,7 @@ function failState(message: string): ReconState {
 export async function fetchReconState(): Promise<ReconState> {
   const wantsAuth = expectsServerAuth();
   try {
-    const res = await fetch("/api/recon", { credentials: "include" });
+    const res = await fetch("/api/recon", { credentials: "include", cache: "no-store" });
     if (res.status === 401) {
       if (wantsAuth) {
         authRequiredError();
@@ -136,6 +136,8 @@ export async function persistRecon(
   reconCount?: number;
   /** POST /api/recon → trial.canRun (false once the free run is used). */
   canRun?: boolean;
+  /** Saved return period: server response value, else the one sent. */
+  returnPeriod?: string;
   authError?: string;
   paywall?: boolean;
 }> {
@@ -157,6 +159,7 @@ export async function persistRecon(
         persistence: "postgres",
         reconCount: (data.trial as { reconCount?: number } | undefined)?.reconCount,
         canRun: (data.trial as { canRun?: boolean } | undefined)?.canRun,
+        returnPeriod: savedRunPeriod(data.returnPeriod, meta.returnPeriod),
       };
     }
     if (res.ok && data.persistence === "sample") {

@@ -51,3 +51,12 @@ export function buildReconPostBody<R, S>(
     ...(meta.gstin ? { gstin: meta.gstin } : {}),
   };
 }
+
+/**
+ * The period a just-saved run carries in memory: the POST /api/recon response value when valid,
+ * else the one we sent. "" when neither is a valid YYYY-MM.
+ */
+export function savedRunPeriod(server: unknown, sent: string | null | undefined): string {
+  if (isReturnPeriod(server)) return server;
+  return isReturnPeriod(sent) ? sent : "";
+}

@@ -17,7 +17,7 @@ import {
 } from "../src/lib/return-period";
 import { normalizeReturnPeriod } from "../src/lib/gstin";
 import { getGstr3bDue } from "../src/lib/filing";
-import { buildReconPostBody } from "../src/lib/return-period";
+import { buildReconPostBody, savedRunPeriod } from "../src/lib/return-period";
 import { pickedGstinKey, resolveSelectedGstin } from "../src/lib/selected-gstin";
 
 let n = 0;
@@ -38,6 +38,20 @@ async function run(books: string, gstr: string) {
 }
 
 (async () => {
+  await ok("savedRunPeriod: server value wins, falls back to sent, else empty", () => {
+    assert.equal(savedRunPeriod("2026-08", "2026-07"), "2026-08");
+    assert.equal(savedRunPeriod("", "2026-08"), "2026-08");
+    assert.equal(savedRunPeriod(undefined, "2026-08"), "2026-08");
+    assert.equal(savedRunPeriod("bad", undefined), "");
+  });
+  await ok("post-run in-memory period drives the 3B due period (no reload)", () => {
+    const sent = buildReconPostBody([], {}, { returnPeriod: "2026-08" }).returnPeriod;
+    const p = savedRunPeriod(undefined, sent);
+    const results = [{ category: "matched" } as never];
+    const due = getGstr3bDue(results, new Date("2026-09-05T00:00:00Z"), p);
+    assert.notEqual(due.kind, "none");
+    if (due.kind !== "none") assert.match(String(due.period), /Aug 2026/);
+  });
   await ok("lastMonthIST uses IST calendar", () => {
     assert.equal(lastMonthIST(new Date("2026-10-13T12:00:00Z")), "2026-09");
     // 2026-10-31 19:00Z is already 1 Nov 00:30 IST

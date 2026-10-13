@@ -162,7 +162,7 @@ export function ReconcileScreen() {
   async function afterSaved(
     matched: MatchResult[],
     sum: ReconSummary,
-    saved: { persistence: "postgres" | "demo" | "sample"; reconCount?: number; canRun?: boolean }
+    saved: { persistence: "postgres" | "demo" | "sample"; reconCount?: number; canRun?: boolean; returnPeriod?: string }
   ) {
     setIsSample(false);
     setSampleFiles(null);
@@ -174,7 +174,7 @@ export function ReconcileScreen() {
     if (serverCount !== undefined) setTrialFromServer(serverCount);
     emitTrialChanged(serverCount);
     if (saved.canRun === false) setLocked(true);
-    emitReconChanged();
+    emitReconChanged({ results: matched, returnPeriod: saved.returnPeriod ?? "" });
     setResults(matched);
     setSummary(sum);
     setFilter(defaultFilter(matched));

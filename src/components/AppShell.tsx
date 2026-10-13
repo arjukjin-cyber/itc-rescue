@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import { clearLocalUser, getLocalUser, getTrialUsage, setTrialFromServer, syncProfileFromServer } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
-import { CHASE_COUNT_EVENT, RECON_EVENT, TRIAL_EVENT } from "@/lib/ui-events";
+import { CHASE_COUNT_EVENT, RECON_EVENT, TRIAL_EVENT, type ReconChangedDetail } from "@/lib/ui-events";
 import { getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
 import { viewCounts, viewFromSlug, viewHref, type ItcView } from "@/lib/views";
 import { getSampleRun, isReconScreen } from "@/lib/sample-run";
@@ -316,7 +316,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const n = (e as CustomEvent<number | undefined>).detail;
       setReconUsed(typeof n === "number" ? n : getTrialUsage().reconCount);
     };
-    const onRecon = () => setReconTick((t) => t + 1);
+    const onRecon = (e: Event) => {
+      const d = (e as CustomEvent<ReconChangedDetail | undefined>).detail;
+      // Saved run: apply it (with its returnPeriod) now; no GET that could lag the save.
+      if (d && d.results.length) setRecon(snapOf(d.results, d.returnPeriod));
+      else setReconTick((t) => t + 1);
+    };
     window.addEventListener(CHASE_COUNT_EVENT, onCount);
     window.addEventListener(TRIAL_EVENT, onTrial);
     window.addEventListener(RECON_EVENT, onRecon);
