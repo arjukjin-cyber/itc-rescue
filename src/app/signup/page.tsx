@@ -96,6 +96,8 @@ export default function SignupPage() {
       }
       if (!ok) {
         setError(data?.error || "Signup failed");
+        inFlight.current = false;
+        setLoading(false);
         return;
       }
       const user = data.user as UserSession;

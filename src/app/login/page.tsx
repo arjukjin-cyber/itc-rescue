@@ -55,6 +55,8 @@ export default function LoginPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data?.error || "Login failed");
+        inFlight.current = false;
+        setLoading(false);
         return;
       }
       const user = data.user as UserSession;
