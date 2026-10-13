@@ -84,7 +84,7 @@ const NAV: NavSection[] = [
     crumb: "Reconcile",
     rows: [
       { id: "runs", label: "Runs", href: "/reconcile", icon: GitCompareArrows, on: true },
-      { id: "history", label: "History", href: "/reconcile/history", icon: History, on: false },
+      { id: "history", label: "History", href: "/reconcile/history", icon: History, on: true },
     ],
   },
   {

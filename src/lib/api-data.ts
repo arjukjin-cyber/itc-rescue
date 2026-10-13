@@ -5,6 +5,7 @@ import { withGstinQuery } from "./gstin-scope";
 import { getSelectedGstin } from "./selected-gstin";
 import type { ChaseItem, ChaseStatus, MatchResult, ReconSummary } from "./types";
 import type { RepeatOffenderLabel, VendorSummary } from "./vendors";
+import type { RunHistoryRow } from "./run-history";
 import {
   canRunRecon as localCanRun,
   clearLocalUser,
@@ -386,5 +387,45 @@ export async function saveVendorPhone(
     return { ok: false, error: (data.error as string) || `Save failed (${res.status})` };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+  }
+}
+
+/**
+ * GET /api/recon/history — saved runs for the switcher GSTIN (AppShell publishes
+ * resolveSelectedGstin() via getSelectedGstin()), newest first. No demo fallback.
+ */
+export async function fetchRunHistory(offset = 0): Promise<{
+  persistence: "postgres" | "demo";
+  runs: RunHistoryRow[];
+  nextOffset: number | null;
+  authError?: string;
+  error?: string;
+}> {
+  const wantsAuth = expectsServerAuth();
+  const empty = { runs: [] as RunHistoryRow[], nextOffset: null };
+  try {
+    const path = withGstinQuery(`/api/recon/history${offset > 0 ? `?offset=${offset}` : ""}`, getSelectedGstin());
+    const res = await fetch(path, { credentials: "include", cache: "no-store" });
+    if (res.status === 401) {
+      return wantsAuth
+        ? { persistence: "postgres", ...empty, authError: authRequiredError() }
+        : { persistence: "demo", ...empty };
+    }
+    const data = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (res.ok && data.persistence === "postgres") {
+      return {
+        persistence: "postgres",
+        runs: (data.runs as RunHistoryRow[]) || [],
+        nextOffset: typeof data.nextOffset === "number" ? data.nextOffset : null,
+      };
+    }
+    if (res.ok && data.persistence === "demo" && !wantsAuth) return { persistence: "demo", ...empty };
+    return {
+      persistence: wantsAuth ? "postgres" : "demo",
+      ...empty,
+      error: (data.error as string) || `Could not load run history (${res.status})`,
+    };
+  } catch (e) {
+    return { persistence: wantsAuth ? "postgres" : "demo", ...empty, error: e instanceof Error ? e.message : "Network error" };
   }
 }
