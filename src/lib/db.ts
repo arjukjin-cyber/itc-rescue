@@ -20,6 +20,7 @@ let _schemaReady = false;
 let _vendorsSchemaReady = false;
 
 import type { GstinScope } from "./gstin-scope";
+import { toHistoryRow, toPage, type RunHistoryPage } from "./run-history";
 
 export function hasDatabase(): boolean {
   return Boolean(process.env.DATABASE_URL);
@@ -1001,4 +1002,35 @@ export async function updateCompanyNameForUser(userId: string, name: string): Pr
   if (!companyId) throw new GstinError("Account has no company", 404, "no_company");
   await sql`UPDATE companies SET name = ${name} WHERE id = ${companyId}`;
   return name;
+}
+
+/**
+ * Run history (GET /api/recon/history): the user's runs in `scope`, newest first, one page.
+ * Counts / at-risk ₹ come from the stored summary JSONB; mismatch ₹ (not in the summary) is
+ * Σ |taxDiff| of value_mismatch rows, aggregated in SQL so the results JSON never leaves Postgres.
+ * Fetches limit+1 rows to know whether there is a next page.
+ */
+export async function listReconRunsForUser(
+  userId: string,
+  scope: GstinScope,
+  limit: number,
+  offset: number
+): Promise<RunHistoryPage> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql.query(
+    `SELECT r.id, r.created_at, r.return_period, r.company_gstin,
+            COALESCE((r.summary->>'matched')::numeric, 0) AS matched,
+            COALESCE((r.summary->>'itcAtRiskAmount')::numeric, 0) AS itc_at_risk_amount,
+            COALESCE((r.summary->>'unclaimed')::numeric, 0) AS unclaimed,
+            (SELECT COALESCE(SUM(ABS(COALESCE((e->>'taxDiff')::numeric, 0))), 0)
+               FROM jsonb_array_elements(CASE WHEN jsonb_typeof(r.results) = 'array' THEN r.results ELSE '[]'::jsonb END) e
+              WHERE e->>'category' = 'value_mismatch') AS mismatch_amount
+     FROM recon_runs r
+     WHERE r.user_id = $1 AND ${CHASE_SCOPE_SQL(2, "r.")}
+     ORDER BY r.created_at DESC, r.id DESC
+     LIMIT $3 OFFSET $4`,
+    [userId, scope, limit + 1, offset]
+  );
+  return toPage((rows as Record<string, unknown>[]).map(toHistoryRow), limit, offset);
 }

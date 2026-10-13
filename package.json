@@ -14,7 +14,8 @@
     "check:vendors": "npx -y tsx scripts/vendors-check.ts",
     "check:gstin": "npx --yes tsx scripts/test-gstin.ts",
     "test:period": "npx --yes tsx scripts/test-return-period.ts",
-    "test:scope": "npx --yes tsx scripts/test-gstin-scope.ts"
+    "test:scope": "npx --yes tsx scripts/test-gstin-scope.ts",
+    "test:history": "npx --yes tsx scripts/test-run-history.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
