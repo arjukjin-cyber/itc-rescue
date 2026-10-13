@@ -323,7 +323,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     clearLocalUser();
-    router.push("/");
+    // Hard navigation drops the client router cache so a stale
+    // authenticated /dashboard payload can't flash after logout.
+    window.location.assign("/");
   }
 
   const period = recon && recon.due.kind !== "none" ? recon.due.period : null;

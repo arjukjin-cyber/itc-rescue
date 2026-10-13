@@ -52,6 +52,10 @@ export default function SignupPage() {
       if (Object.keys(patch).length) setForm((cur) => ({ ...cur, ...patch }));
     }
     setMounted(true);
+    // If a session already exists (e.g. signup succeeded and the page re-rendered), never show an empty form.
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((r) => { if (r.ok) window.location.replace("/dashboard"); })
+      .catch(() => {});
   }, []);
 
   function setField<K extends keyof FormState>(field: K, value: FormState[K]) {

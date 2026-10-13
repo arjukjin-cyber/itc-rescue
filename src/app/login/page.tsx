@@ -37,6 +37,10 @@ export default function LoginPage() {
       if (pw instanceof HTMLInputElement && pw.value) setPassword(pw.value);
     }
     setMounted(true);
+    // If a session already exists (e.g. signup succeeded and the page re-rendered), never show an empty form.
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((r) => { if (r.ok) window.location.replace("/dashboard"); })
+      .catch(() => {});
   }, []);
 
   async function onSubmit(e: FormEvent) {
