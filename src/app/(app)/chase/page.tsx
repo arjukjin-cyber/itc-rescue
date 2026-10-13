@@ -9,7 +9,7 @@ import { ChaseStateCell, IssueCell } from "@/components/RiskTable";
 import { formatDay, inr } from "@/lib/format";
 import { emitChaseCount } from "@/lib/ui-events";
 import { syncProfileFromServer } from "@/lib/storage";
-import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
+import { fetchChaseItems, fetchReconState, fetchVendors } from "@/lib/api-data";
 import { formatIndianMobile, waLink } from "@/lib/phone";
 import { whatsappEnglish, whatsappHindi, emailSubject, emailBody } from "@/lib/templates";
 import type { ChaseItem, MatchResult, UserSession } from "@/lib/types";
@@ -31,6 +31,8 @@ export default function ChasePage() {
   const [lang, setLang] = useState<"en" | "hi">("en");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [allFixed, setAllFixed] = useState(false);
+  /** GSTINs with GET /api/vendors `repeatOffender === true` (label "shown" only): "Repeat offender" chip. */
+  const [repeatOffenders, setRepeatOffenders] = useState<Set<string>>(new Set());
 
   async function reload() {
     const [{ items: all, authError: chaseAuth }, recon, me] = await Promise.all([
@@ -64,6 +66,14 @@ export default function ChasePage() {
     if (me) syncProfileFromServer(me);
     setCompany(me ? me.companyName || me.name || "" : "");
   }
+
+  // Repeat-offender chips: same source/rule as recon results (#38). Best-effort; errors → no chips.
+  useEffect(() => {
+    void fetchVendors().then((v) => {
+      if (v.repeatOffenderLabel !== "shown") return;
+      setRepeatOffenders(new Set(v.vendors.filter((x) => x.repeatOffender === true).map((x) => x.gstin)));
+    });
+  }, []);
 
   useEffect(() => {
     void reload();
@@ -178,7 +188,12 @@ export default function ChasePage() {
                 <Fragment key={item.id}>
                   <tr>
                     <td>
-                      <div className="vn">{item.vendorName}</div>
+                      <div className="vn">
+                        {item.vendorName}
+                        {item.gstin && repeatOffenders.has(item.gstin) && (
+                          <span className="chip ml-2" data-testid="repeat-offender">Repeat offender</span>
+                        )}
+                      </div>
                       <div className="mono-sm muted">
                         {item.gstin}
                         {phone ? ` · ${formatIndianMobile(phone)}` : ""}
