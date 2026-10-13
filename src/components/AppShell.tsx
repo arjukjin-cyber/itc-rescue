@@ -102,7 +102,7 @@ const NAV: NavSection[] = [
     title: "Vendors",
     crumb: "Vendors",
     rows: [
-      { id: "directory", label: "Directory", href: "/vendors", icon: Building2, on: false },
+      { id: "directory", label: "Directory", href: "/vendors", icon: Building2, on: true },
       { id: "chase", label: "Chase queue", href: "/chase", icon: Send, count: "pending", on: true },
       { id: "templates", label: "Templates", href: "/vendors/templates", icon: MessageSquareText, on: false },
       // Existing screen, not in the v3 IA: kept routable (⌘K), not in the sidebar.
