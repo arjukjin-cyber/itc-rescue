@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { clearAllLocal, resetTrialUsage, syncProfileFromServer } from "@/lib/storage";
 import type { UserSession } from "@/lib/types";
+import { messageForErrorCode } from "@/lib/auth-form";
 
 type FormState = {
   name: string;
@@ -51,6 +52,9 @@ export default function SignupPage() {
       }
       if (Object.keys(patch).length) setForm((cur) => ({ ...cur, ...patch }));
     }
+    // Native (pre-hydration) submit failures come back as ?error=<code>.
+    const code = new URLSearchParams(window.location.search).get("error");
+    if (code) setError(messageForErrorCode(code));
     setMounted(true);
     // If a session already exists (e.g. signup succeeded and the page re-rendered), never show an empty form.
     fetch("/api/auth/me", { cache: "no-store" })
@@ -167,7 +171,8 @@ export default function SignupPage() {
           <p className="mt-1 text-[12px]" style={{ color: "var(--color-text-3)" }}>
             1 free reconciliation · No card · No GST portal login
           </p>
-          <form ref={formRef} method="post" onSubmit={onSubmit} className="mt-8 space-y-4">
+          <form ref={formRef} action="/api/auth/login" method="post" onSubmit={onSubmit} className="mt-8 space-y-4">
+            <input type="hidden" name="isSignup" value="true" />
             {fields.map((field) => (
               <div key={field.key}>
                 <label htmlFor={`signup-${field.key}`} className="block text-sm font-medium text-slate-700">

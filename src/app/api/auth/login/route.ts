@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { COOKIE, createSessionToken } from "@/lib/auth";
 import { authenticateUser, hasDatabase, registerUser } from "@/lib/db";
 import type { UserSession } from "@/lib/types";
+import { errorCodeFor, errorRedirectPath, formDataToBody, isFormContentType } from "@/lib/auth-form";
 
 function toSession(u: {
   email: string;
@@ -24,8 +25,36 @@ function toSession(u: {
 }
 
 export async function POST(req: NextRequest) {
+  if (!isFormContentType(req.headers.get("content-type"))) return handle(req.json());
+  // Native (pre-hydration) form submit: same logic, answer with 303 redirects.
+  let body: Record<string, unknown> = {};
   try {
-    const body = await req.json();
+    body = formDataToBody(await req.formData());
+  } catch {
+    /* empty body -> validation fails below */
+  }
+  const isSignup = Boolean(body.isSignup);
+  let res = await handle(body);
+  // Mirror the client flow: signup on an existing email retries as login with the same password.
+  if (isSignup && res.status === 409) res = await handle({ ...body, isSignup: false });
+  const base = req.nextUrl.clone();
+  base.search = "";
+  if (res.ok) {
+    base.pathname = "/dashboard";
+    const out = NextResponse.redirect(base, 303);
+    for (const c of res.cookies.getAll()) out.cookies.set(c);
+    return out;
+  }
+  const data = await res.json().catch(() => ({}));
+  const code = errorCodeFor(String(data?.error || ""), res.status);
+  const target = new URL(errorRedirectPath(isSignup, code), base);
+  return NextResponse.redirect(target, 303);
+}
+
+async function handle(input: unknown | Promise<unknown>) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body: any = await input;
     const email = String(body.email || "").trim().toLowerCase();
     const password = String(body.password || "").trim();
     const name = String(body.name || email.split("@")[0] || "User");
