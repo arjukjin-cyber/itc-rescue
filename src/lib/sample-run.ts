@@ -14,14 +14,22 @@ export interface SampleRun {
   files: [string, string];
 }
 
-let current: SampleRun | null = null;
+let current: { scope: string | null; run: SampleRun } | null = null;
+/** Active (user email|GSTIN) scope, published by AppShell (see client-scope.ts). */
+let activeScope: string | null = null;
+
+/** Called by AppShell on every render; a run from another user/GSTIN is dropped. */
+export function setSampleRunScope(scope: string | null) {
+  activeScope = scope;
+  if (current && current.scope !== scope) current = null;
+}
 
 export function getSampleRun(): SampleRun | null {
-  return current;
+  return current && current.scope !== null && current.scope === activeScope ? current.run : null;
 }
 
 export function setSampleRun(run: SampleRun) {
-  current = run;
+  current = { scope: activeScope, run };
 }
 
 export function clearSampleRun() {

@@ -154,7 +154,7 @@ export async function persistRecon(
     const data = await res.json().catch(() => ({} as Record<string, unknown>));
 
     if (res.ok && data.persistence === "postgres") {
-      localSaveRecon(results, summary);
+      // No unkeyed localStorage copy for signed-in users: the server is the only source.
       return {
         ok: true,
         chase: data.chase as ChaseItem[] | undefined,
