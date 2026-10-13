@@ -2,10 +2,20 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { clearAllLocal, syncProfileFromServer } from "@/lib/storage";
 import type { UserSession } from "@/lib/types";
+
+
+const NAV_FALLBACK_MS = 6000;
+
+function goToDashboard(router: ReturnType<typeof useRouter>) {
+  router.replace("/dashboard");
+  window.setTimeout(() => {
+    if (window.location.pathname !== "/dashboard") window.location.assign("/dashboard");
+  }, NAV_FALLBACK_MS);
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,9 +23,30 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const inFlight = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    // Text typed before hydration lives only in the DOM; copy it into state so it isn't wiped.
+    const f = formRef.current;
+    if (f) {
+      const em = f.elements.namedItem("email");
+      const pw = f.elements.namedItem("password");
+      if (em instanceof HTMLInputElement && em.value) setEmail(em.value);
+      if (pw instanceof HTMLInputElement && pw.value) setPassword(pw.value);
+    }
+    setMounted(true);
+    // If a session already exists (e.g. signup succeeded and the page re-rendered), never show an empty form.
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((r) => { if (r.ok) window.location.replace("/dashboard"); })
+      .catch(() => {});
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (inFlight.current) return;
+    inFlight.current = true;
     setError("");
     setLoading(true);
     try {
@@ -25,21 +56,25 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || "Login failed");
+        setError(data?.error || "Login failed");
+        inFlight.current = false;
+        setLoading(false);
         return;
       }
       const user = data.user as UserSession;
       // Always start clean: nothing from a previous session on this browser carries over.
       clearAllLocal();
       syncProfileFromServer(user);
-      router.push("/dashboard");
+      goToDashboard(router);
+      return; // success: keep inFlight held
     } catch {
       setError("Something went wrong");
-    } finally {
-      setLoading(false);
     }
+    // Released only on error paths; on success the guard stays held until navigation.
+    inFlight.current = false;
+    setLoading(false);
   }
 
   return (
@@ -55,25 +90,35 @@ export default function LoginPage() {
           <p className="mt-1 text-sm text-slate-600">
             Sign in with your work email and password. Accounts are stored securely.
           </p>
-          <form onSubmit={onSubmit} className="mt-8 space-y-4">
+          <form ref={formRef} method="post" onSubmit={onSubmit} className="mt-8 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700">Email</label>
+              <label htmlFor="login-email" className="block text-sm font-medium text-slate-700">
+                Email
+              </label>
               <input
+                id="login-email"
+                name="email"
                 type="email"
+                autoComplete="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                className="input-token mt-1 w-full px-3 py-2 text-sm"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700">Password</label>
+              <label htmlFor="login-password" className="block text-sm font-medium text-slate-700">
+                Password
+              </label>
               <input
+                id="login-password"
+                name="password"
                 type="password"
+                autoComplete="current-password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                className="input-token mt-1 w-full px-3 py-2 text-sm"
               />
             </div>
             {error && (
@@ -83,15 +128,16 @@ export default function LoginPage() {
             )}
             <button
               type="submit"
-              disabled={loading}
-              className="w-full rounded-xl bg-teal-700 py-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-60"
+              disabled={!mounted || loading}
+              className="btn btn-pri btn-lg w-full disabled:opacity-60"
             >
               {loading ? "Signing in…" : "Log in"}
             </button>
           </form>
           <p className="mt-6 text-center text-sm text-slate-600">
             New here?{" "}
-            <Link href="/signup" className="font-semibold text-teal-700 hover:underline">
+            <Link href="/signup"
+              prefetch={false} className="font-semibold text-accent hover:underline">
               Create account
             </Link>
           </p>

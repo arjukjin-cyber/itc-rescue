@@ -1,61 +1,28 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
-import { Inbox, Kanban } from "lucide-react";
+import { useEffect, useState } from "react";
+import { SquareKanban } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { fetchChaseItems, persistChaseStatus } from "@/lib/api-data";
-import { formatINRPrecise } from "@/lib/reconcile";
+import { inr } from "@/lib/format";
+import { emitChaseCount } from "@/lib/ui-events";
 import type { ChaseItem, ChaseStatus } from "@/lib/types";
 
-const COLUMNS: {
-  key: ChaseStatus;
-  label: string;
-  laneStyle: CSSProperties;
-  headerFg: string;
-  chipBd: string;
-  emptyHint: string;
-}[] = [
-  {
-    key: "pending",
-    label: "Pending",
-    laneStyle: {
-      borderColor: "var(--color-status-warn-bd)",
-      backgroundColor: "var(--color-status-warn-bg)",
-    },
-    headerFg: "var(--color-status-warn-fg)",
-    chipBd: "var(--color-status-warn-bd)",
-    emptyHint: "Move an invoice here while you wait on the vendor",
-  },
-  {
-    key: "fixed",
-    label: "Fixed",
-    laneStyle: {
-      borderColor: "var(--color-status-ok-bd)",
-      backgroundColor: "var(--color-status-ok-bg)",
-    },
-    headerFg: "var(--color-status-ok-fg)",
-    chipBd: "var(--color-status-ok-bd)",
-    emptyHint: "Move here when the vendor files GSTR-1",
-  },
-  {
-    key: "still_blocked",
-    label: "Still blocked",
-    laneStyle: {
-      borderColor: "var(--color-status-risk-bd)",
-      backgroundColor: "var(--color-status-risk-bg)",
-    },
-    headerFg: "var(--color-status-risk-fg)",
-    chipBd: "var(--color-status-risk-bd)",
-    emptyHint: "Park stuck invoices here for follow-up",
-  },
+const COLUMNS: { key: ChaseStatus; label: string; dot: string; emptyHint: string }[] = [
+  { key: "pending", label: "Pending", dot: "dot-warn", emptyHint: "Invoices waiting on the vendor land here." },
+  { key: "fixed", label: "Fixed", dot: "dot-ok", emptyHint: "Move here when the vendor files GSTR-1." },
+  { key: "still_blocked", label: "Still blocked", dot: "dot-risk", emptyHint: "Park stuck invoices here for follow-up." },
 ];
 
 export default function StatusPage() {
   const [items, setItems] = useState<ChaseItem[]>([]);
+  /** Hold EmptyState until first fetch settles (no empty-board flash on cold load) */
+  const [loaded, setLoaded] = useState(false);
 
   async function reload() {
     const { items: next } = await fetchChaseItems();
     setItems(next);
+    setLoaded(true);
   }
 
   useEffect(() => {
@@ -74,19 +41,29 @@ export default function StatusPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (loaded) emitChaseCount(items.filter((i) => i.status === "pending").length);
+  }, [items, loaded]);
+
   async function move(id: string, status: ChaseStatus) {
     const next = await persistChaseStatus(id, status);
-    setItems(next);
+    // Empty list = failed save (401 / server error): re-read instead of blanking the board
+    if (next.length) setItems(next);
+    else void reload();
+  }
+
+  if (!loaded) {
+    return <div aria-busy="true" aria-label="Loading status board" />;
   }
 
   if (!items.length) {
     return (
-      <div className="flex min-h-[min(28rem,70vh)] items-center justify-center px-2">
+      <div className="space-y-3">
+        <h1 className="page-title">Status</h1>
         <EmptyState
-          icon={Kanban}
-          title="Status board is empty"
-          description="After a reconciliation, at-risk invoices show up here so you can track vendor fixes."
-          actionLabel="Go to Reconcile"
+          icon={SquareKanban}
+          title="Run a reconciliation to start tracking vendor fixes."
+          actionLabel="Run reconciliation"
           actionHref="/reconcile"
         />
       </div>
@@ -94,67 +71,48 @@ export default function StatusPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4">
+    <div className="space-y-3">
       <div>
-        <h1 className="page-title">Status board</h1>
-        <p className="mt-1 text-sm" style={{ color: "var(--color-text-secondary)" }}>
-          Tap to move invoices across Pending / Fixed / Still blocked
-        </p>
+        <h1 className="page-title">Status</h1>
+        <div className="helper-line">Move each invoice as the vendor fixes it.</div>
       </div>
 
-      <div className="grid gap-2 lg:grid-cols-3">
+      <div className="grid gap-3 pt-1 lg:grid-cols-3">
         {COLUMNS.map((col) => {
           const colItems = items.filter((i) => i.status === col.key);
+          const total = colItems.reduce((s, i) => s + (i.amount || 0), 0);
           return (
-            <div
-              key={col.key}
-              className="flex min-h-[14rem] flex-col rounded-[var(--radius-md)] border p-2"
-              style={col.laneStyle}
-            >
-              <div className="mb-2 flex items-center justify-between gap-2 px-1 py-0.5">
-                <h2
-                  className="text-[0.8125rem] font-bold uppercase tracking-wide"
-                  style={{ color: col.headerFg, fontWeight: 700 }}
-                >
+            <section key={col.key} className="card flex min-h-[14rem] flex-col p-2" aria-label={col.label}>
+              <div className="flex items-center gap-2 px-1.5 pb-2 pt-1">
+                <span className={`dot ${col.dot}`} aria-hidden />
+                <h2 className="text-[13px] font-semibold" style={{ color: "var(--color-ink)" }}>
                   {col.label}
                 </h2>
-                <span
-                  className="inline-flex min-w-[1.625rem] items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums leading-none"
-                  style={{
-                    backgroundColor: "var(--color-bg)",
-                    color: col.headerFg,
-                    border: `1.5px solid ${col.chipBd}`,
-                  }}
-                >
-                  {colItems.length}
+                <span className="muted">{colItems.length}</span>
+                <span className="ml-auto text-[12px]" style={{ color: "var(--color-text-2)" }}>
+                  {inr(total)}
                 </span>
               </div>
-              <div className="flex flex-1 flex-col gap-2">
+              <div className="flex flex-1 flex-col gap-1.5">
                 {colItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-[var(--radius-sm)] border p-2.5 shadow-sm"
-                    style={{
-                      borderColor: "var(--color-border)",
-                      backgroundColor: "var(--color-bg)",
-                    }}
-                  >
-                    <div className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>
-                      {item.vendorName}
+                  <div key={item.id} className="rounded-md border px-2.5 py-2" style={{ borderColor: "var(--color-line)" }}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium" style={{ color: "var(--color-ink)" }}>
+                          {item.vendorName}
+                        </div>
+                        <div className="mono-sm muted">{item.invoiceNumber}</div>
+                      </div>
+                      <div className="shrink-0 text-right">{inr(item.amount)}</div>
                     </div>
-                    <div className="mt-0.5 text-meta">
-                      {item.invoiceNumber} · {formatINRPrecise(item.amount)}
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-1">
+                    <div className="mt-1.5 flex flex-wrap gap-1">
                       {COLUMNS.filter((c) => c.key !== item.status).map((c) => (
                         <button
                           key={c.key}
+                          type="button"
                           onClick={() => move(item.id, c.key)}
-                          className="rounded-[var(--radius-sm)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide hover:opacity-90"
-                          style={{
-                            backgroundColor: "var(--color-bg-subtle)",
-                            color: "var(--color-text-secondary)",
-                          }}
+                          className="btn btn-sm btn-quiet"
+                          style={{ height: 22, fontSize: 12 }}
                         >
                           → {c.label}
                         </button>
@@ -164,34 +122,15 @@ export default function StatusPage() {
                 ))}
                 {!colItems.length && (
                   <div
-                    className="flex min-h-[8rem] flex-1 flex-col items-center justify-center rounded-[var(--radius-sm)] border border-dashed px-3 py-4 text-center"
-                    style={{
-                      borderColor: "var(--color-border-strong)",
-                      backgroundColor: "var(--color-bg)",
-                    }}
+                    title={col.emptyHint}
+                    className="flex flex-1 items-center justify-center rounded-md border border-dashed px-3 py-6 text-center"
+                    style={{ borderColor: "#d4d4d8", color: "var(--color-text-3)" }}
                   >
-                    <div
-                      className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)]"
-                      style={{
-                        backgroundColor: "var(--color-bg-subtle)",
-                        color: "var(--color-text-muted)",
-                      }}
-                    >
-                      <Inbox size={16} aria-hidden />
-                    </div>
-                    <p
-                      className="mt-2 text-sm font-semibold"
-                      style={{ color: "var(--color-text)" }}
-                    >
-                      No items
-                    </p>
-                    <p className="mt-1 max-w-[13rem] text-meta leading-snug">
-                      {col.emptyHint}
-                    </p>
+                    No invoices
                   </div>
                 )}
               </div>
-            </div>
+            </section>
           );
         })}
       </div>

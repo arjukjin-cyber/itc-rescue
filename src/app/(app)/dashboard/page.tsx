@@ -1,199 +1,211 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import {
-  Upload,
-  GitCompareArrows,
-  MessageSquare,
-  Kanban,
-  FileSpreadsheet,
-} from "lucide-react";
-import { StatCard } from "@/components/StatCard";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { CircleCheck, Clock, Inbox, Lock, Plus, Send, SquareKanban, Upload } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
-import { getLocalUser, getSettings } from "@/lib/storage";
-import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
-import { formatINR } from "@/lib/reconcile";
-import type { ReconSummary } from "@/lib/types";
+import { LoadingSkeleton } from "@/components/LoadingSkeleton";
+import { KpiStrip } from "@/components/KpiStrip";
+import { ActionTable, ResultTabs, filterByTab, useChaseRows, type TabKey } from "@/components/RiskTable";
+import { Toast, useToast } from "@/components/Toast";
+import { syncProfileFromServer } from "@/lib/storage";
+import { fetchChaseItems, fetchReconState, type ReconTri } from "@/lib/api-data";
+import { daysText, getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
+import { formatIstTimestamp } from "@/lib/format";
+import { TRIAL_USED_MESSAGE } from "@/lib/recon-guard";
+import type { MatchResult, UserSession } from "@/lib/types";
 
 export default function DashboardPage() {
-  const [name, setName] = useState("there");
-  const [summary, setSummary] = useState<ReconSummary | null>(null);
-  const [pending, setPending] = useState(0);
+  const router = useRouter();
+  /**
+   * GET /api/recon tri-state: undefined = loading (skeleton), null = server said no recon
+   * (empty state), object = data. Errors keep it undefined and take the existing path
+   * (redirect to /login), so the empty state can't flash before data arrives.
+   */
+  const [recon, setRecon] = useState<ReconTri>(undefined);
+  const loaded = recon !== undefined;
+  const summary = recon?.summary ?? null;
+  const results: MatchResult[] = useMemo(() => recon?.results ?? [], [recon]);
+  /** Chase text sender name: the server profile (/api/auth/me, synced via #34's helper) only. */
   const [company, setCompany] = useState("");
+  const [tab, setTab] = useState<TabKey>("action");
+  const [lastRecon, setLastRecon] = useState<string | null>(null);
+  /** Trial used → header "New recon" shown locked (v3 frame). */
+  const [canRun, setCanRun] = useState(true);
+  const { toast, show, dismiss } = useToast();
+  const { setChase, statusById, pendingCount, resolve, resolveMany, busy } = useChaseRows(show);
 
   useEffect(() => {
-    const u = getLocalUser();
-    if (u) setName(u.name?.split(" ")[0] || "there");
-    setCompany(getSettings().companyName);
+    let cancelled = false;
     (async () => {
-      const [recon, chase] = await Promise.all([fetchReconState(), fetchChaseItems()]);
-      setSummary(recon.summary);
-      setPending(chase.items.filter((c) => c.status === "pending").length);
+      const [recon, chaseRes, me] = await Promise.all([
+        fetchReconState(),
+        fetchChaseItems(),
+        fetch("/api/auth/me", { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => (d?.user as UserSession | null | undefined) ?? null)
+        .catch(() => null),
+      ]);
+      if (cancelled) return;
+      if (recon.authError) {
+        router.replace("/login");
+        return;
+      }
+      if (me) syncProfileFromServer(me);
+      setCompany(me ? me.companyName || me.name || "" : "");
+      if (!chaseRes.authError) setChase(chaseRes.items);
+      // "Last recon" = the saved run's created_at from GET /api/recon (#28), shown in IST.
+      setLastRecon(recon.recon ? recon.createdAt ?? null : null);
+      setCanRun(recon.canRun);
+      setRecon(recon.recon);
     })();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [router, setChase]);
+
+  // Sidebar "Filing" block links to /dashboard#filing; the cell only exists after load.
+  useEffect(() => {
+    if (!loaded || window.location.hash !== "#filing") return;
+    document.getElementById("filing")?.scrollIntoView({ block: "center" });
+  }, [loaded]);
+
+  const rows = useMemo(() => filterByTab(results, tab), [results, tab]);
+  const due = useMemo(() => getGstr3bDue(results), [results]);
+
+  if (recon === undefined) return <LoadingSkeleton label="Loading dashboard" kpis={5} rows={5} cols={6} actions />;
+
+  if (recon === null || !summary) return <DashboardEmpty due={due} />;
+
+  const chaseLabel = `Chase ${pendingCount} vendor${pendingCount === 1 ? "" : "s"} on WhatsApp`;
+  const meta = [
+    due.kind !== "none" ? `${due.period} return period` : null,
+    lastRecon ? `Last recon ${formatIstTimestamp(lastRecon)}` : null,
+    `${summary.totalBooks} invoices in books, ${summary.totalGstr2b} in GSTR-2B`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4">
-      <div className="welcome-strip">
-        <div className="min-w-0 flex-1">
-          <h1 className="page-title">
-            Namaste, {name} 👋
-          </h1>
-          <p
-            className="mt-1 text-sm leading-relaxed"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            {company ? `${company} · ` : ""}
-            Unblock ITC before your next GSTR-3B filing.
-          </p>
+    <div className="space-y-3">
+      {/* v3 page header: H1 + one text-3 sub-line; page actions right of the H1. No greeting (v3 frame). */}
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0">
+          <h1 className="page-title">Dashboard</h1>
+          <div className="helper-line">
+            <span>{meta}</span>
+          </div>
         </div>
-        <Link
-          href={summary ? "/chase" : "/reconcile"}
-          className="btn-accent inline-flex shrink-0 items-center justify-center px-4 py-2 text-sm font-semibold"
-        >
-          {summary ? "Chase vendors →" : "Start reconciling →"}
-        </Link>
+        {canRun ? (
+          <Link href="/reconcile?new=1" className="btn">
+            <Plus aria-hidden /> New recon
+          </Link>
+        ) : (
+          <button
+            type="button"
+            className="btn"
+            aria-disabled="true"
+            title="Free trial used"
+            onClick={() => show({ text: TRIAL_USED_MESSAGE })}
+          >
+            <Lock aria-hidden /> New recon
+          </button>
+        )}
       </div>
 
-      {summary ? (
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Matched" value={summary.matched} tone="success" sub={formatINR(summary.matchedAmount)} />
-          <StatCard
-            label="ITC at risk"
-            value={summary.itcAtRisk}
-            tone="danger"
-            sub={formatINR(summary.itcAtRiskAmount)}
-          />
-          <StatCard label="Value mismatch" value={summary.valueMismatch} tone="warn" />
-          <StatCard label="Unclaimed (2B only)" value={summary.unclaimed} tone="info" />
-        </div>
+      <div className="pt-1">
+        <KpiStrip results={results} summary={summary} due={due} />
+      </div>
+
+      <div className="progress-line">
+        <span className="step">
+          <CircleCheck aria-hidden /> Purchase register
+        </span>
+        <span className="step">
+          <CircleCheck aria-hidden /> GSTR-2B
+        </span>
+        <span className="step">
+          <CircleCheck aria-hidden /> Recon run
+        </span>
+        {pendingCount > 0 ? (
+          <span className="step" data-current="true">
+            <span className="dot dot-accent" aria-hidden /> Chase vendors · {pendingCount} pending
+          </span>
+        ) : (
+          <span className="step">
+            <CircleCheck aria-hidden /> Vendors chased
+          </span>
+        )}
+        <div className="flex-1" />
+        {pendingCount > 0 ? (
+          <Link href="/chase" className="btn btn-pri btn-lg">
+            <Send aria-hidden /> {chaseLabel}
+          </Link>
+        ) : (
+          <Link href="/status" className="btn btn-lg">
+            <SquareKanban aria-hidden /> Open status board
+          </Link>
+        )}
+      </div>
+
+      <div className="pt-2">
+        <ResultTabs results={results} tab={tab} onTab={setTab} />
+      </div>
+
+      {rows.length ? (
+        <ActionTable
+          rows={rows}
+          statusById={statusById}
+          busy={busy}
+          company={company}
+          onResolve={(id) => void resolve(id)}
+          onResolveMany={resolveMany}
+        />
       ) : (
         <EmptyState
-          icon={FileSpreadsheet}
-          title="No reconciliation yet"
-          description="Upload your purchase register and GSTR-2B to find ITC at risk."
-          actionLabel="Start reconciling"
-          actionHref="/reconcile"
+          icon={Inbox}
+          title={tab === "action" ? "Nothing needs action in this recon." : "No invoices in this view."}
+          actionLabel="Show all invoices"
+          onAction={() => setTab("all")}
         />
       )}
 
-      {/* Next-action cards — matching next step is sole primary tile; rest ghost */}
-      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-4">
-        {[
-          {
-            id: "reconcile",
-            href: "/reconcile",
-            icon: Upload,
-            title: "Upload & reconcile",
-            desc: "Match books vs GSTR-2B",
-          },
-          {
-            id: "results",
-            href: "/reconcile",
-            icon: GitCompareArrows,
-            title: "View results",
-            desc: summary
-              ? `${summary.totalBooks} books · ${summary.totalGstr2b} in 2B`
-              : "Run a recon first",
-          },
-          {
-            id: "chase",
-            href: "/chase",
-            icon: MessageSquare,
-            title: "Vendor chase",
-            desc: pending
-              ? `${pending} pending follow-ups`
-              : "WhatsApp EN + HI templates",
-          },
-          {
-            id: "status",
-            href: "/status",
-            icon: Kanban,
-            title: "Status board",
-            desc: "Pending · Fixed · Still blocked",
-          },
-        ].map((card) => {
-          const isPrimary = summary ? card.id === "chase" : card.id === "reconcile";
-          return (
-            <Link
-              key={card.title}
-              href={card.href}
-              className={
-                isPrimary
-                  ? "group rounded-[var(--radius-md)] border p-3 shadow-sm transition hover:shadow-md"
-                  : "group btn-ghost rounded-[var(--radius-md)] border p-3 transition"
-              }
-              style={
-                isPrimary
-                  ? {
-                      borderColor: "var(--color-accent-ring)",
-                      backgroundColor: "var(--color-accent-soft)",
-                    }
-                  : {
-                      borderColor: "var(--color-border)",
-                      backgroundColor: "transparent",
-                    }
-              }
-            >
-              <card.icon
-                style={{
-                  color: isPrimary
-                    ? "var(--color-accent)"
-                    : "var(--color-text-muted)",
-                }}
-                size={20}
-              />
-              <div
-                className="mt-2 text-sm font-semibold group-hover:opacity-90"
-                style={{
-                  color: isPrimary
-                    ? "var(--color-accent)"
-                    : "var(--color-text-secondary)",
-                }}
-              >
-                {card.title}
-              </div>
-              <div className="mt-0.5 text-meta">{card.desc}</div>
-            </Link>
-          );
-        })}
-      </div>
+      <Toast toast={toast} onDismiss={dismiss} />
+    </div>
+  );
+}
 
-      {/* Compact sample-files row */}
-      <div
-        className="flex flex-col gap-2 rounded-[var(--radius-md)] border px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"
-        style={{
-          borderColor: "var(--color-border)",
-          backgroundColor: "var(--color-bg)",
-        }}
-      >
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>
-            Sample files
-          </h3>
-          <p className="mt-0.5 text-meta">
-            Download them, or use &quot;Try with sample files&quot; on Reconcile. Sample runs are never saved.
-          </p>
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
-          <a
-            href="/samples/purchase-register.csv"
-            className="btn-ghost inline-flex items-center gap-1.5 px-3 py-1.5 text-sm"
-            download
-          >
-            <FileSpreadsheet size={14} />
-            purchase-register.csv
-          </a>
-          <a
-            href="/samples/gstr-2b.csv"
-            className="btn-ghost inline-flex items-center gap-1.5 px-3 py-1.5 text-sm"
-            download
-          >
-            <FileSpreadsheet size={14} />
-            gstr-2b.csv
-          </a>
-        </div>
+const STEPS = ["Purchase register", "GSTR-2B", "Recon run", "Chase vendors"];
+
+function DashboardEmpty({ due }: { due: Gstr3bDue }) {
+  return (
+    <div className="space-y-3">
+      <h1 className="page-title">Dashboard</h1>
+      <EmptyState
+        icon={Upload}
+        title="Upload your purchase register to see how much ITC is at risk."
+        actionLabel="Upload purchase register"
+        actionHref="/reconcile"
+        secondaryLabel="Try with sample files (not saved)"
+        secondaryHref="/reconcile?sample=1"
+      />
+      <div className="progress-line">
+        {STEPS.map((s, i) => (
+          <span key={s} className="step" data-current={i === 0 ? "true" : undefined} data-todo={i > 0 ? "true" : undefined}>
+            <span className={`dot ${i === 0 ? "dot-accent" : ""}`} style={i > 0 ? { backgroundColor: "var(--color-line)" } : undefined} aria-hidden />
+            {s}
+          </span>
+        ))}
+        <div className="flex-1" />
+        <span id="filing" className="filing-target inline-flex items-center gap-1.5 rounded px-1 muted">
+          <Clock size={13} strokeWidth={1.75} aria-hidden />
+          {due.kind === "open"
+            ? `GSTR-3B · ${daysText(due.daysLeft)} · due ${due.dueLabel}`
+            : due.kind === "past"
+              ? `GSTR-3B · Was due ${due.dueLabel}`
+              : "GSTR-3B · No recon yet"}
+        </span>
       </div>
     </div>
   );

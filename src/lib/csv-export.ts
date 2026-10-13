@@ -73,3 +73,8 @@ export function downloadCsv(filename: string, csv: string) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/** YYYY-MM-DD in IST (users are in India; toISOString() is UTC). */
+export function istDate(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(d);
+}
