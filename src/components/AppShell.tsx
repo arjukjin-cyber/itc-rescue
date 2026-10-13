@@ -40,6 +40,7 @@ import { getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
 import { viewCounts, viewFromSlug, viewHref, type ItcView } from "@/lib/views";
 import { getSampleRun, isReconScreen } from "@/lib/sample-run";
 import { Dropdown } from "./Dropdown";
+import { setSelectedGstin } from "@/lib/selected-gstin";
 import { CommandPalette, type PalettePage } from "./CommandPalette";
 import type { MatchResult, UserSession } from "@/lib/types";
 
@@ -176,6 +177,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   /** Switcher list: GET /api/gstins (#33) once /me confirms who is signed in. */
   const [owner, setOwner] = useState<string | null>(null);
   const gstins = useGstins(owner);
+  // Publish the switcher's selection (primary, else first; null when empty) for POST /api/recon.
+  const selectedGstin =
+    gstins.status === "ready" ? (gstins.items.find((g) => g.isPrimary) ?? gstins.items[0])?.gstin ?? null : null;
+  useEffect(() => {
+    setSelectedGstin(selectedGstin);
+  }, [selectedGstin]);
   const [reconUsed, setReconUsed] = useState(0);
   const [pending, setPending] = useState<number | null>(null);
   /** null = no recon yet (or not loaded): ITC counts and the period picker are hidden. */

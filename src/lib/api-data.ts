@@ -118,7 +118,9 @@ export async function fetchReconState(): Promise<ReconState> {
 
 export async function persistRecon(
   results: MatchResult[],
-  summary: ReconSummary
+  summary: ReconSummary,
+  /** returnPeriod (YYYY-MM) and the switcher GSTIN; gstin is omitted when null/empty. */
+  meta: { returnPeriod?: string; gstin?: string | null } = {}
 ): Promise<{
   ok: boolean;
   error?: string;
@@ -136,7 +138,12 @@ export async function persistRecon(
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ results, summary }),
+      body: JSON.stringify({
+        results,
+        summary,
+        ...(meta.returnPeriod ? { returnPeriod: meta.returnPeriod } : {}),
+        ...(meta.gstin ? { gstin: meta.gstin } : {}),
+      }),
     });
     const data = await res.json().catch(() => ({} as Record<string, unknown>));
 

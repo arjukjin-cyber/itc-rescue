@@ -273,7 +273,10 @@ export function ActionTable({
   onResolve,
   onResolveMany,
   tracking = true,
+  repeatOffenders,
 }: {
+  /** Vendor GSTINs whose GET /api/vendors `repeatOffender` is true: shows a "Repeat offender" chip. */
+  repeatOffenders?: Set<string>;
   /**
    * false for an unsaved sample run (#29): no chase items exist server-side, so row
    * checkboxes, the bulk bar, Chase and Mark resolved are hidden (row Export stays).
@@ -408,7 +411,12 @@ export function ActionTable({
                     )}
                   </td>
                   <td>
-                    <div className="vn">{r.vendorName}</div>
+                    <div className="vn">
+                      {r.vendorName}
+                      {r.gstin && repeatOffenders?.has(r.gstin) && (
+                        <span className="chip ml-2" data-testid="repeat-offender">Repeat offender</span>
+                      )}
+                    </div>
                     <div className="mono-sm muted">{r.gstin}</div>
                   </td>
                   <td>
