@@ -1,0 +1,17 @@
+import assert from "node:assert/strict";
+import { errorCodeFor, errorRedirectPath, formDataToBody, isFormContentType, messageForErrorCode } from "../src/lib/auth-form";
+assert.ok(isFormContentType("application/x-www-form-urlencoded; charset=UTF-8"));
+assert.ok(isFormContentType("multipart/form-data; boundary=x"));
+assert.ok(!isFormContentType("application/json"));
+const fd = new FormData(); fd.set("email", "a@b.co"); fd.set("password", "x"); fd.set("isSignup", "true");
+const b = formDataToBody(fd); assert.equal(b.email, "a@b.co"); assert.equal(b.isSignup, true);
+assert.equal(formDataToBody(new FormData()).isSignup, false);
+assert.equal(errorCodeFor("Valid email required", 400), "invalid_email");
+assert.equal(errorCodeFor("Password must be at least 6 characters", 400), "password_short");
+assert.equal(errorCodeFor("User already exists", 409), "exists");
+assert.equal(errorCodeFor("Invalid email or password", 401), "invalid_credentials");
+assert.equal(errorCodeFor("boom", 500), "server");
+assert.equal(errorRedirectPath(true, "exists"), "/signup?error=exists");
+assert.equal(errorRedirectPath(false, "invalid_credentials"), "/login?error=invalid_credentials");
+assert.ok(messageForErrorCode("nope").length > 0);
+console.log("auth-form: all assertions passed");

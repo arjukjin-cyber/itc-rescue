@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { clearAllLocal, syncProfileFromServer } from "@/lib/storage";
 import type { UserSession } from "@/lib/types";
+import { messageForErrorCode } from "@/lib/auth-form";
 
 
 const NAV_FALLBACK_MS = 6000;
@@ -36,6 +37,9 @@ export default function LoginPage() {
       if (em instanceof HTMLInputElement && em.value) setEmail(em.value);
       if (pw instanceof HTMLInputElement && pw.value) setPassword(pw.value);
     }
+    // Native (pre-hydration) submit failures come back as ?error=<code>.
+    const code = new URLSearchParams(window.location.search).get("error");
+    if (code) setError(messageForErrorCode(code));
     setMounted(true);
     // If a session already exists (e.g. signup succeeded and the page re-rendered), never show an empty form.
     fetch("/api/auth/me", { cache: "no-store" })
@@ -90,7 +94,7 @@ export default function LoginPage() {
           <p className="mt-1 text-sm text-slate-600">
             Sign in with your work email and password. Accounts are stored securely.
           </p>
-          <form ref={formRef} method="post" onSubmit={onSubmit} className="mt-8 space-y-4">
+          <form ref={formRef} action="/api/auth/login" method="post" onSubmit={onSubmit} className="mt-8 space-y-4">
             <div>
               <label htmlFor="login-email" className="block text-sm font-medium text-slate-700">
                 Email
