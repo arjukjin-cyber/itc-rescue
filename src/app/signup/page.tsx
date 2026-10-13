@@ -16,7 +16,7 @@ type FormState = {
 };
 
 
-const NAV_FALLBACK_MS = 1500;
+const NAV_FALLBACK_MS = 6000;
 
 function goToDashboard(router: ReturnType<typeof useRouter>) {
   router.replace("/dashboard");
@@ -38,8 +38,19 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const inFlight = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
+    // Text typed before hydration lives only in the DOM; copy it into state so it isn't wiped.
+    const f = formRef.current;
+    if (f) {
+      const patch: Partial<FormState> = {};
+      for (const key of ["name", "email", "password", "companyName", "gstin"] as const) {
+        const el = f.elements.namedItem(key);
+        if (el instanceof HTMLInputElement && el.value) patch[key] = el.value;
+      }
+      if (Object.keys(patch).length) setForm((cur) => ({ ...cur, ...patch }));
+    }
     setMounted(true);
   }, []);
 
@@ -96,12 +107,13 @@ export default function SignupPage() {
       });
       if (isNew) resetTrialUsage();
       goToDashboard(router);
+      return; // success: keep inFlight held
     } catch {
       setError("Something went wrong");
-    } finally {
-      inFlight.current = false;
-      setLoading(false);
     }
+    // Released only on error paths; on success the guard stays held until navigation.
+    inFlight.current = false;
+    setLoading(false);
   }
 
   const fields: {
@@ -149,7 +161,7 @@ export default function SignupPage() {
           <p className="mt-1 text-[12px]" style={{ color: "var(--color-text-3)" }}>
             1 free reconciliation · No card · No GST portal login
           </p>
-          <form method="post" onSubmit={onSubmit} className="mt-8 space-y-4">
+          <form ref={formRef} method="post" onSubmit={onSubmit} className="mt-8 space-y-4">
             {fields.map((field) => (
               <div key={field.key}>
                 <label htmlFor={`signup-${field.key}`} className="block text-sm font-medium text-slate-700">
@@ -185,6 +197,7 @@ export default function SignupPage() {
             Already have an account?{" "}
             <Link
               href="/login"
+              prefetch={false}
               className="font-semibold hover:underline"
               style={{ color: "var(--color-accent)" }}
             >

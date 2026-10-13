@@ -8,7 +8,7 @@ import { clearAllLocal, syncProfileFromServer } from "@/lib/storage";
 import type { UserSession } from "@/lib/types";
 
 
-const NAV_FALLBACK_MS = 1500;
+const NAV_FALLBACK_MS = 6000;
 
 function goToDashboard(router: ReturnType<typeof useRouter>) {
   router.replace("/dashboard");
@@ -25,8 +25,17 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const inFlight = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
+    // Text typed before hydration lives only in the DOM; copy it into state so it isn't wiped.
+    const f = formRef.current;
+    if (f) {
+      const em = f.elements.namedItem("email");
+      const pw = f.elements.namedItem("password");
+      if (em instanceof HTMLInputElement && em.value) setEmail(em.value);
+      if (pw instanceof HTMLInputElement && pw.value) setPassword(pw.value);
+    }
     setMounted(true);
   }, []);
 
@@ -53,12 +62,13 @@ export default function LoginPage() {
       clearAllLocal();
       syncProfileFromServer(user);
       goToDashboard(router);
+      return; // success: keep inFlight held
     } catch {
       setError("Something went wrong");
-    } finally {
-      inFlight.current = false;
-      setLoading(false);
     }
+    // Released only on error paths; on success the guard stays held until navigation.
+    inFlight.current = false;
+    setLoading(false);
   }
 
   return (
@@ -74,7 +84,7 @@ export default function LoginPage() {
           <p className="mt-1 text-sm text-slate-600">
             Sign in with your work email and password. Accounts are stored securely.
           </p>
-          <form method="post" onSubmit={onSubmit} className="mt-8 space-y-4">
+          <form ref={formRef} method="post" onSubmit={onSubmit} className="mt-8 space-y-4">
             <div>
               <label htmlFor="login-email" className="block text-sm font-medium text-slate-700">
                 Email
@@ -120,7 +130,8 @@ export default function LoginPage() {
           </form>
           <p className="mt-6 text-center text-sm text-slate-600">
             New here?{" "}
-            <Link href="/signup" className="font-semibold text-accent hover:underline">
+            <Link href="/signup"
+              prefetch={false} className="font-semibold text-accent hover:underline">
               Create account
             </Link>
           </p>
