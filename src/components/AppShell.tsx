@@ -364,12 +364,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [open]);
 
-  async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+  function logout() {
     clearLocalUser();
-    // Hard navigation drops the client router cache so a stale
-    // authenticated /dashboard payload can't flash after logout.
-    window.location.assign("/");
+    // Full navigation to the logout route: the server clears the session cookie
+    // on the redirect response itself, so logout can't race a slow fetch.
+    window.location.assign("/api/auth/logout");
   }
 
   const period = recon && recon.due.kind !== "none" ? recon.due.period : null;
