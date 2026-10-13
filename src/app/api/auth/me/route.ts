@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { COOKIE, getSession } from "@/lib/auth";
 import { getUserByEmail, hasDatabase } from "@/lib/db";
 
-export async function GET() {
+export const dynamic = "force-dynamic";
+
+async function handle(): Promise<NextResponse> {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ user: null }, { status: 401 });
@@ -44,4 +46,11 @@ export async function GET() {
   }
 
   return NextResponse.json({ user: session, persistence: "demo" });
+}
+
+// Never cache session state: a stale 200 could mask a completed logout.
+export async function GET() {
+  const res = await handle();
+  res.headers.set("Cache-Control", "no-store, max-age=0");
+  return res;
 }

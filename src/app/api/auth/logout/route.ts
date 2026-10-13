@@ -11,7 +11,8 @@ function clear(res: NextResponse) {
     expires: new Date(0),
     secure: process.env.NODE_ENV === "production",
   });
-  res.headers.set("Clear-Site-Data", '"cookies", "cache"');
+  // Production only: on previews this would also wipe Vercel's protection cookie.
+  if (process.env.VERCEL_ENV === "production") res.headers.set("Clear-Site-Data", '"cookies"');
   res.headers.set("Cache-Control", "no-store");
   return res;
 }
