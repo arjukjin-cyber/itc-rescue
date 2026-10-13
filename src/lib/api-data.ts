@@ -1,5 +1,6 @@
 "use client";
 
+import { buildReconPostBody } from "./return-period";
 import type { ChaseItem, ChaseStatus, MatchResult, ReconSummary } from "./types";
 import type { RepeatOffenderLabel, VendorSummary } from "./vendors";
 import {
@@ -29,6 +30,8 @@ export interface ReconData {
   results: MatchResult[];
   summary: ReconSummary;
   createdAt?: string;
+  /** Saved recon_runs.return_period (YYYY-MM); "" for older runs. */
+  returnPeriod?: string;
 }
 
 /**
@@ -50,6 +53,8 @@ export interface ReconState {
   authError?: string;
   /** Saved run's created_at (ISO) from GET /api/recon (#28); postgres only. */
   createdAt?: string;
+  /** Saved run's return_period (YYYY-MM) from GET /api/recon; "" / undefined for older runs. */
+  returnPeriod?: string;
   recon: ReconTri;
 }
 
@@ -96,14 +101,16 @@ export async function fetchReconState(): Promise<ReconState> {
         const results: MatchResult[] = raw?.results || [];
         const summary: ReconSummary | null = raw?.summary || null;
         const createdAt = typeof raw?.createdAt === "string" ? raw.createdAt : undefined;
+        const returnPeriod = typeof raw?.returnPeriod === "string" ? raw.returnPeriod : "";
         return {
+          returnPeriod,
           persistence: "postgres",
           results,
           summary,
           canRun: data.trial?.canRun !== false,
           reason: data.trial?.reason,
           createdAt,
-          recon: raw === null ? null : summary ? { results, summary, createdAt } : null,
+          recon: raw === null ? null : summary ? { results, summary, createdAt, returnPeriod } : null,
         };
       }
       if (!wantsAuth || data?.persistence === "demo") return demoState();
@@ -138,12 +145,7 @@ export async function persistRecon(
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        results,
-        summary,
-        ...(meta.returnPeriod ? { returnPeriod: meta.returnPeriod } : {}),
-        ...(meta.gstin ? { gstin: meta.gstin } : {}),
-      }),
+      body: JSON.stringify(buildReconPostBody(results, summary, meta)),
     });
     const data = await res.json().catch(() => ({} as Record<string, unknown>));
 

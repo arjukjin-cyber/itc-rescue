@@ -70,8 +70,22 @@ function istToday(now: Date): { y: number; m: number; d: number } {
   return { y, m, d };
 }
 
-export function getGstr3bDue(results: MatchResult[], now: Date = new Date()): Gstr3bDue {
-  const p = results.length ? returnPeriodOf(results) : null;
+/** Saved recon_runs.return_period (YYYY-MM) → ReturnPeriod; null when empty/invalid (older runs). */
+export function savedReturnPeriod(rp: string | null | undefined): ReturnPeriod | null {
+  const m = /^(20[0-9]{2})-(0[1-9]|1[0-2])$/.exec(String(rp ?? "").trim());
+  return m ? { y: Number(m[1]), m: Number(m[2]) } : null;
+}
+
+/**
+ * `savedPeriod` = the run's saved returnPeriod (#38 picker). When set it is THE period; the
+ * invoice-date derivation is only the fallback for older runs saved with an empty period.
+ */
+export function getGstr3bDue(
+  results: MatchResult[],
+  now: Date = new Date(),
+  savedPeriod?: string | null
+): Gstr3bDue {
+  const p = results.length ? (savedReturnPeriod(savedPeriod) ?? returnPeriodOf(results)) : null;
   if (!p) return { kind: "none" };
   const dueY = p.m === 12 ? p.y + 1 : p.y;
   const dueM = p.m === 12 ? 1 : p.m + 1;

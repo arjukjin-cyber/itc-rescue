@@ -34,3 +34,20 @@ export function formatReturnPeriod(p: string | null | undefined): string {
 export function needsPeriodConfirm(picked: string, detected: string | null | undefined): boolean {
   return isReturnPeriod(detected) && picked !== detected;
 }
+
+/**
+ * POST /api/recon body. `returnPeriod` is exactly the picked (and, on mismatch, confirmed) month,
+ * never the detected one; `gstin` is omitted when there is no switcher GSTIN.
+ */
+export function buildReconPostBody<R, S>(
+  results: R,
+  summary: S,
+  meta: { returnPeriod?: string; gstin?: string | null }
+): { results: R; summary: S; returnPeriod?: string; gstin?: string } {
+  return {
+    results,
+    summary,
+    ...(isReturnPeriod(meta.returnPeriod) ? { returnPeriod: meta.returnPeriod } : {}),
+    ...(meta.gstin ? { gstin: meta.gstin } : {}),
+  };
+}

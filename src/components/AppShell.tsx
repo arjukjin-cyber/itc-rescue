@@ -159,7 +159,10 @@ interface ReconSnap {
   counts: Record<ItcView, number>;
   due: Gstr3bDue;
 }
-const snapOf = (results: MatchResult[]): ReconSnap => ({ counts: viewCounts(results), due: getGstr3bDue(results) });
+const snapOf = (results: MatchResult[], returnPeriod?: string): ReconSnap => ({
+  counts: viewCounts(results),
+  due: getGstr3bDue(results, new Date(), returnPeriod),
+});
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -299,7 +302,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     void fetchReconState().then((st) => {
       if (cancelled || st.authError) return;
-      setRecon(st.summary && st.results.length ? snapOf(st.results) : null);
+      setRecon(st.summary && st.results.length ? snapOf(st.results, st.returnPeriod) : null);
     });
     return () => {
       cancelled = true;

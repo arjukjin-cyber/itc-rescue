@@ -16,6 +16,8 @@ import {
   needsPeriodConfirm,
 } from "../src/lib/return-period";
 import { normalizeReturnPeriod } from "../src/lib/gstin";
+import { getGstr3bDue } from "../src/lib/filing";
+import { buildReconPostBody } from "../src/lib/return-period";
 import { pickedGstinKey, resolveSelectedGstin } from "../src/lib/selected-gstin";
 
 let n = 0;
@@ -76,6 +78,40 @@ async function run(books: string, gstr: string) {
     assert.equal(resolveSelectedGstin([], "29BBBBB2222B1ZD"), null); // empty list → omit gstin
     assert.notEqual(pickedGstinKey("a@x.in"), pickedGstinKey("b@x.in"));
     assert.equal(pickedGstinKey("A@X.in"), pickedGstinKey("a@x.in"));
+  });
+
+  // CEO bar: the saved/displayed period is exactly the picked (confirmed) month.
+  const julyRows = [
+    { id: "1", category: "matched", gstin: "x", vendorName: "v", invoiceNumber: "1", invoiceDate: "2026-07-03",
+      booksTax: 1, gstr2bTax: 1, taxDiff: 0, gstr2b: { invoiceDate: "2026-07-03" } },
+  ] as unknown as Parameters<typeof getGstr3bDue>[0];
+  const now = new Date("2026-10-13T12:00:00Z");
+  await ok("JSON/xlsx detects 2026-07, user picks 2026-08 + confirms → sends, saves, shows Aug 2026", () => {
+    const detected = "2026-07";
+    const picked = "2026-08";
+    assert.equal(needsPeriodConfirm(picked, detected), true);
+    const body = buildReconPostBody([], {}, { returnPeriod: picked, gstin: "29AAACD1234F1Z5" });
+    assert.equal(body.returnPeriod, "2026-08");
+    assert.equal(body.gstin, "29AAACD1234F1Z5");
+    const saved = normalizeReturnPeriod(body.returnPeriod); // server route: saved unchanged
+    assert.equal(saved, "2026-08");
+    const due = getGstr3bDue(julyRows, now, saved);
+    assert.ok(due.kind !== "none" && due.period === "Aug 2026", JSON.stringify(due));
+  });
+  await ok("plain CSV, picker on 2026-09 → sends, saves, shows Sep 2026 (July invoice dates ignored)", () => {
+    const body = buildReconPostBody([], {}, { returnPeriod: "2026-09", gstin: null });
+    assert.equal(body.returnPeriod, "2026-09");
+    assert.ok(!("gstin" in body));
+    const saved = normalizeReturnPeriod(body.returnPeriod);
+    assert.equal(saved, "2026-09");
+    const due = getGstr3bDue(julyRows, now, saved);
+    assert.ok(due.kind !== "none" && due.period === "Sep 2026", JSON.stringify(due));
+  });
+  await ok("older run with empty return_period falls back to invoice dates", () => {
+    const due = getGstr3bDue(julyRows, now, "");
+    assert.ok(due.kind !== "none" && due.period === "Jul 2026");
+    const d2 = getGstr3bDue(julyRows, now);
+    assert.ok(d2.kind !== "none" && d2.period === "Jul 2026");
   });
 
   const root = join(__dirname, "..");
