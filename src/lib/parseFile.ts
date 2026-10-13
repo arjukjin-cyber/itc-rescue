@@ -20,6 +20,8 @@ import {
   mapGstr2bPortalRows,
   pickGstr2bSheet,
 } from "./importers/gstr2b-portal";
+import { normalizeReturnPeriod } from "./gstin";
+import { inferPeriodFromInvoiceDates, type ReturnPeriodSource } from "./return-period";
 import type { InvoiceRecord } from "./types";
 
 export type { ImportSource } from "./importers/tally-busy";
@@ -41,10 +43,13 @@ export interface ParsedInvoiceFile {
   /**
    * GSTR-2B return period as YYYY-MM (e.g. "2026-09"), for pre-filling the period
    * picker. Set from portal JSON `rtnprd` or the portal Excel header block
-   * ("Financial Year" + "Tax Period"); null when not found, for Tally/CSV/template
-   * 2B files, and always null for books.
+   * ("Financial Year" + "Tax Period"). For CSV 2B files: an explicit return-period /
+   * rtnprd / Tax period column or header line, else the month most (>= 60%) invoice
+   * dates fall in. Null when not found or ambiguous, and always null for books.
    */
   returnPeriod: string | null;
+  /** "file" when the file states the period, "invoice-dates" when inferred; null with no period. */
+  returnPeriodSource: ReturnPeriodSource | null;
 }
 
 /**
@@ -79,15 +84,32 @@ export async function parseInvoiceFileDetailed(
   source: "books" | "gstr2b"
 ): Promise<ParsedInvoiceFile> {
   const name = file.name.toLowerCase();
-  let sheet: XLSX.WorkSheet;
-  let rows: Record<string, unknown>[] = [];
-  let workbook: XLSX.WorkBook | null = null;
 
   if (name.endsWith(".json") || file.type === "application/json") {
     return parseJsonFile(file, source);
   }
 
-  if (name.endsWith(".csv") || file.type === "text/csv") {
+  const isCsv = name.endsWith(".csv") || file.type === "text/csv";
+  if (isCsv) {
+    const res = await parseInvoiceFileDetailedInner(file, source, true);
+    if (source !== "gstr2b" || res.returnPeriod) return res;
+    // CSV 2B: no explicit period was found; infer from invoice dates (null when ambiguous).
+    const inferred = inferPeriodFromInvoiceDates(res.invoices.map((i) => i.invoiceDate));
+    return { ...res, returnPeriod: inferred, returnPeriodSource: inferred ? "invoice-dates" : null };
+  }
+  return parseInvoiceFileDetailedInner(file, source, false);
+}
+
+async function parseInvoiceFileDetailedInner(
+  file: File,
+  source: "books" | "gstr2b",
+  isCsv: boolean
+): Promise<ParsedInvoiceFile> {
+  let sheet: XLSX.WorkSheet;
+  let rows: Record<string, unknown>[] = [];
+  let workbook: XLSX.WorkBook | null = null;
+
+  if (isCsv) {
     const text = await file.text();
     const wb = XLSX.read(text, { type: "string", raw: true, cellDates: false });
     sheet = wb.Sheets[wb.SheetNames[0]];
@@ -122,7 +144,7 @@ export async function parseInvoiceFileDetailed(
       invoices: mapGstr2bPortalRows(grid, portal, source),
       detected: "gstr2b_portal",
       headerRowIndex: portal.headerRowIndex,
-      returnPeriod: source === "gstr2b" ? portalReturnPeriod(workbook, grid, portal) : null,
+      ...withSource(source === "gstr2b" ? portalReturnPeriod(workbook, grid, portal) : null),
     });
   }
 
@@ -150,7 +172,7 @@ export async function parseInvoiceFileDetailed(
       invoices,
       detected: detection?.source ?? "generic",
       headerRowIndex: 0,
-      returnPeriod: null,
+      ...withSource(isCsv && source === "gstr2b" ? csvStatedPeriod(grid, 0) : null),
     });
   }
 
@@ -158,7 +180,7 @@ export async function parseInvoiceFileDetailed(
     invoices: mapRegisterRows(grid, detection, source),
     detected: detection.source,
     headerRowIndex: detection.headerRowIndex,
-    returnPeriod: null,
+    ...withSource(isCsv && source === "gstr2b" ? csvStatedPeriod(grid, detection.headerRowIndex) : null),
   });
 }
 
@@ -180,6 +202,40 @@ function portalReturnPeriod(
     blocks.push(rm.slice(0, 20));
   }
   return extractGstr2bPortalPeriod(blocks);
+}
+
+function withSource(p: string | null): Pick<ParsedInvoiceFile, "returnPeriod" | "returnPeriodSource"> {
+  return { returnPeriod: p, returnPeriodSource: p ? "file" : null };
+}
+
+const PERIOD_COLUMN_LABELS = new Set(["return period", "rtnprd", "tax period", "ret period", "returnperiod"]);
+
+/**
+ * Period a CSV states explicitly: a "Tax Period: ..." / "Return period" line above the
+ * header row, else a return-period / rtnprd / Tax period column (its most common valid value).
+ */
+function csvStatedPeriod(grid: unknown[][], headerRowIndex: number): string | null {
+  const above = extractGstr2bPortalPeriod([grid.slice(0, Math.max(headerRowIndex, 0))]);
+  if (above) return above;
+  const header = grid[headerRowIndex] ?? [];
+  const col = header.findIndex((h) =>
+    PERIOD_COLUMN_LABELS.has(String(h ?? "").trim().toLowerCase().replace(/[_\s]+/g, " "))
+  );
+  if (col < 0) return null;
+  const counts = new Map<string, number>();
+  for (const row of grid.slice(headerRowIndex + 1)) {
+    const raw = String((row ?? [])[col] ?? "").trim();
+    if (!raw) continue;
+    const p =
+      normalizeReturnPeriod(raw) ??
+      normalizeReturnPeriod(raw.padStart(6, "0")) ??
+      extractGstr2bPortalPeriod([[["Return Period", raw]]]);
+    if (p) counts.set(p, (counts.get(p) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  let bestN = 0;
+  for (const [k, c] of counts) if (c > bestN) [best, bestN] = [k, c];
+  return best;
 }
 
 function assertRequiredColumns(
@@ -217,7 +273,7 @@ async function parseJsonFile(file: File, source: "books" | "gstr2b"): Promise<Pa
     invoices,
     detected: "gstr2b_portal_json",
     headerRowIndex: -1,
-    returnPeriod: source === "gstr2b" ? findGstr2bReturnPeriod(json) : null,
+    ...withSource(source === "gstr2b" ? findGstr2bReturnPeriod(json) : null),
   };
 }
 

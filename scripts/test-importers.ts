@@ -1016,13 +1016,65 @@ async function main() {
     assert.equal(extractGstr2bPortalPeriod([[], [["Financial Year", "2026-27"], ["Tax Period", "May"]]]), "2026-05");
   });
 
-  await test("returnPeriod: Tally / CSV 2B and every books file -> null", async () => {
+  await test("returnPeriod: CSV 2B without a period column -> inferred from invoice dates", async () => {
     const sample2b = await parseInvoiceFileDetailed(csvFile("public/samples/gstr-2b.csv"), "gstr2b");
-    assert.equal(sample2b.returnPeriod, null);
+    assert.equal(sample2b.returnPeriod, "2026-03");
+    assert.equal(sample2b.returnPeriodSource, "invoice-dates");
     const ux2b = await parseInvoiceFileDetailed(csvFile("fixtures/ux-audit-gstr-2b.csv"), "gstr2b");
-    assert.equal(ux2b.returnPeriod, null);
+    assert.equal(ux2b.returnPeriod, "2026-08");
+    assert.equal(ux2b.returnPeriodSource, "invoice-dates");
+    const dod27 = await parseInvoiceFileDetailed(csvFile("fixtures/dod27-gstr2b.csv"), "gstr2b");
+    assert.equal(dod27.returnPeriod, "2026-07");
+    assert.equal(dod27.returnPeriodSource, "invoice-dates");
+  });
+
+  const hdr = "GSTIN,Vendor Name,Invoice Number,Invoice Date,Taxable Value,CGST,SGST,IGST";
+  const csv2b = (body: string, name = "2b.csv") => new File([body], name, { type: "text/csv" });
+
+  await test("returnPeriod: CSV with an explicit rtnprd / Return Period / Tax period column -> file", async () => {
+    const rows = ["27AABCT1332L1ZV,A,X-1,03/08/2026,100,9,9,0", "27AABCT1332L1ZV,A,X-2,30/07/2026,100,9,9,0"];
+    for (const [col, v] of [["rtnprd", "092026"], ["Return Period", "2026-09"], ["Tax period", "September 2026"]]) {
+      const body = [hdr + "," + col, ...rows.map((r) => r + "," + v)].join("\n");
+      const res = await parseInvoiceFileDetailed(csv2b(body), "gstr2b");
+      assert.equal(res.returnPeriod, "2026-09", col);
+      assert.equal(res.returnPeriodSource, "file", col);
+    }
+  });
+
+  await test("returnPeriod: CSV with a 'Tax Period' header line above the table -> file", async () => {
+    const body = ["Financial Year,2026-27", "Tax Period,August", "", hdr,
+      "27AABCT1332L1ZV,A,X-1,03/07/2026,100,9,9,0", "27AABCT1332L1ZV,A,X-2,04/07/2026,100,9,9,0"].join("\n");
+    const res = await parseInvoiceFileDetailed(csv2b(body), "gstr2b");
+    assert.equal(res.returnPeriod, "2026-08");
+    assert.equal(res.returnPeriodSource, "file");
+  });
+
+  await test("returnPeriod: CSV with an ambiguous month mix (< 60%) or a tie -> null", async () => {
+    const mix = [hdr,
+      "27AABCT1332L1ZV,A,X-1,03/07/2026,100,9,9,0", "27AABCT1332L1ZV,A,X-2,04/07/2026,100,9,9,0",
+      "27AABCT1332L1ZV,A,X-3,03/08/2026,100,9,9,0", "27AABCT1332L1ZV,A,X-4,04/08/2026,100,9,9,0",
+      "27AABCT1332L1ZV,A,X-5,04/09/2026,100,9,9,0"].join("\n");
+    const res = await parseInvoiceFileDetailed(csv2b(mix), "gstr2b");
+    assert.equal(res.returnPeriod, null);
+    assert.equal(res.returnPeriodSource, null);
+    const tie = [hdr, "27AABCT1332L1ZV,A,X-1,03/07/2026,100,9,9,0", "27AABCT1332L1ZV,A,X-2,03/08/2026,100,9,9,0"].join("\n");
+    assert.equal((await parseInvoiceFileDetailed(csv2b(tie), "gstr2b")).returnPeriod, null);
+    const sixty = [hdr, ...[1, 2, 3].map((i) => `27AABCT1332L1ZV,A,Y-${i},0${i}/07/2026,100,9,9,0`),
+      "27AABCT1332L1ZV,A,Y-4,03/08/2026,100,9,9,0", "27AABCT1332L1ZV,A,Y-5,03/09/2026,100,9,9,0"].join("\n");
+    assert.equal((await parseInvoiceFileDetailed(csv2b(sixty), "gstr2b")).returnPeriod, "2026-07", "exactly 60%");
+  });
+
+  await test("returnPeriod: JSON / xlsx unchanged (source 'file' or null, never inferred); books always null", async () => {
+    const json = await parseInvoiceFileDetailed(fixtureFile("fixtures/ux-audit-gstr-2b-portal.json", "application/json"), "gstr2b");
+    assert.equal(json.returnPeriod, "2026-08");
+    assert.equal(json.returnPeriodSource, "file");
+    const xlsx = await parseInvoiceFileDetailed(fixtureFile("fixtures/ux-audit-gstr-2b-portal-style.xlsx", XLSX_TYPE), "gstr2b");
+    assert.equal(xlsx.returnPeriod, "2026-08");
+    assert.equal(xlsx.returnPeriodSource, "file");
     for (const f of [
       csvFile("public/samples/purchase-register.csv"),
+      csvFile("public/samples/gstr-2b.csv"),
+      csvFile("fixtures/dod27-gstr2b.csv"),
       csvFile("fixtures/tally-purchase-register.csv"),
       csvFile("fixtures/busy-purchase-register.csv"),
       fixtureFile("fixtures/ux-audit-purchase-register.xlsx", XLSX_TYPE),
@@ -1031,6 +1083,7 @@ async function main() {
     ]) {
       const books = await parseInvoiceFileDetailed(f, "books");
       assert.equal(books.returnPeriod, null, f.name);
+      assert.equal(books.returnPeriodSource, null, f.name);
     }
   });
 

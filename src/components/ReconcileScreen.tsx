@@ -19,7 +19,14 @@ import { Toast, useToast } from "@/components/Toast";
 import { setTrialFromServer, syncProfileFromServer } from "@/lib/storage";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchChaseItems, fetchReconState, fetchVendors, persistRecon, type ReconTri } from "@/lib/api-data";
-import { defaultReturnPeriod, formatReturnPeriod, isReturnPeriod, needsPeriodConfirm } from "@/lib/return-period";
+import {
+  defaultReturnPeriod,
+  detectedPeriodLabel,
+  formatReturnPeriod,
+  isReturnPeriod,
+  needsPeriodConfirm,
+  type ReturnPeriodSource,
+} from "@/lib/return-period";
 import { getSelectedGstin } from "@/lib/selected-gstin";
 import { parseInvoiceFile, parseInvoiceFileDetailed, fetchSampleAsFile } from "@/lib/parseFile";
 import { describeImportSource } from "@/lib/importers/tally-busy";
@@ -72,6 +79,7 @@ export function ReconcileScreen() {
   const [gstrFile, setGstrFile] = useState<File | null>(null);
   /** Month detected from the picked 2B file (portal JSON/xlsx); null for CSV / none. */
   const [detectedPeriod, setDetectedPeriod] = useState<string | null>(null);
+  const [detectedSource, setDetectedSource] = useState<ReturnPeriodSource | null>(null);
   const [period, setPeriod] = useState<string>(() => defaultReturnPeriod(null));
   const [periodConfirmed, setPeriodConfirmed] = useState(false);
   const [repeatOffenders, setRepeatOffenders] = useState<Set<string>>(new Set());
@@ -231,6 +239,7 @@ export function ReconcileScreen() {
         if (cancelled) return;
         const d = isReturnPeriod(p.returnPeriod) ? p.returnPeriod : null;
         setDetectedPeriod(d);
+        setDetectedSource(d ? p.returnPeriodSource ?? "file" : null);
         setPeriod(defaultReturnPeriod(d));
       })
       .catch(() => {
@@ -285,7 +294,12 @@ export function ReconcileScreen() {
       const runDetected = isReturnPeriod(gstrParsed.returnPeriod) ? gstrParsed.returnPeriod : null;
       if (needsPeriodConfirm(period, runDetected) && !periodConfirmed) {
         setDetectedPeriod(runDetected);
-        setError(`Confirm the return period: your GSTR-2B file is for ${formatReturnPeriod(runDetected)}.`);
+        setDetectedSource(gstrParsed.returnPeriodSource ?? "file");
+        setError(
+          gstrParsed.returnPeriodSource === "invoice-dates"
+            ? `Confirm the return period: your GSTR-2B invoice dates point to ${formatReturnPeriod(runDetected)}.`
+            : `Confirm the return period: your GSTR-2B file is for ${formatReturnPeriod(runDetected)}.`
+        );
         return;
       }
       const saved = await persistRecon(matched, sum, { returnPeriod: period, gstin: getSelectedGstin() });
@@ -423,7 +437,7 @@ export function ReconcileScreen() {
             />
             {detectedPeriod ? (
               <span className="helper-line" data-testid="period-detected">
-                Detected from your GSTR-2B file: {formatReturnPeriod(detectedPeriod)}
+                {detectedPeriodLabel(detectedPeriod, detectedSource)}
               </span>
             ) : (
               <span className="helper-line muted">Pick the month this GSTR-2B is for.</span>
@@ -439,7 +453,10 @@ export function ReconcileScreen() {
                   checked={periodConfirmed}
                   onChange={(e) => setPeriodConfirmed(e.target.checked)}
                 />
-                Your GSTR-2B file is for {formatReturnPeriod(detectedPeriod)}, but you picked{" "}
+                {detectedSource === "invoice-dates"
+                  ? `Your GSTR-2B invoice dates point to ${formatReturnPeriod(detectedPeriod)}`
+                  : `Your GSTR-2B file is for ${formatReturnPeriod(detectedPeriod)}`}
+                , but you picked{" "}
                 {formatReturnPeriod(period)}. Save this run under {formatReturnPeriod(period)}?
               </label>
             </div>

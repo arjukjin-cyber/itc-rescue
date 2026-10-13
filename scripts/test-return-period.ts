@@ -14,6 +14,8 @@ import {
   isReturnPeriod,
   lastMonthIST,
   needsPeriodConfirm,
+  inferPeriodFromInvoiceDates,
+  detectedPeriodLabel,
 } from "../src/lib/return-period";
 import { normalizeReturnPeriod } from "../src/lib/gstin";
 import { getGstr3bDue } from "../src/lib/filing";
@@ -131,7 +133,8 @@ async function run(books: string, gstr: string) {
   const root = join(__dirname, "..");
   await ok("sample data: 8 / 3 (₹86,400) / 1 / 1, no detected month", async () => {
     const r = await run(join(root, "public/samples/purchase-register.csv"), join(root, "public/samples/gstr-2b.csv"));
-    assert.equal(r.g.returnPeriod, null);
+    assert.equal(r.g.returnPeriod, "2026-03");
+    assert.equal(r.g.returnPeriodSource, "invoice-dates");
     assert.equal(r.summary.matched, 8);
     assert.equal(r.summary.itcAtRisk, 3);
     assert.equal(r.summary.itcAtRiskAmount, 86400);
@@ -139,13 +142,34 @@ async function run(books: string, gstr: string) {
     assert.equal(r.summary.unclaimed, 1);
   });
 
+  await ok("CSV 2B: CPO dod27 fixture (in repo) -> July 2026 from invoice dates; picker prefill + confirm", async () => {
+    const g = await parseInvoiceFileDetailed(file(join(root, "fixtures/dod27-gstr2b.csv"), "text/csv"), "gstr2b");
+    assert.equal(g.returnPeriod, "2026-07");
+    assert.equal(g.returnPeriodSource, "invoice-dates");
+    assert.equal(defaultReturnPeriod(g.returnPeriod, new Date("2026-10-13T12:00:00Z")), "2026-07");
+    assert.equal(needsPeriodConfirm("2026-09", g.returnPeriod), true);
+    assert.equal(needsPeriodConfirm("2026-07", g.returnPeriod), false);
+    assert.equal(detectedPeriodLabel(g.returnPeriod, g.returnPeriodSource), "Detected from invoice dates: July 2026");
+  });
+
+  await ok("inferPeriodFromInvoiceDates: majority >= 60%, ties / mixes / empty -> null", () => {
+    assert.equal(inferPeriodFromInvoiceDates(["2026-08-01", "2026-08-09", "2026-07-30"]), "2026-08");
+    assert.equal(inferPeriodFromInvoiceDates(["2026-08-01", "2026-08-09", "2026-07-30", "2026-07-01", "2026-09-01"]), null);
+    assert.equal(inferPeriodFromInvoiceDates(["2026-08-01", "2026-07-01"]), null);
+    assert.equal(inferPeriodFromInvoiceDates([]), null);
+    assert.equal(inferPeriodFromInvoiceDates(["", "bad"]), null);
+    assert.equal(detectedPeriodLabel("2026-08", "file"), "Detected from your GSTR-2B file: August 2026");
+    assert.equal(detectedPeriodLabel(null, "file"), "");
+  });
+
   const d = "/workspace/dod27";
   if (existsSync(join(d, "gstr2b-portal.json"))) {
     for (const g of ["gstr2b.csv", "gstr2b-portal.json", "gstr2b-portal.xlsx"]) {
       await ok(`dod27 ${g}: 4 matched, ₹25,992 at risk, ₹3,600 mismatch, 0 unclaimed`, async () => {
         const r = await run(join(d, "purchase-register.csv"), join(d, g));
-        assert.equal(r.g.returnPeriod, g.endsWith(".csv") ? null : "2026-07");
-        if (r.g.returnPeriod) assert.equal(formatReturnPeriod(r.g.returnPeriod), "July 2026");
+        assert.equal(r.g.returnPeriod, "2026-07");
+        assert.equal(r.g.returnPeriodSource, g.endsWith(".csv") ? "invoice-dates" : "file");
+        assert.equal(formatReturnPeriod(r.g.returnPeriod), "July 2026");
         assert.equal(r.summary.matched, 4);
         assert.equal(r.summary.itcAtRiskAmount, 25992);
         assert.equal(r.summary.valueMismatch, 1);

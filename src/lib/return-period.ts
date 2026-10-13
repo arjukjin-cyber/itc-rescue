@@ -60,3 +60,43 @@ export function savedRunPeriod(server: unknown, sent: string | null | undefined)
   if (isReturnPeriod(server)) return server;
   return isReturnPeriod(sent) ? sent : "";
 }
+
+/** Where a detected return period came from: stated in the 2B file, or inferred from invoice dates. */
+export type ReturnPeriodSource = "file" | "invoice-dates";
+
+/** Share of invoice rows that must fall in one month before we infer it as the return period. */
+export const INFER_PERIOD_MIN_SHARE = 0.6;
+
+/**
+ * Most common YYYY-MM among invoice dates (YYYY-MM-DD), when at least 60% of the dated rows
+ * share it. Null for no dates, a tie, or a mix below the threshold.
+ */
+export function inferPeriodFromInvoiceDates(dates: readonly string[]): string | null {
+  const counts = new Map<string, number>();
+  let total = 0;
+  for (const d of dates) {
+    const m = /^(20\d{2})-(0[1-9]|1[0-2])-\d{2}/.exec(String(d ?? "").trim());
+    if (!m) continue;
+    total++;
+    const k = `${m[1]}-${m[2]}`;
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  if (!total) return null;
+  let best: string | null = null;
+  let bestN = 0;
+  let tie = false;
+  for (const [k, c] of counts) {
+    if (c > bestN) [best, bestN, tie] = [k, c, false];
+    else if (c === bestN) tie = true;
+  }
+  if (tie || !best || bestN / total < INFER_PERIOD_MIN_SHARE) return null;
+  return best;
+}
+
+/** Helper text under the picker for a detected month. */
+export function detectedPeriodLabel(p: string | null | undefined, source: ReturnPeriodSource | null | undefined): string {
+  if (!isReturnPeriod(p)) return "";
+  return source === "invoice-dates"
+    ? `Detected from invoice dates: ${formatReturnPeriod(p)}`
+    : `Detected from your GSTR-2B file: ${formatReturnPeriod(p)}`;
+}
