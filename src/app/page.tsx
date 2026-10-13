@@ -55,14 +55,19 @@ export default function LandingPage() {
         </div>
 
         <figure className="mx-auto mt-12 max-w-5xl overflow-hidden rounded-lg border" style={{ borderColor: "var(--color-line)" }}>
-          {/* Real v1 dashboard (sample data), captured from the app. */}
-          <img
-            src="/landing/dashboard-v1.png"
-            alt="ITC Rescue dashboard: ₹86,400.00 ITC at risk across 3 invoices, GSTR-3B countdown, and a Needs action table with Chase and Resolve on each row"
-            width={1280}
-            height={800}
-            className="block h-auto w-full"
-          />
+          {/* Real v1 dashboard (sample data), captured from the app. Whole frame links to signup. */}
+          <Link href="/signup" aria-label="Try ITC Rescue free" className="group relative block">
+            <img
+              src="/landing/dashboard-v1.png"
+              alt="ITC Rescue dashboard: ₹86,400.00 ITC at risk across 3 invoices, GSTR-3B countdown, and a Needs action table with Chase and Resolve on each row"
+              width={1280}
+              height={800}
+              className="block h-auto w-full transition-opacity group-hover:opacity-90"
+            />
+            <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/10">
+              <span className="btn btn-pri btn-lg shadow-lg">Try it free</span>
+            </span>
+          </Link>
         </figure>
       </section>
 
