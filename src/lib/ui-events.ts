@@ -1,5 +1,7 @@
 "use client";
 
+import type { MatchResult } from "./types";
+
 /**
  * Tiny UI-only event bus so the app shell (sidebar pending count, trial meter)
  * refreshes after in-page actions without a navigation. No data logic here.
@@ -24,7 +26,17 @@ export function emitTrialChanged(reconCount?: number) {
 }
 
 /** Recon changed (saved run, or an unsaved sample run shown in-page): the sidebar re-reads counts. */
-export function emitReconChanged() {
+export interface ReconChangedDetail {
+  results: MatchResult[];
+  /** The run's saved return period (YYYY-MM); "" when none. */
+  returnPeriod: string;
+}
+
+/**
+ * Pass `detail` after a saved run so the shell applies the run (incl. its returnPeriod) at once,
+ * without a GET round-trip that could race or return a stale body.
+ */
+export function emitReconChanged(detail?: ReconChangedDetail) {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new Event(RECON_EVENT));
+  window.dispatchEvent(new CustomEvent<ReconChangedDetail | undefined>(RECON_EVENT, { detail }));
 }

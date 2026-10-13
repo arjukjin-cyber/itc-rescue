@@ -1,5 +1,8 @@
 "use client";
 
+import { buildReconPostBody, savedRunPeriod } from "./return-period";
+import { withGstinQuery } from "./gstin-scope";
+import { getSelectedGstin } from "./selected-gstin";
 import type { ChaseItem, ChaseStatus, MatchResult, ReconSummary } from "./types";
 import type { RepeatOffenderLabel, VendorSummary } from "./vendors";
 import {
@@ -29,6 +32,8 @@ export interface ReconData {
   results: MatchResult[];
   summary: ReconSummary;
   createdAt?: string;
+  /** Saved recon_runs.return_period (YYYY-MM); "" for older runs. */
+  returnPeriod?: string;
 }
 
 /**
@@ -50,6 +55,8 @@ export interface ReconState {
   authError?: string;
   /** Saved run's created_at (ISO) from GET /api/recon (#28); postgres only. */
   createdAt?: string;
+  /** Saved run's return_period (YYYY-MM) from GET /api/recon; "" / undefined for older runs. */
+  returnPeriod?: string;
   recon: ReconTri;
 }
 
@@ -74,7 +81,7 @@ function failState(message: string): ReconState {
 export async function fetchReconState(): Promise<ReconState> {
   const wantsAuth = expectsServerAuth();
   try {
-    const res = await fetch("/api/recon", { credentials: "include" });
+    const res = await fetch(withGstinQuery("/api/recon", getSelectedGstin()), { credentials: "include", cache: "no-store" });
     if (res.status === 401) {
       if (wantsAuth) {
         authRequiredError();
@@ -96,14 +103,16 @@ export async function fetchReconState(): Promise<ReconState> {
         const results: MatchResult[] = raw?.results || [];
         const summary: ReconSummary | null = raw?.summary || null;
         const createdAt = typeof raw?.createdAt === "string" ? raw.createdAt : undefined;
+        const returnPeriod = typeof raw?.returnPeriod === "string" ? raw.returnPeriod : "";
         return {
+          returnPeriod,
           persistence: "postgres",
           results,
           summary,
           canRun: data.trial?.canRun !== false,
           reason: data.trial?.reason,
           createdAt,
-          recon: raw === null ? null : summary ? { results, summary, createdAt } : null,
+          recon: raw === null ? null : summary ? { results, summary, createdAt, returnPeriod } : null,
         };
       }
       if (!wantsAuth || data?.persistence === "demo") return demoState();
@@ -118,7 +127,9 @@ export async function fetchReconState(): Promise<ReconState> {
 
 export async function persistRecon(
   results: MatchResult[],
-  summary: ReconSummary
+  summary: ReconSummary,
+  /** returnPeriod (YYYY-MM) and the switcher GSTIN; gstin is omitted when null/empty. */
+  meta: { returnPeriod?: string; gstin?: string | null } = {}
 ): Promise<{
   ok: boolean;
   error?: string;
@@ -127,6 +138,8 @@ export async function persistRecon(
   reconCount?: number;
   /** POST /api/recon → trial.canRun (false once the free run is used). */
   canRun?: boolean;
+  /** Saved return period: server response value, else the one sent. */
+  returnPeriod?: string;
   authError?: string;
   paywall?: boolean;
 }> {
@@ -136,7 +149,7 @@ export async function persistRecon(
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ results, summary }),
+      body: JSON.stringify(buildReconPostBody(results, summary, meta)),
     });
     const data = await res.json().catch(() => ({} as Record<string, unknown>));
 
@@ -148,6 +161,7 @@ export async function persistRecon(
         persistence: "postgres",
         reconCount: (data.trial as { reconCount?: number } | undefined)?.reconCount,
         canRun: (data.trial as { canRun?: boolean } | undefined)?.canRun,
+        returnPeriod: savedRunPeriod(data.returnPeriod, meta.returnPeriod),
       };
     }
     if (res.ok && data.persistence === "sample") {
@@ -208,7 +222,7 @@ export async function fetchChaseItems(): Promise<{
 }> {
   const wantsAuth = expectsServerAuth();
   try {
-    const res = await fetch("/api/chase", { credentials: "include" });
+    const res = await fetch(withGstinQuery("/api/chase", getSelectedGstin()), { credentials: "include", cache: "no-store" });
     if (res.status === 401) {
       if (wantsAuth) {
         return {
@@ -260,7 +274,7 @@ export async function persistChaseStatus(
 ): Promise<ChaseItem[]> {
   const wantsAuth = expectsServerAuth();
   try {
-    const res = await fetch(`/api/chase/${encodeURIComponent(id)}`, {
+    const res = await fetch(withGstinQuery(`/api/chase/${encodeURIComponent(id)}`, getSelectedGstin()), {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -301,7 +315,7 @@ export async function fetchVendors(): Promise<{
 }> {
   const wantsAuth = expectsServerAuth();
   try {
-    const res = await fetch("/api/vendors", { credentials: "include" });
+    const res = await fetch(withGstinQuery("/api/vendors", getSelectedGstin()), { credentials: "include", cache: "no-store" });
     if (res.status === 401) {
       if (wantsAuth) {
         return { persistence: "postgres", vendors: [], authError: authRequiredError() };

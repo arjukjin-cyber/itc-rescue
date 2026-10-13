@@ -35,11 +35,13 @@ import {
 } from "lucide-react";
 import { clearLocalUser, getLocalUser, getTrialUsage, setTrialFromServer, syncProfileFromServer } from "@/lib/storage";
 import { fetchChaseItems, fetchReconState } from "@/lib/api-data";
-import { CHASE_COUNT_EVENT, RECON_EVENT, TRIAL_EVENT } from "@/lib/ui-events";
+import { CHASE_COUNT_EVENT, RECON_EVENT, TRIAL_EVENT, type ReconChangedDetail } from "@/lib/ui-events";
 import { getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
 import { viewCounts, viewFromSlug, viewHref, type ItcView } from "@/lib/views";
 import { getSampleRun, isReconScreen } from "@/lib/sample-run";
 import { Dropdown } from "./Dropdown";
+import { gstinMenuLabel } from "@/lib/gstin-scope";
+import { pickedGstinKey, resolveSelectedGstin, setSelectedGstin } from "@/lib/selected-gstin";
 import { CommandPalette, type PalettePage } from "./CommandPalette";
 import type { MatchResult, UserSession } from "@/lib/types";
 
@@ -158,7 +160,10 @@ interface ReconSnap {
   counts: Record<ItcView, number>;
   due: Gstr3bDue;
 }
-const snapOf = (results: MatchResult[]): ReconSnap => ({ counts: viewCounts(results), due: getGstr3bDue(results) });
+const snapOf = (results: MatchResult[], returnPeriod?: string): ReconSnap => ({
+  counts: viewCounts(results),
+  due: getGstr3bDue(results, new Date(), returnPeriod),
+});
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -176,11 +181,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   /** Switcher list: GET /api/gstins (#33) once /me confirms who is signed in. */
   const [owner, setOwner] = useState<string | null>(null);
   const gstins = useGstins(owner);
+  // Switcher pick, per user (localStorage keyed by the /me email). Tagged with its owner so a
+  // pick never applies to another account; validated against the current user's list.
+  const [picked, setPicked] = useState<{ owner: string; gstin: string } | null>(null);
+  useEffect(() => {
+    if (!owner) {
+      setPicked(null);
+      return;
+    }
+    let v: string | null = null;
+    try {
+      v = localStorage.getItem(pickedGstinKey(owner));
+    } catch {}
+    setPicked(v ? { owner, gstin: v } : null);
+  }, [owner]);
+  const pickGstin = (g: string) => {
+    if (!owner) return;
+    setPicked({ owner, gstin: g });
+    try {
+      localStorage.setItem(pickedGstinKey(owner), g);
+    } catch {}
+  };
+  // Published for POST /api/recon: null while loading / on error / empty list / owner change.
+  const selectedGstin =
+    gstins.status === "ready"
+      ? resolveSelectedGstin(gstins.items, picked && picked.owner === owner ? picked.gstin : null)
+      : null;
+  // Set during render (idempotent module value) so page effects, which run before this
+  // component's effects, already read the active GSTIN in their first fetch.
+  setSelectedGstin(selectedGstin);
+  useEffect(() => () => setSelectedGstin(null), []);
   const [reconUsed, setReconUsed] = useState(0);
   const [pending, setPending] = useState<number | null>(null);
   /** null = no recon yet (or not loaded): ITC counts and the period picker are hidden. */
   const [recon, setRecon] = useState<ReconSnap | null>(null);
   const [reconTick, setReconTick] = useState(0);
+  /** /me has answered (any outcome); with the GSTIN list this gates page mount (see <main>). */
+  const [meDone, setMeDone] = useState(false);
   /** Deployed commit from GET /api/version (CPO DoD checks); shown as 7 chars in the sidebar foot. */
   const [sha, setSha] = useState<string | null>(null);
 
@@ -234,6 +271,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         }
       } catch {
         // Fall through; API calls surface auth errors
+      } finally {
+        if (!cancelled) setMeDone(true);
       }
       if (cancelled) return;
       // /me failed (not 401): no local fallback for company / GSTIN / plan (#34). Trial meter
@@ -255,7 +294,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [pathname]);
+  }, [pathname, selectedGstin]);
 
   // ITC counts + return period from the latest recon (existing GET /api/recon).
   useEffect(() => {
@@ -268,12 +307,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     void fetchReconState().then((st) => {
       if (cancelled || st.authError) return;
-      setRecon(st.summary && st.results.length ? snapOf(st.results) : null);
+      setRecon(st.summary && st.results.length ? snapOf(st.results, st.returnPeriod) : null);
     });
     return () => {
       cancelled = true;
     };
-  }, [pathname, reconTick]);
+  }, [pathname, reconTick, selectedGstin]);
 
   useEffect(() => {
     const onCount = (e: Event) => setPending((e as CustomEvent<number>).detail);
@@ -282,7 +321,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const n = (e as CustomEvent<number | undefined>).detail;
       setReconUsed(typeof n === "number" ? n : getTrialUsage().reconCount);
     };
-    const onRecon = () => setReconTick((t) => t + 1);
+    const onRecon = (e: Event) => {
+      const d = (e as CustomEvent<ReconChangedDetail | undefined>).detail;
+      // Saved run: apply it (with its returnPeriod) now; no GET that could lag the save.
+      if (d && d.results.length) setRecon(snapOf(d.results, d.returnPeriod));
+      else setReconTick((t) => t + 1);
+    };
     window.addEventListener(CHASE_COUNT_EVENT, onCount);
     window.addEventListener(TRIAL_EVENT, onTrial);
     window.addEventListener(RECON_EVENT, onRecon);
@@ -332,7 +376,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const sidebar = (onNavigate?: () => void) => (
     <div className="flex h-full min-h-0 flex-col">
-      <Switcher company={company} gstins={gstins} />
+      <Switcher company={company} gstins={gstins} selected={selectedGstin} onPick={pickGstin} />
       <SearchButton
         onOpen={() => {
           onNavigate?.();
@@ -409,7 +453,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <UserMenu email={email} name={name} onLogout={logout} />
         </header>
 
-        <main className="min-w-0 flex-1 px-4 pb-8 pt-5 sm:px-6">{children}</main>
+        {/* Pages fetch per active GSTIN: mount them once the GSTIN is known (no unscoped flash),
+            and remount on a switcher change so every screen refetches for the new GSTIN. */}
+        <main key={selectedGstin ?? "-"} className="min-w-0 flex-1 px-4 pb-8 pt-5 sm:px-6">
+          {!meDone || (owner && gstins.status === "loading") ? (
+            <div className="flex flex-col gap-3" aria-busy="true" data-testid="gstin-scope-loading">
+              <Skel w={220} h={14} />
+              <Skel w={320} />
+            </div>
+          ) : (
+            children
+          )}
+        </main>
       </div>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} pages={PALETTE_PAGES} canUpload />
@@ -483,10 +538,20 @@ function Skel({ w, h = 10 }: { w: number | string; h?: number }) {
  * GET /api/gstins only (primary first). Empty list = "No GSTIN yet", with no fallback to /me.
  * "Add GSTIN" / "Manage GSTINs" stay out until the GSTINs screen exists (no dead links).
  */
-function Switcher({ company, gstins }: { company: string | null; gstins: GstinList }) {
+function Switcher({
+  company,
+  gstins,
+  selected,
+  onPick,
+}: {
+  company: string | null;
+  gstins: GstinList;
+  /** resolveSelectedGstin(): the user's pick if in the list, else primary/first. */
+  selected: string | null;
+  onPick: (gstin: string) => void;
+}) {
   const loading = company === null;
-  const primary =
-    gstins.status === "ready" ? gstins.items.find((g) => g.isPrimary) ?? gstins.items[0] ?? null : null;
+  const primary = gstins.status === "ready" && selected ? { gstin: selected } : null;
   const gstinLine =
     gstins.status === "loading" ? (
       <Skel w={130} h={9} />
@@ -542,14 +607,24 @@ function Switcher({ company, gstins }: { company: string | null; gstins: GstinLi
           </button>
           <div className="v3-hr" />
           <div className="v3-mh">GSTIN</div>
-          <GstinMenuList gstins={gstins} active={primary?.gstin ?? ""} close={close} />
+          <GstinMenuList gstins={gstins} active={selected ?? ""} close={close} onPick={onPick} />
         </div>
       )}
     </Dropdown>
   );
 }
 
-function GstinMenuList({ gstins, active, close }: { gstins: GstinList; active: string; close: () => void }) {
+function GstinMenuList({
+  gstins,
+  active,
+  close,
+  onPick,
+}: {
+  gstins: GstinList;
+  active: string;
+  close: () => void;
+  onPick: (gstin: string) => void;
+}) {
   if (gstins.status === "loading") {
     return (
       <div className="flex flex-col gap-2 px-2.5 py-2" aria-busy="true" aria-label="Loading GSTINs" data-testid="gstins-loading">
@@ -585,6 +660,7 @@ function GstinMenuList({ gstins, active, close }: { gstins: GstinList; active: s
       {gstins.items.map((g) => {
         const on = g.gstin === active;
         const state = GST_STATES[g.stateCode || g.gstin.slice(0, 2)];
+        const sub = gstinMenuLabel(g.label, state);
         return (
           <button
             key={g.id}
@@ -593,15 +669,18 @@ function GstinMenuList({ gstins, active, close }: { gstins: GstinList; active: s
             aria-checked={on}
             className="v3-mi"
             data-on={on ? "true" : undefined}
-            onClick={close}
-            title={g.label || undefined}
+            onClick={() => {
+              onPick(g.gstin);
+              close();
+            }}
+            title={g.label ? state : undefined}
           >
             <span className="v3-mono" style={{ color: "var(--color-ink)" }}>
               {g.gstin}
             </span>
-            {state && (
+            {sub && (
               <span className="truncate" style={{ color: "var(--color-text-3)" }}>
-                {state}
+                {sub}
               </span>
             )}
             <span className="flex-1" />

@@ -72,7 +72,8 @@ export default function DashboardPage() {
   }, [loaded]);
 
   const rows = useMemo(() => filterByTab(results, tab), [results, tab]);
-  const due = useMemo(() => getGstr3bDue(results), [results]);
+  const savedPeriod = recon ? recon.returnPeriod : undefined;
+  const due = useMemo(() => getGstr3bDue(results, new Date(), savedPeriod), [results, savedPeriod]);
 
   if (recon === undefined) return <LoadingSkeleton label="Loading dashboard" kpis={5} rows={5} cols={6} actions />;
 

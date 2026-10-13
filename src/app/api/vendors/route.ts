@@ -1,16 +1,19 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { scopeFromRequest } from "@/lib/gstin-scope-server";
 import { hasDatabase, listVendorsForUser } from "@/lib/db";
 import { requireDbUser } from "@/lib/session-user";
 import { vendorsResponseMeta } from "@/lib/vendors";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   if (!hasDatabase()) {
     return NextResponse.json({ persistence: "demo", vendors: [], ...vendorsResponseMeta() });
   }
   const user = await requireDbUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const sc = await scopeFromRequest(req.url, user.id);
+  if (sc.error) return sc.error;
   try {
-    const vendors = await listVendorsForUser(user.id);
+    const vendors = await listVendorsForUser(user.id, sc.scope);
     // repeatOffenderLabel: "hidden" until OFFENDER_COUNT_BY_DISTINCT_PERIOD (CPO condition, #33)
     return NextResponse.json({ persistence: "postgres", vendors, ...vendorsResponseMeta() });
   } catch (err) {

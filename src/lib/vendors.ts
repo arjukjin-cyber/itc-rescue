@@ -235,6 +235,11 @@ export function buildVendorSummaries(input: {
   byDistinctPeriod?: boolean;
   /** GSTIN -> distinct return-period count; used only when byDistinctPeriod. */
   periodCounts?: ReadonlyMap<string, number>;
+  /**
+   * Scoped to one company GSTIN: stored vendors (user-wide phone/name rows) are listed only when
+   * the vendor appears in this GSTIN's latest run or has offences counted under it.
+   */
+  scoped?: boolean;
 }): VendorSummary[] {
   const byDistinctPeriod = input.byDistinctPeriod ?? OFFENDER_COUNT_BY_DISTINCT_PERIOD;
   const byGstin = new Map<string, VendorSummary>();
@@ -281,6 +286,7 @@ export function buildVendorSummaries(input: {
   for (const s of input.stored) {
     const g = usableGstin(s.gstin);
     if (!g) continue;
+    if (input.scoped && !byGstin.has(g) && !(input.periodCounts?.get(g) ?? 0)) continue;
     const v = ensure(g);
     v.phone = s.phone || null;
     v.offenderCount = Math.max(0, Math.trunc(finite(s.offenderCount)));

@@ -18,7 +18,9 @@ import { clearSampleRun, getSampleRun, setSampleRun } from "@/lib/sample-run";
 import { Toast, useToast } from "@/components/Toast";
 import { setTrialFromServer, syncProfileFromServer } from "@/lib/storage";
 import { useRouter, useSearchParams } from "next/navigation";
-import { fetchChaseItems, fetchReconState, persistRecon, type ReconTri } from "@/lib/api-data";
+import { fetchChaseItems, fetchReconState, fetchVendors, persistRecon, type ReconTri } from "@/lib/api-data";
+import { defaultReturnPeriod, formatReturnPeriod, isReturnPeriod, needsPeriodConfirm } from "@/lib/return-period";
+import { getSelectedGstin } from "@/lib/selected-gstin";
 import { parseInvoiceFile, parseInvoiceFileDetailed, fetchSampleAsFile } from "@/lib/parseFile";
 import { describeImportSource } from "@/lib/importers/tally-busy";
 import { reconcile } from "@/lib/reconcile";
@@ -68,6 +70,11 @@ export function ReconcileScreen() {
   const [initialRecon, setInitialRecon] = useState<ReconTri>(undefined);
   const [booksFile, setBooksFile] = useState<File | null>(null);
   const [gstrFile, setGstrFile] = useState<File | null>(null);
+  /** Month detected from the picked 2B file (portal JSON/xlsx); null for CSV / none. */
+  const [detectedPeriod, setDetectedPeriod] = useState<string | null>(null);
+  const [period, setPeriod] = useState<string>(() => defaultReturnPeriod(null));
+  const [periodConfirmed, setPeriodConfirmed] = useState(false);
+  const [repeatOffenders, setRepeatOffenders] = useState<Set<string>>(new Set());
   const [results, setResults] = useState<MatchResult[]>([]);
   const [summary, setSummary] = useState<ReconSummary | null>(null);
   const [filter, setFilter] = useState<TabKey>("action");
@@ -155,7 +162,7 @@ export function ReconcileScreen() {
   async function afterSaved(
     matched: MatchResult[],
     sum: ReconSummary,
-    saved: { persistence: "postgres" | "demo" | "sample"; reconCount?: number; canRun?: boolean }
+    saved: { persistence: "postgres" | "demo" | "sample"; reconCount?: number; canRun?: boolean; returnPeriod?: string }
   ) {
     setIsSample(false);
     setSampleFiles(null);
@@ -167,7 +174,7 @@ export function ReconcileScreen() {
     if (serverCount !== undefined) setTrialFromServer(serverCount);
     emitTrialChanged(serverCount);
     if (saved.canRun === false) setLocked(true);
-    emitReconChanged();
+    emitReconChanged({ results: matched, returnPeriod: saved.returnPeriod ?? "" });
     setResults(matched);
     setSummary(sum);
     setFilter(defaultFilter(matched));
@@ -204,6 +211,48 @@ export function ReconcileScreen() {
     show({ text: TRIAL_USED_MESSAGE });
   }
 
+  // One 2B parse per picked File: the pick-time parse (period detection) is reused on Run.
+  const gstrParse = useRef<{ file: File; p: ReturnType<typeof parseInvoiceFileDetailed> } | null>(null);
+  function parseGstr(f: File) {
+    if (gstrParse.current?.file !== f) gstrParse.current = { file: f, p: parseInvoiceFileDetailed(f, "gstr2b") };
+    return gstrParse.current.p;
+  }
+
+  // Detect the return period as soon as the 2B file is picked, so the picker pre-fills.
+  useEffect(() => {
+    let cancelled = false;
+    setPeriodConfirmed(false);
+    if (!gstrFile) {
+      setDetectedPeriod(null);
+      return;
+    }
+    parseGstr(gstrFile)
+      .then((p) => {
+        if (cancelled) return;
+        const d = isReturnPeriod(p.returnPeriod) ? p.returnPeriod : null;
+        setDetectedPeriod(d);
+        setPeriod(defaultReturnPeriod(d));
+      })
+      .catch(() => {
+        // Parse errors surface on Run; keep the default month here.
+        if (!cancelled) setDetectedPeriod(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [gstrFile]);
+
+  const periodMismatch = needsPeriodConfirm(period, detectedPeriod);
+
+  // Repeat-offender chips (GET /api/vendors, repeatOffender === true only).
+  async function refreshOffenders() {
+    const v = await fetchVendors();
+    setRepeatOffenders(new Set(v.vendors.filter((x) => x.repeatOffender === true).map((x) => x.gstin)));
+  }
+  useEffect(() => {
+    void refreshOffenders();
+  }, []);
+
   async function runWithFiles(books: File, gstr: File) {
     setError("");
 
@@ -221,7 +270,7 @@ export function ReconcileScreen() {
       // it throws a file-specific InvoiceParseError, surfaced in the role="alert" error line.
       const booksParsed = await parseInvoiceFileDetailed(books, "books");
       const booksInv = booksParsed.invoices;
-      const gstrParsed = await parseInvoiceFileDetailed(gstr, "gstr2b");
+      const gstrParsed = await parseGstr(gstr);
       const gstrInv = gstrParsed.invoices;
       const notes = [booksParsed.detected, gstrParsed.detected].map(describeImportSource).filter(Boolean);
       setBooksNote(notes.length ? notes.join(" · ") : null);
@@ -233,7 +282,13 @@ export function ReconcileScreen() {
 
       const { results: matched, summary: sum } = reconcile(booksInv, gstrInv);
       setSkipNote(skippedNote(sum));
-      const saved = await persistRecon(matched, sum);
+      const runDetected = isReturnPeriod(gstrParsed.returnPeriod) ? gstrParsed.returnPeriod : null;
+      if (needsPeriodConfirm(period, runDetected) && !periodConfirmed) {
+        setDetectedPeriod(runDetected);
+        setError(`Confirm the return period: your GSTR-2B file is for ${formatReturnPeriod(runDetected)}.`);
+        return;
+      }
+      const saved = await persistRecon(matched, sum, { returnPeriod: period, gstin: getSelectedGstin() });
       if (!saved.ok) {
         if (saved.authError) {
           setError(saved.authError);
@@ -253,6 +308,7 @@ export function ReconcileScreen() {
         return;
       }
       await afterSaved(matched, sum, saved);
+      void refreshOffenders();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Reconciliation failed");
     } finally {
@@ -350,6 +406,44 @@ export function ReconcileScreen() {
               disabled={locked}
             />
           </div>
+          <div className="flex flex-wrap items-center gap-3" data-testid="period-picker">
+            <label className="text-[13px]" htmlFor="recon-period">
+              Return period
+            </label>
+            <input
+              id="recon-period"
+              type="month"
+              className="input-token px-2 text-[13px]"
+              value={period}
+              disabled={locked || loading}
+              onChange={(e) => {
+                if (isReturnPeriod(e.target.value)) setPeriod(e.target.value);
+                setPeriodConfirmed(false);
+              }}
+            />
+            {detectedPeriod ? (
+              <span className="helper-line" data-testid="period-detected">
+                Detected from your GSTR-2B file: {formatReturnPeriod(detectedPeriod)}
+              </span>
+            ) : (
+              <span className="helper-line muted">Pick the month this GSTR-2B is for.</span>
+            )}
+          </div>
+          {periodMismatch && (
+            <div className="status" role="alert" data-testid="period-mismatch">
+              <span className="dot dot-risk" aria-hidden />
+              <label className="flex items-center gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  className="cb"
+                  checked={periodConfirmed}
+                  onChange={(e) => setPeriodConfirmed(e.target.checked)}
+                />
+                Your GSTR-2B file is for {formatReturnPeriod(detectedPeriod)}, but you picked{" "}
+                {formatReturnPeriod(period)}. Save this run under {formatReturnPeriod(period)}?
+              </label>
+            </div>
+          )}
           {locked && (
             <p className="helper-line" data-trial-used="true">
               <Lock size={13} strokeWidth={1.75} aria-hidden />
@@ -365,7 +459,7 @@ export function ReconcileScreen() {
               <button
                 type="button"
                 onClick={onRun}
-                disabled={loading || !bothFiles}
+                disabled={loading || !bothFiles || (periodMismatch && !periodConfirmed)}
                 className="btn btn-pri btn-lg"
               >
                 {loading ? <Loader2 className="animate-spin" aria-hidden /> : <Play aria-hidden />}
@@ -426,6 +520,7 @@ export function ReconcileScreen() {
               company={company}
               onResolve={(id) => void resolve(id)}
               onResolveMany={resolveMany}
+              repeatOffenders={repeatOffenders}
             />
           ) : (
             <EmptyState icon={Inbox} title={def.empty} actionLabel="Open latest run" actionHref="/reconcile" />
@@ -502,6 +597,7 @@ export function ReconcileScreen() {
               company={company}
               onResolve={(id) => void resolve(id)}
               onResolveMany={resolveMany}
+              repeatOffenders={repeatOffenders}
             />
           ) : (
             <EmptyState
