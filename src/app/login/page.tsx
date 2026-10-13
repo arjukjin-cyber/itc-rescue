@@ -2,10 +2,20 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { clearAllLocal, syncProfileFromServer } from "@/lib/storage";
 import type { UserSession } from "@/lib/types";
+
+
+const NAV_FALLBACK_MS = 1500;
+
+function goToDashboard(router: ReturnType<typeof useRouter>) {
+  router.replace("/dashboard");
+  window.setTimeout(() => {
+    if (window.location.pathname !== "/dashboard") window.location.assign("/dashboard");
+  }, NAV_FALLBACK_MS);
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,9 +23,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const inFlight = useRef(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (inFlight.current) return;
+    inFlight.current = true;
     setError("");
     setLoading(true);
     try {
@@ -25,19 +43,20 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || "Login failed");
+        setError(data?.error || "Login failed");
         return;
       }
       const user = data.user as UserSession;
       // Always start clean: nothing from a previous session on this browser carries over.
       clearAllLocal();
       syncProfileFromServer(user);
-      router.push("/dashboard");
+      goToDashboard(router);
     } catch {
       setError("Something went wrong");
     } finally {
+      inFlight.current = false;
       setLoading(false);
     }
   }
@@ -55,7 +74,7 @@ export default function LoginPage() {
           <p className="mt-1 text-sm text-slate-600">
             Sign in with your work email and password. Accounts are stored securely.
           </p>
-          <form onSubmit={onSubmit} className="mt-8 space-y-4">
+          <form method="post" onSubmit={onSubmit} className="mt-8 space-y-4">
             <div>
               <label htmlFor="login-email" className="block text-sm font-medium text-slate-700">
                 Email
@@ -93,7 +112,7 @@ export default function LoginPage() {
             )}
             <button
               type="submit"
-              disabled={loading}
+              disabled={!mounted || loading}
               className="btn btn-pri btn-lg w-full disabled:opacity-60"
             >
               {loading ? "Signing in…" : "Log in"}

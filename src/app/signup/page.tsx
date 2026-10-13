@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/Logo";
 import { clearAllLocal, resetTrialUsage, syncProfileFromServer } from "@/lib/storage";
 import type { UserSession } from "@/lib/types";
@@ -15,6 +15,16 @@ type FormState = {
   gstin: string;
 };
 
+
+const NAV_FALLBACK_MS = 1500;
+
+function goToDashboard(router: ReturnType<typeof useRouter>) {
+  router.replace("/dashboard");
+  window.setTimeout(() => {
+    if (window.location.pathname !== "/dashboard") window.location.assign("/dashboard");
+  }, NAV_FALLBACK_MS);
+}
+
 export default function SignupPage() {
   const router = useRouter();
   const [form, setForm] = useState<FormState>({
@@ -26,6 +36,12 @@ export default function SignupPage() {
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const inFlight = useRef(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   function setField<K extends keyof FormState>(field: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -33,22 +49,42 @@ export default function SignupPage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (inFlight.current) return;
+    inFlight.current = true;
     setError("");
     setLoading(true);
+    const email = form.email.trim().toLowerCase();
+    const password = form.password;
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          email: form.email.trim().toLowerCase(),
-          isSignup: true,
-        }),
+        body: JSON.stringify({ ...form, email, isSignup: true }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Signup failed");
+      let data = await res.json().catch(() => ({}));
+      let ok = res.ok;
+      let isNew = true;
+      const exists =
+        !res.ok && (res.status === 409 || String(data?.error || "").toLowerCase().includes("already exists"));
+      if (exists) {
+        // Account already exists (e.g. a previous submit created it): sign in with the SAME
+        // email + password just typed. Never sign in on email alone.
+        const loginRes = await fetch("/api/auth/login", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password, isSignup: false }),
+        });
+        const loginData = await loginRes.json().catch(() => ({}));
+        if (loginRes.ok) {
+          data = loginData;
+          ok = true;
+          isNew = false;
+        }
+      }
+      if (!ok) {
+        setError(data?.error || "Signup failed");
         return;
       }
       const user = data.user as UserSession;
@@ -58,11 +94,12 @@ export default function SignupPage() {
         companyName: user.companyName || form.companyName || user.name,
         gstin: user.gstin || form.gstin,
       });
-      resetTrialUsage();
-      router.push("/dashboard");
+      if (isNew) resetTrialUsage();
+      goToDashboard(router);
     } catch {
       setError("Something went wrong");
     } finally {
+      inFlight.current = false;
       setLoading(false);
     }
   }
@@ -112,7 +149,7 @@ export default function SignupPage() {
           <p className="mt-1 text-[12px]" style={{ color: "var(--color-text-3)" }}>
             1 free reconciliation · No card · No GST portal login
           </p>
-          <form onSubmit={onSubmit} className="mt-8 space-y-4">
+          <form method="post" onSubmit={onSubmit} className="mt-8 space-y-4">
             {fields.map((field) => (
               <div key={field.key}>
                 <label htmlFor={`signup-${field.key}`} className="block text-sm font-medium text-slate-700">
@@ -138,7 +175,7 @@ export default function SignupPage() {
             )}
             <button
               type="submit"
-              disabled={loading}
+              disabled={!mounted || loading}
               className="btn btn-pri btn-lg w-full disabled:opacity-60"
             >
               {loading ? "Creating account…" : "Create account"}
