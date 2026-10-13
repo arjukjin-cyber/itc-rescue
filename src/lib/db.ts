@@ -19,6 +19,8 @@ let _sql: NeonQueryFunction<false, false> | null = null;
 let _schemaReady = false;
 let _vendorsSchemaReady = false;
 
+import type { GstinScope } from "./gstin-scope";
+
 export function hasDatabase(): boolean {
   return Boolean(process.env.DATABASE_URL);
 }
@@ -366,6 +368,8 @@ export async function saveReconForUser(
     returnPeriod?: string;
     /** PREVIEW-ONLY QA switch (qa_fail_vendors); ignored in production. */
     forceVendorsFail?: boolean;
+    /** company_gstin values whose chase rows this run replaces (default [companyGstin]). */
+    scope?: string[];
   } = {}
 ): Promise<{ reconId: string; chase: ChaseItem[] }> {
   const companyGstin = opts.companyGstin || "";
@@ -375,9 +379,12 @@ export async function saveReconForUser(
   const reconId = id("recon");
   const lastUpdated = new Date().toISOString();
 
-  const existing = await sql`
-    SELECT id, status FROM chase_items WHERE user_id = ${userId}
-  `;
+  // Chase rows are per company GSTIN: a run only replaces its own GSTIN's rows.
+  const scope = opts.scope && opts.scope.length ? opts.scope : [companyGstin];
+  const existing = await sql.query(
+    `SELECT id, status FROM chase_items WHERE user_id = $1 AND ${CHASE_SCOPE_SQL(2)}`,
+    [userId, scope]
+  );
   const statusMap = new Map(
     (existing as Record<string, unknown>[]).map((r) => [r.id as string, r.status as string])
   );
@@ -421,7 +428,7 @@ export async function saveReconForUser(
     [reconId, userId, summaryJson, resultsJson, companyGstin, returnPeriod]
   );
 
-  await sql`DELETE FROM chase_items WHERE user_id = ${userId}`;
+  await sql.query(`DELETE FROM chase_items WHERE user_id = $1 AND ${CHASE_SCOPE_SQL(2)}`, [userId, scope]);
 
   for (const c of chase) {
     await sql.query(
@@ -467,7 +474,7 @@ export async function saveReconForUser(
     WHERE id = ${userId}
   `;
 
-  const verified = await listChaseForUser(userId);
+  const verified = await listChaseForUser(userId, scope);
   if (chase.length > 0 && verified.length === 0) {
     throw new Error("Chase rows failed to persist after recon save");
   }
@@ -526,7 +533,11 @@ export async function recordVendorOffensesForRun(
   return offenders.length;
 }
 
-export async function getLatestReconForUser(userId: string): Promise<{
+/** SQL predicate: company_gstin in scope $n (text[]; NULL = unscoped). '' covers legacy rows. */
+export const CHASE_SCOPE_SQL = (n: number, alias = "") =>
+  `($${n}::text[] IS NULL OR COALESCE(${alias}company_gstin, '') = ANY($${n}::text[]))`;
+
+export async function getLatestReconForUser(userId: string, scope: GstinScope = null): Promise<{
   id: string;
   createdAt: string;
   results: MatchResult[];
@@ -536,12 +547,13 @@ export async function getLatestReconForUser(userId: string): Promise<{
 } | null> {
   await ensureSchema();
   const sql = getSql();
-  const rows = await sql`
-    SELECT id, created_at, summary, results, company_gstin, return_period FROM recon_runs
-    WHERE user_id = ${userId}
-    ORDER BY created_at DESC
-    LIMIT 1
-  `;
+  const rows = await sql.query(
+    `SELECT id, created_at, summary, results, company_gstin, return_period FROM recon_runs
+     WHERE user_id = $1 AND ${CHASE_SCOPE_SQL(2)}
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [userId, scope]
+  );
   if (!rows.length) return null;
   const row = rows[0] as Record<string, unknown>;
   return {
@@ -554,15 +566,16 @@ export async function getLatestReconForUser(userId: string): Promise<{
   };
 }
 
-export async function listChaseForUser(userId: string): Promise<ChaseItem[]> {
+export async function listChaseForUser(userId: string, scope: GstinScope = null): Promise<ChaseItem[]> {
   await ensureSchema();
   const sql = getSql();
-  const rows = await sql`
-    SELECT id, gstin, vendor_name, invoice_number, invoice_date, amount, category, status, last_updated
-    FROM chase_items
-    WHERE user_id = ${userId}
-    ORDER BY last_updated DESC
-  `;
+  const rows = await sql.query(
+    `SELECT id, gstin, vendor_name, invoice_number, invoice_date, amount, category, status, last_updated
+     FROM chase_items
+     WHERE user_id = $1 AND ${CHASE_SCOPE_SQL(2)}
+     ORDER BY last_updated DESC`,
+    [userId, scope]
+  );
   let items = (rows as Record<string, unknown>[]).map((r) => ({
     id: r.id as string,
     gstin: (r.gstin as string) || "",
@@ -577,19 +590,20 @@ export async function listChaseForUser(userId: string): Promise<ChaseItem[]> {
 
   // Soft-launch heal: recon exists with at-risk rows but chase table empty
   if (items.length === 0) {
-    const latest = await getLatestReconForUser(userId);
+    const latest = await getLatestReconForUser(userId, scope);
     if (latest) {
       const need = latest.results.filter(
         (r) => r.category === "itc_at_risk" || r.category === "value_mismatch"
       );
       if (need.length) {
-        await rebuildChaseFromResults(userId, latest.results, null);
-        const again = await sql`
-          SELECT id, gstin, vendor_name, invoice_number, invoice_date, amount, category, status, last_updated
-          FROM chase_items
-          WHERE user_id = ${userId}
-          ORDER BY last_updated DESC
-        `;
+        await rebuildChaseFromResults(userId, latest.results, latest.id, latest.companyGstin, latest.returnPeriod);
+        const again = await sql.query(
+          `SELECT id, gstin, vendor_name, invoice_number, invoice_date, amount, category, status, last_updated
+           FROM chase_items
+           WHERE user_id = $1 AND ${CHASE_SCOPE_SQL(2)}
+           ORDER BY last_updated DESC`,
+          [userId, scope]
+        );
         items = (again as Record<string, unknown>[]).map((r) => ({
           id: r.id as string,
           gstin: (r.gstin as string) || "",
@@ -608,7 +622,7 @@ export async function listChaseForUser(userId: string): Promise<ChaseItem[]> {
   // UX-04: chase_items has no phone column (no schema change). Look the vendor
   // phone up by GSTIN from the latest recon's results JSON instead.
   if (items.length) {
-    items = attachPhones(items, await latestPhoneByGstin(userId));
+    items = attachPhones(items, await latestPhoneByGstin(userId, scope));
   }
 
   return items;
@@ -619,14 +633,14 @@ export async function listChaseForUser(userId: string): Promise<ChaseItem[]> {
  * first valid phone in result order. Best-effort: any error -> empty map, so the
  * chase list still loads (WhatsApp then opens without a recipient, as before).
  */
-async function latestPhoneByGstin(userId: string): Promise<Map<string, string>> {
+async function latestPhoneByGstin(userId: string, scope: GstinScope = null): Promise<Map<string, string>> {
   try {
     const sql = getSql();
-    const rows = await sql`
-      SELECT t.e->>'gstin' AS gstin, t.e->>'phone' AS phone
+    const rows = await sql.query(
+      `SELECT t.e->>'gstin' AS gstin, t.e->>'phone' AS phone
       FROM (
         SELECT results FROM recon_runs
-        WHERE user_id = ${userId}
+        WHERE user_id = $1 AND ${CHASE_SCOPE_SQL(2)}
         ORDER BY created_at DESC
         LIMIT 1
       ) r
@@ -634,8 +648,9 @@ async function latestPhoneByGstin(userId: string): Promise<Map<string, string>> 
         CASE WHEN jsonb_typeof(r.results) = 'array' THEN r.results ELSE '[]'::jsonb END
       ) WITH ORDINALITY AS t(e, ord)
       WHERE COALESCE(t.e->>'phone', '') <> ''
-      ORDER BY t.ord
-    `;
+      ORDER BY t.ord`,
+      [userId, scope]
+    );
     return firstPhoneByGstin(
       (rows as Record<string, unknown>[]).map((r) => ({
         gstin: String(r.gstin || ""),
@@ -651,7 +666,10 @@ async function latestPhoneByGstin(userId: string): Promise<Map<string, string>> 
 async function rebuildChaseFromResults(
   userId: string,
   results: MatchResult[],
-  reconId: string | null
+  reconId: string | null,
+  /** The run's company GSTIN: only that GSTIN's chase rows are rebuilt. */
+  companyGstin = "",
+  returnPeriod = ""
 ) {
   const sql = getSql();
   let rid = reconId;
@@ -661,7 +679,10 @@ async function rebuildChaseFromResults(
     `;
     rid = rows.length ? (rows[0] as { id: string }).id : null;
   }
-  await sql`DELETE FROM chase_items WHERE user_id = ${userId}`;
+  await sql.query(`DELETE FROM chase_items WHERE user_id = $1 AND COALESCE(company_gstin, '') = $2`, [
+    userId,
+    companyGstin,
+  ]);
   const seen = new Set<string>();
   for (const r of results) {
     if (r.category !== "itc_at_risk" && r.category !== "value_mismatch") continue;
@@ -672,8 +693,8 @@ async function rebuildChaseFromResults(
     await sql.query(
       `INSERT INTO chase_items (
         id, user_id, recon_id, gstin, vendor_name, invoice_number, invoice_date,
-        amount, category, status, last_updated
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', NOW())
+        amount, category, status, company_gstin, return_period, last_updated
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10, $11, NOW())
       ON CONFLICT (user_id, id) DO NOTHING`,
       [
         r.id,
@@ -685,6 +706,8 @@ async function rebuildChaseFromResults(
         r.invoiceDate || "",
         amount,
         r.category,
+        companyGstin,
+        returnPeriod,
       ]
     );
   }
@@ -693,16 +716,17 @@ async function rebuildChaseFromResults(
 export async function updateChaseStatusForUser(
   userId: string,
   chaseId: string,
-  status: ChaseStatus
+  status: ChaseStatus,
+  scope: GstinScope = null
 ): Promise<ChaseItem[]> {
   await ensureSchema();
   const sql = getSql();
-  await sql`
-    UPDATE chase_items
-    SET status = ${status}, last_updated = NOW()
-    WHERE user_id = ${userId} AND id = ${chaseId}
-  `;
-  return listChaseForUser(userId);
+  await sql.query(
+    `UPDATE chase_items SET status = $3, last_updated = NOW()
+     WHERE user_id = $1 AND id = $2 AND ${CHASE_SCOPE_SQL(4)}`,
+    [userId, chaseId, status, scope]
+  );
+  return listChaseForUser(userId, scope);
 }
 
 export async function canUserRunRecon(
@@ -753,18 +777,19 @@ export async function canUserRunRecon(
  * from chase_items (pending | still_blocked). Sorted by atRiskAmount desc.
  * Read-only: does not trigger the chase self-heal in listChaseForUser.
  */
-export async function listVendorsForUser(userId: string): Promise<VendorSummary[]> {
+export async function listVendorsForUser(userId: string, scope: GstinScope = null): Promise<VendorSummary[]> {
   await ensureVendorsSchema();
   const sql = getSql();
-  const latest = await getLatestReconForUser(userId);
+  const latest = await getLatestReconForUser(userId, scope);
   const vendorRows = await sql`
     SELECT gstin, name, phone, offender_count, updated_at
     FROM vendors
     WHERE user_id = ${userId}
   `;
-  const chaseRows = await sql`
-    SELECT gstin, status FROM chase_items WHERE user_id = ${userId}
-  `;
+  const chaseRows = await sql.query(
+    `SELECT gstin, status FROM chase_items WHERE user_id = $1 AND ${CHASE_SCOPE_SQL(2)}`,
+    [userId, scope]
+  );
   const stored: StoredVendor[] = (vendorRows as Record<string, unknown>[]).map((r) => ({
     gstin: String(r.gstin || ""),
     name: r.name == null ? null : String(r.name),
@@ -780,7 +805,7 @@ export async function listVendorsForUser(userId: string): Promise<VendorSummary[
   // (#33's recon_runs.return_period). Switch: OFFENDER_COUNT_BY_DISTINCT_PERIOD.
   let periodCounts: Map<string, number> | undefined;
   if (OFFENDER_COUNT_BY_DISTINCT_PERIOD) {
-    const pr = await sql.query(DISTINCT_PERIOD_OFFENDER_SQL, [userId]);
+    const pr = await sql.query(DISTINCT_PERIOD_OFFENDER_SQL, [userId, scope]);
     periodCounts = new Map(
       (pr as Record<string, unknown>[]).map((r) => [String(r.gstin || ""), Number(r.periods || 0)])
     );
@@ -791,6 +816,7 @@ export async function listVendorsForUser(userId: string): Promise<VendorSummary[
     chase,
     byDistinctPeriod: OFFENDER_COUNT_BY_DISTINCT_PERIOD,
     periodCounts,
+    scoped: scope !== null,
   });
 }
 
@@ -811,6 +837,7 @@ CROSS JOIN LATERAL jsonb_array_elements(
   CASE WHEN jsonb_typeof(r.results) = 'array' THEN r.results ELSE '[]'::jsonb END
 ) AS e
 WHERE r.user_id = $1
+  AND ($2::text[] IS NULL OR COALESCE(r.company_gstin, '') = ANY($2::text[]))
   AND r.return_period ~ '^20[0-9]{2}-(0[1-9]|1[0-2])$'
   AND e->>'category' IN ('itc_at_risk', 'value_mismatch')
   AND UPPER(BTRIM(COALESCE(e->>'gstin', ''))) NOT IN ('', 'UNKNOWN')

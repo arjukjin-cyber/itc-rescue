@@ -1,7 +1,10 @@
+import { scopeFromRequest } from "@/lib/gstin-scope-server";
+import { companyGstinScope } from "@/lib/gstin-scope";
 import { NextRequest, NextResponse } from "next/server";
 import {
   canUserRunRecon,
   getLatestReconForUser,
+  listGstinsForUser,
   hasDatabase,
   saveReconForUser,
   userOwnsGstin,
@@ -21,13 +24,15 @@ import {
 } from "@/lib/recon-guard";
 import type { MatchResult, ReconSummary } from "@/lib/types";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   if (!hasDatabase()) {
     return NextResponse.json({ persistence: "demo" });
   }
   const user = await requireDbUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const latest = await getLatestReconForUser(user.id);
+  const sc = await scopeFromRequest(req.url, user.id);
+  if (sc.error) return sc.error;
+  const latest = await getLatestReconForUser(user.id, sc.scope);
   // PREVIEW-ONLY QA switch; ignored in production (qa. trial bypass).
   const gate = await canUserRunRecon(user.id, { bypassTrial: shouldBypassTrial(user.email) });
   return NextResponse.json({
@@ -115,6 +120,8 @@ export async function POST(req: NextRequest) {
       companyGstin,
       returnPeriod,
       forceVendorsFail,
+      // Replace only this GSTIN's chase rows (+ legacy '' rows when it's the primary).
+      scope: companyGstin ? companyGstinScope(companyGstin, await listGstinsForUser(user.id)) ?? undefined : [""],
     });
     return NextResponse.json({
       persistence: "postgres",

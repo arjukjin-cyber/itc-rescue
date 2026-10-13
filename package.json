@@ -13,7 +13,8 @@
     "check:phone": "npx --yes tsx scripts/test-phone.ts",
     "check:vendors": "npx -y tsx scripts/vendors-check.ts",
     "check:gstin": "npx --yes tsx scripts/test-gstin.ts",
-    "test:period": "npx --yes tsx scripts/test-return-period.ts"
+    "test:period": "npx --yes tsx scripts/test-return-period.ts",
+    "test:scope": "npx --yes tsx scripts/test-gstin-scope.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

@@ -1,6 +1,8 @@
 "use client";
 
 import { buildReconPostBody, savedRunPeriod } from "./return-period";
+import { withGstinQuery } from "./gstin-scope";
+import { getSelectedGstin } from "./selected-gstin";
 import type { ChaseItem, ChaseStatus, MatchResult, ReconSummary } from "./types";
 import type { RepeatOffenderLabel, VendorSummary } from "./vendors";
 import {
@@ -79,7 +81,7 @@ function failState(message: string): ReconState {
 export async function fetchReconState(): Promise<ReconState> {
   const wantsAuth = expectsServerAuth();
   try {
-    const res = await fetch("/api/recon", { credentials: "include", cache: "no-store" });
+    const res = await fetch(withGstinQuery("/api/recon", getSelectedGstin()), { credentials: "include", cache: "no-store" });
     if (res.status === 401) {
       if (wantsAuth) {
         authRequiredError();
@@ -220,7 +222,7 @@ export async function fetchChaseItems(): Promise<{
 }> {
   const wantsAuth = expectsServerAuth();
   try {
-    const res = await fetch("/api/chase", { credentials: "include" });
+    const res = await fetch(withGstinQuery("/api/chase", getSelectedGstin()), { credentials: "include", cache: "no-store" });
     if (res.status === 401) {
       if (wantsAuth) {
         return {
@@ -272,7 +274,7 @@ export async function persistChaseStatus(
 ): Promise<ChaseItem[]> {
   const wantsAuth = expectsServerAuth();
   try {
-    const res = await fetch(`/api/chase/${encodeURIComponent(id)}`, {
+    const res = await fetch(withGstinQuery(`/api/chase/${encodeURIComponent(id)}`, getSelectedGstin()), {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -313,7 +315,7 @@ export async function fetchVendors(): Promise<{
 }> {
   const wantsAuth = expectsServerAuth();
   try {
-    const res = await fetch("/api/vendors", { credentials: "include" });
+    const res = await fetch(withGstinQuery("/api/vendors", getSelectedGstin()), { credentials: "include", cache: "no-store" });
     if (res.status === 401) {
       if (wantsAuth) {
         return { persistence: "postgres", vendors: [], authError: authRequiredError() };

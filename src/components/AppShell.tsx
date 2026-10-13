@@ -40,6 +40,7 @@ import { getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
 import { viewCounts, viewFromSlug, viewHref, type ItcView } from "@/lib/views";
 import { getSampleRun, isReconScreen } from "@/lib/sample-run";
 import { Dropdown } from "./Dropdown";
+import { gstinMenuLabel } from "@/lib/gstin-scope";
 import { pickedGstinKey, resolveSelectedGstin, setSelectedGstin } from "@/lib/selected-gstin";
 import { CommandPalette, type PalettePage } from "./CommandPalette";
 import type { MatchResult, UserSession } from "@/lib/types";
@@ -206,15 +207,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     gstins.status === "ready"
       ? resolveSelectedGstin(gstins.items, picked && picked.owner === owner ? picked.gstin : null)
       : null;
-  useEffect(() => {
-    setSelectedGstin(selectedGstin);
-  }, [selectedGstin]);
+  // Set during render (idempotent module value) so page effects, which run before this
+  // component's effects, already read the active GSTIN in their first fetch.
+  setSelectedGstin(selectedGstin);
   useEffect(() => () => setSelectedGstin(null), []);
   const [reconUsed, setReconUsed] = useState(0);
   const [pending, setPending] = useState<number | null>(null);
   /** null = no recon yet (or not loaded): ITC counts and the period picker are hidden. */
   const [recon, setRecon] = useState<ReconSnap | null>(null);
   const [reconTick, setReconTick] = useState(0);
+  /** /me has answered (any outcome); with the GSTIN list this gates page mount (see <main>). */
+  const [meDone, setMeDone] = useState(false);
   /** Deployed commit from GET /api/version (CPO DoD checks); shown as 7 chars in the sidebar foot. */
   const [sha, setSha] = useState<string | null>(null);
 
@@ -268,6 +271,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         }
       } catch {
         // Fall through; API calls surface auth errors
+      } finally {
+        if (!cancelled) setMeDone(true);
       }
       if (cancelled) return;
       // /me failed (not 401): no local fallback for company / GSTIN / plan (#34). Trial meter
@@ -289,7 +294,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [pathname]);
+  }, [pathname, selectedGstin]);
 
   // ITC counts + return period from the latest recon (existing GET /api/recon).
   useEffect(() => {
@@ -307,7 +312,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [pathname, reconTick]);
+  }, [pathname, reconTick, selectedGstin]);
 
   useEffect(() => {
     const onCount = (e: Event) => setPending((e as CustomEvent<number>).detail);
@@ -446,7 +451,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <UserMenu email={email} name={name} onLogout={logout} />
         </header>
 
-        <main className="min-w-0 flex-1 px-4 pb-8 pt-5 sm:px-6">{children}</main>
+        {/* Pages fetch per active GSTIN: mount them once the GSTIN is known (no unscoped flash),
+            and remount on a switcher change so every screen refetches for the new GSTIN. */}
+        <main key={selectedGstin ?? "-"} className="min-w-0 flex-1 px-4 pb-8 pt-5 sm:px-6">
+          {!meDone || (owner && gstins.status === "loading") ? (
+            <div className="flex flex-col gap-3" aria-busy="true" data-testid="gstin-scope-loading">
+              <Skel w={220} h={14} />
+              <Skel w={320} />
+            </div>
+          ) : (
+            children
+          )}
+        </main>
       </div>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} pages={PALETTE_PAGES} canUpload />
@@ -642,6 +658,7 @@ function GstinMenuList({
       {gstins.items.map((g) => {
         const on = g.gstin === active;
         const state = GST_STATES[g.stateCode || g.gstin.slice(0, 2)];
+        const sub = gstinMenuLabel(g.label, state);
         return (
           <button
             key={g.id}
@@ -654,14 +671,14 @@ function GstinMenuList({
               onPick(g.gstin);
               close();
             }}
-            title={g.label || undefined}
+            title={g.label ? state : undefined}
           >
             <span className="v3-mono" style={{ color: "var(--color-ink)" }}>
               {g.gstin}
             </span>
-            {state && (
+            {sub && (
               <span className="truncate" style={{ color: "var(--color-text-3)" }}>
-                {state}
+                {sub}
               </span>
             )}
             <span className="flex-1" />

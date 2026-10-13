@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hasDatabase, updateChaseStatusForUser } from "@/lib/db";
+import { scopeFromRequest } from "@/lib/gstin-scope-server";
 import { requireDbUser } from "@/lib/session-user";
 import type { ChaseStatus } from "@/lib/types";
 
@@ -14,12 +15,14 @@ export async function PATCH(
   }
   const user = await requireDbUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const sc = await scopeFromRequest(req.url, user.id);
+  if (sc.error) return sc.error;
   const { id } = await ctx.params;
   const body = await req.json();
   const status = body.status as ChaseStatus;
   if (!ALLOWED.includes(status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
-  const items = await updateChaseStatusForUser(user.id, id, status);
+  const items = await updateChaseStatusForUser(user.id, id, status, sc.scope);
   return NextResponse.json({ persistence: "postgres", items });
 }
