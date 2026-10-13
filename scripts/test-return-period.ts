@@ -16,6 +16,7 @@ import {
   needsPeriodConfirm,
 } from "../src/lib/return-period";
 import { normalizeReturnPeriod } from "../src/lib/gstin";
+import { pickedGstinKey, resolveSelectedGstin } from "../src/lib/selected-gstin";
 
 let n = 0;
 const ok = (name: string, fn: () => void | Promise<void>) =>
@@ -63,6 +64,18 @@ async function run(books: string, gstr: string) {
       assert.ok(isReturnPeriod(p));
       assert.equal(normalizeReturnPeriod(p), p);
     }
+  });
+
+  await ok("switcher selection: pick if in list, else primary, else first, else null", () => {
+    const A = { gstin: "27AAAAA1111A1Z5", isPrimary: true };
+    const B = { gstin: "29BBBBB2222B1ZD", isPrimary: false };
+    assert.equal(resolveSelectedGstin([A, B], "29BBBBB2222B1ZD"), B.gstin); // picked B → B, not primary
+    assert.equal(resolveSelectedGstin([A, B], null), A.gstin);
+    assert.equal(resolveSelectedGstin([A, B], "33ZZZZZ9999Z1Z1"), A.gstin); // stale / other user's pick
+    assert.equal(resolveSelectedGstin([{ ...B }, { ...A, isPrimary: false }], null), B.gstin); // no primary → first
+    assert.equal(resolveSelectedGstin([], "29BBBBB2222B1ZD"), null); // empty list → omit gstin
+    assert.notEqual(pickedGstinKey("a@x.in"), pickedGstinKey("b@x.in"));
+    assert.equal(pickedGstinKey("A@X.in"), pickedGstinKey("a@x.in"));
   });
 
   const root = join(__dirname, "..");

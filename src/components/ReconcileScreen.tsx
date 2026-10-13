@@ -211,6 +211,13 @@ export function ReconcileScreen() {
     show({ text: TRIAL_USED_MESSAGE });
   }
 
+  // One 2B parse per picked File: the pick-time parse (period detection) is reused on Run.
+  const gstrParse = useRef<{ file: File; p: ReturnType<typeof parseInvoiceFileDetailed> } | null>(null);
+  function parseGstr(f: File) {
+    if (gstrParse.current?.file !== f) gstrParse.current = { file: f, p: parseInvoiceFileDetailed(f, "gstr2b") };
+    return gstrParse.current.p;
+  }
+
   // Detect the return period as soon as the 2B file is picked, so the picker pre-fills.
   useEffect(() => {
     let cancelled = false;
@@ -219,7 +226,7 @@ export function ReconcileScreen() {
       setDetectedPeriod(null);
       return;
     }
-    parseInvoiceFileDetailed(gstrFile, "gstr2b")
+    parseGstr(gstrFile)
       .then((p) => {
         if (cancelled) return;
         const d = isReturnPeriod(p.returnPeriod) ? p.returnPeriod : null;
@@ -263,7 +270,7 @@ export function ReconcileScreen() {
       // it throws a file-specific InvoiceParseError, surfaced in the role="alert" error line.
       const booksParsed = await parseInvoiceFileDetailed(books, "books");
       const booksInv = booksParsed.invoices;
-      const gstrParsed = await parseInvoiceFileDetailed(gstr, "gstr2b");
+      const gstrParsed = await parseGstr(gstr);
       const gstrInv = gstrParsed.invoices;
       const notes = [booksParsed.detected, gstrParsed.detected].map(describeImportSource).filter(Boolean);
       setBooksNote(notes.length ? notes.join(" · ") : null);

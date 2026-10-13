@@ -40,7 +40,7 @@ import { getGstr3bDue, type Gstr3bDue } from "@/lib/filing";
 import { viewCounts, viewFromSlug, viewHref, type ItcView } from "@/lib/views";
 import { getSampleRun, isReconScreen } from "@/lib/sample-run";
 import { Dropdown } from "./Dropdown";
-import { setSelectedGstin } from "@/lib/selected-gstin";
+import { pickedGstinKey, resolveSelectedGstin, setSelectedGstin } from "@/lib/selected-gstin";
 import { CommandPalette, type PalettePage } from "./CommandPalette";
 import type { MatchResult, UserSession } from "@/lib/types";
 
@@ -177,12 +177,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   /** Switcher list: GET /api/gstins (#33) once /me confirms who is signed in. */
   const [owner, setOwner] = useState<string | null>(null);
   const gstins = useGstins(owner);
-  // Publish the switcher's selection (primary, else first; null when empty) for POST /api/recon.
+  // Switcher pick, per user (localStorage keyed by the /me email). Tagged with its owner so a
+  // pick never applies to another account; validated against the current user's list.
+  const [picked, setPicked] = useState<{ owner: string; gstin: string } | null>(null);
+  useEffect(() => {
+    if (!owner) {
+      setPicked(null);
+      return;
+    }
+    let v: string | null = null;
+    try {
+      v = localStorage.getItem(pickedGstinKey(owner));
+    } catch {}
+    setPicked(v ? { owner, gstin: v } : null);
+  }, [owner]);
+  const pickGstin = (g: string) => {
+    if (!owner) return;
+    setPicked({ owner, gstin: g });
+    try {
+      localStorage.setItem(pickedGstinKey(owner), g);
+    } catch {}
+  };
+  // Published for POST /api/recon: null while loading / on error / empty list / owner change.
   const selectedGstin =
-    gstins.status === "ready" ? (gstins.items.find((g) => g.isPrimary) ?? gstins.items[0])?.gstin ?? null : null;
+    gstins.status === "ready"
+      ? resolveSelectedGstin(gstins.items, picked && picked.owner === owner ? picked.gstin : null)
+      : null;
   useEffect(() => {
     setSelectedGstin(selectedGstin);
   }, [selectedGstin]);
+  useEffect(() => () => setSelectedGstin(null), []);
   const [reconUsed, setReconUsed] = useState(0);
   const [pending, setPending] = useState<number | null>(null);
   /** null = no recon yet (or not loaded): ITC counts and the period picker are hidden. */
@@ -337,7 +361,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const sidebar = (onNavigate?: () => void) => (
     <div className="flex h-full min-h-0 flex-col">
-      <Switcher company={company} gstins={gstins} />
+      <Switcher company={company} gstins={gstins} selected={selectedGstin} onPick={pickGstin} />
       <SearchButton
         onOpen={() => {
           onNavigate?.();
@@ -488,10 +512,20 @@ function Skel({ w, h = 10 }: { w: number | string; h?: number }) {
  * GET /api/gstins only (primary first). Empty list = "No GSTIN yet", with no fallback to /me.
  * "Add GSTIN" / "Manage GSTINs" stay out until the GSTINs screen exists (no dead links).
  */
-function Switcher({ company, gstins }: { company: string | null; gstins: GstinList }) {
+function Switcher({
+  company,
+  gstins,
+  selected,
+  onPick,
+}: {
+  company: string | null;
+  gstins: GstinList;
+  /** resolveSelectedGstin(): the user's pick if in the list, else primary/first. */
+  selected: string | null;
+  onPick: (gstin: string) => void;
+}) {
   const loading = company === null;
-  const primary =
-    gstins.status === "ready" ? gstins.items.find((g) => g.isPrimary) ?? gstins.items[0] ?? null : null;
+  const primary = gstins.status === "ready" && selected ? { gstin: selected } : null;
   const gstinLine =
     gstins.status === "loading" ? (
       <Skel w={130} h={9} />
@@ -547,14 +581,24 @@ function Switcher({ company, gstins }: { company: string | null; gstins: GstinLi
           </button>
           <div className="v3-hr" />
           <div className="v3-mh">GSTIN</div>
-          <GstinMenuList gstins={gstins} active={primary?.gstin ?? ""} close={close} />
+          <GstinMenuList gstins={gstins} active={selected ?? ""} close={close} onPick={onPick} />
         </div>
       )}
     </Dropdown>
   );
 }
 
-function GstinMenuList({ gstins, active, close }: { gstins: GstinList; active: string; close: () => void }) {
+function GstinMenuList({
+  gstins,
+  active,
+  close,
+  onPick,
+}: {
+  gstins: GstinList;
+  active: string;
+  close: () => void;
+  onPick: (gstin: string) => void;
+}) {
   if (gstins.status === "loading") {
     return (
       <div className="flex flex-col gap-2 px-2.5 py-2" aria-busy="true" aria-label="Loading GSTINs" data-testid="gstins-loading">
@@ -598,7 +642,10 @@ function GstinMenuList({ gstins, active, close }: { gstins: GstinList; active: s
             aria-checked={on}
             className="v3-mi"
             data-on={on ? "true" : undefined}
-            onClick={close}
+            onClick={() => {
+              onPick(g.gstin);
+              close();
+            }}
             title={g.label || undefined}
           >
             <span className="v3-mono" style={{ color: "var(--color-ink)" }}>
